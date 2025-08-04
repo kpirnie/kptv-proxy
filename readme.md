@@ -177,7 +177,6 @@ go build -o kptv-proxy .
 | `WORKER_THREADS` | `4` | Parallel workers for import processing |
 | `MAX_BUFFER_SIZE` | `268435456` | Total buffer size (256MB) |
 | `BUFFER_SIZE_PER_STREAM` | `16777216` | Per-stream buffer (16MB) |
-| `RATE_LIMIT` | `100` | Requests per second limit |
 
 ### Customization
 | Variable | Default | Description |
@@ -217,7 +216,6 @@ go build -o kptv-proxy .
 WORKER_THREADS: "20"
 MAX_BUFFER_SIZE: "536870912"    # 512MB
 BUFFER_SIZE_PER_STREAM: "33554432"  # 32MB  
-RATE_LIMIT: "500"
 ```
 
 ### Multi-Provider Setup with Priorities
@@ -335,7 +333,6 @@ Format: M3U8/HLS
 ENABLE_RESTREAMING: "true"     # Essential for high concurrency
 WORKER_THREADS: "20"
 MAX_BUFFER_SIZE: "1073741824"  # 1GB
-RATE_LIMIT: "1000"
 ```
 
 ### For Low-Resource Systems
