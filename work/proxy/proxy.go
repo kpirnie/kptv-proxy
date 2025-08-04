@@ -22,7 +22,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/VictoriaMetrics/fastcache"
 	"github.com/panjf2000/ants/v2"
 	"go.uber.org/ratelimit"
 )
@@ -32,7 +31,6 @@ type StreamProxy struct {
 	Config                *config.Config
 	Channels              sync.Map // Use sync.Map for concurrent access
 	Cache                 *cache.Cache
-	SegmentCache          *fastcache.Cache
 	Logger                *log.Logger
 	BufferPool            *buffer.BufferPool
 	HttpClient            *client.HeaderSettingClient
@@ -41,12 +39,11 @@ type StreamProxy struct {
 	MasterPlaylistHandler *parser.MasterPlaylistHandler
 }
 
-func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, rateLimiter ratelimit.Limiter, segmentCache *fastcache.Cache, cache *cache.Cache) *StreamProxy {
+func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, rateLimiter ratelimit.Limiter, cache *cache.Cache) *StreamProxy {
 	return &StreamProxy{
 		Config:                cfg,
 		Channels:              sync.Map{}, // Initialize empty sync.Map
 		Cache:                 cache,
-		SegmentCache:          segmentCache,
 		Logger:                logger,
 		BufferPool:            bufferPool,
 		HttpClient:            httpClient,

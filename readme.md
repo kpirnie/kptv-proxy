@@ -1,270 +1,362 @@
-# KPTV Proxy Restreamer
+# KPTV Proxy - IPTV Stream Aggregator & Proxy
 
-A high-performance Go-based IPTV proxy server that aggregates streams from multiple sources, provides automatic failover, and serves them through a unified M3U8 playlist.
+A high-performance Go-based IPTV proxy server that intelligently aggregates streams from multiple sources, provides automatic channel deduplication, failover capabilities, and serves them through a unified M3U8 playlist with advanced streaming options.
 
-## Features
+## Key Features
 
-- **Multiple Source Support**: Configure multiple IPTV sources with connection limits
-- **Automatic Channel Grouping**: Streams are automatically grouped by channel name
-- **Failover Support**: Automatic failover to next available stream on failure
-- **Connection Management**: Per-source connection limits to prevent overload
-- **Smart Buffering**: Configurable buffer sizes with buffer pool for optimal memory usage
-- **Caching**: Built-in caching for playlists and channel data
-- **Sorting**: Customizable stream sorting by any EXTINF attribute
-- **Retry Logic**: Configurable retry attempts with exponential backoff
-- **Worker Pool**: Parallel processing with configurable worker threads
-- **Debug Mode**: Extensive logging for troubleshooting
-- **Docker Support**: Ready-to-use Docker configuration
-- **Restreaming Mode**: Single upstream connection shared among multiple clients (NEW!)
-- **Custom HTTP Headers**: Configurable User-Agent, Origin, and Referrer headers
-- **Connection Keep-Alive**: HTTP keep-alive for better performance
+### 🔄 **Multi-Source Aggregation**
+- Combines multiple IPTV sources into a single unified playlist
+- Intelligent channel grouping by name (deduplicates channels across sources)
+- Automatic source prioritization and failover
+- Per-source connection limits to prevent provider overload
+
+### 📺 **Advanced Stream Management**  
+- **Master Playlist Detection**: Automatically detects and processes HLS master playlists
+- **Variant Selection**: Intelligently selects optimal stream variants (lowest bandwidth by default for reliability)
+- **Channel Deduplication**: Groups identical channels from different sources
+- **Smart Failover**: Seamlessly switches between sources when streams fail
+
+### 🚀 **Dual Operating Modes**
+- **Direct Proxy Mode**: Each client gets independent connections to upstream sources
+- **Restreaming Mode** *(Recommended)*: Single upstream connection shared among multiple clients
+  - Reduces load on upstream providers
+  - Prevents rate limiting and 429 errors  
+  - More efficient bandwidth usage
+  - Automatic cleanup of inactive streams
+
+### ⚡ **Performance & Reliability**
+- Worker pool-based parallel processing
+- Ring buffer streaming with configurable sizes
+- Built-in caching for playlists and metadata
+- Rate limiting and connection management
+- Comprehensive retry logic with exponential backoff
+- Stream health monitoring and automatic blocking of failed sources
+
+### 🔧 **Advanced Configuration**
+- Flexible source configuration with connection limits
+- Customizable stream sorting by any M3U8 attribute
+- URL obfuscation for privacy and security
+- Custom HTTP headers (User-Agent, Origin, Referrer)
+- Configurable timeouts and buffer sizes
+- Debug mode with extensive logging
+
+### 📊 **Monitoring & Metrics**
+- Prometheus metrics integration
+- Connection tracking per channel and source
+- Stream error monitoring and categorization
+- Health check endpoints
+- Detailed logging with configurable verbosity
+
+## Architecture Overview
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   IPTV Source 1 │    │   IPTV Source 2  │    │   IPTV Source N │
+│   (5 max conns) │    │  (10 max conns)  │    │  (3 max conns)  │
+└─────────┬───────┘    └─────────┬────────┘    └─────────┬───────┘
+          │                      │                       │
+          └──────────────────────┼───────────────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │     KPTV Proxy          │
+                    │  • Channel grouping     │
+                    │  • Master playlist      │
+                    │    detection            │
+                    │  • Failover logic       │
+                    │  • Connection mgmt      │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   Unified M3U8          │
+                    │   /playlist.m3u8        │
+                    └─────────────────────────┘
+                                 │
+          ┌──────────────────────┼──────────────────────┐
+          │                      │                      │
+┌─────────▼───────┐    ┌─────────▼───────┐    ┌─────────▼───────┐
+│    Client 1     │    │    Client 2     │    │    Client N     │
+│  (VLC, Kodi,    │    │   (Smart TV,    │    │   (Mobile App,  │
+│   etc.)         │    │    etc.)        │    │    etc.)        │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+## How Channel Grouping Works
+
+The proxy intelligently groups channels with the same name from different sources:
+
+**Input Sources:**
+```
+Source 1: BBC One, CNN, ESPN
+Source 2: BBC One, Fox News, ESPN  
+Source 3: CNN, ESPN, Discovery
+```
+
+**Unified Output:**
+```
+BBC One    → [Source1/BBC_One, Source2/BBC_One] (auto-failover)
+CNN        → [Source1/CNN, Source3/CNN] (auto-failover)  
+ESPN       → [Source1/ESPN, Source2/ESPN, Source3/ESPN] (auto-failover)
+Fox News   → [Source2/Fox_News] (single source)
+Discovery  → [Source3/Discovery] (single source)
+```
 
 ## Quick Start
 
-1. Clone the repository:
+### Using Docker Compose (Recommended)
+
+1. **Clone and configure:**
 ```bash
 git clone <repository-url>
 cd kptv-proxy
+cp docker-compose.example.yaml docker-compose.yaml
 ```
 
-2. Configure your sources in `docker-compose.yaml`:
+2. **Edit your sources in `docker-compose.yaml`:**
 ```yaml
-SOURCES: "http://source1.com/playlist.m3u8:5,http://source2.com/playlist.m3u8:10"
+environment:
+  # Format: URL|MaxConnections,URL|MaxConnections
+  SOURCES: "http://provider1.com/playlist.m3u8|5,http://provider2.com/playlist.m3u8|10"
+  BASE_URL: "http://your-server-ip:9500"
 ```
 
-3. Start the service:
+3. **Start the service:**
 ```bash
 docker-compose up -d
 ```
 
-4. Access your unified playlist at:
+4. **Access your unified playlist:**
 ```
-http://localhost:8080/playlist.m3u8
+http://your-server-ip:9500/playlist.m3u8
 ```
 
-## Configuration
-
-All configuration is done through environment variables in `docker-compose.yaml`:
-
-### Server Settings
-- `PORT`: Server port (default: 8080)
-- `BASE_URL`: Base URL for stream links (default: http://localhost:8080)
-
-### Source Configuration
-- `SOURCES`: Comma-separated list of sources with format `URL|MaxConnections`
-  - Example: `http://source1.com/playlist.m3u8|5,http://source2.com/playlist.m3u8|10`
-
-### Buffer Settings
-- `MAX_BUFFER_SIZE`: Maximum total buffer size in bytes (default: 10MB)
-- `BUFFER_SIZE_PER_STREAM`: Buffer size per stream in bytes (default: 1MB)
-- `MIN_DATA_SIZE`: Minimum data required for successful stream (default: 1KB)
-
-### Cache Settings
-- `CACHE_ENABLED`: Enable/disable caching (default: true)
-- `CACHE_DURATION`: Cache duration (default: 5m)
-
-### Import Settings
-- `IMPORT_REFRESH_INTERVAL`: How often to refresh source imports (default: 30m)
-
-### Retry Settings
-- `MAX_RETRIES`: Maximum retry attempts per stream (default: 3)
-- `MAX_FAILURES_BEFORE_BLOCK`: Failures before marking stream as blocked (default: 10)
-- `RETRY_DELAY`: Delay between retry attempts (default: 5s)
-
-### Performance Settings
-- `WORKER_THREADS`: Number of parallel workers for import (default: 10)
-- `ENABLE_RESTREAMING`: Enable single upstream connection mode (default: true)
-
-### HTTP Client Settings
-- `USER_AGENT`: Custom User-Agent header (default: kptv-proxy/1.0)
-- `REQ_ORIGIN`: Optional Origin header for requests
-- `REQ_REFERRER`: Optional Referrer header for requests
-- `HEALTH_CHECK_TIMEOUT`: Request timeout duration (default: 30s)
-
-### Sorting Settings
-- `SORT_FIELD`: EXTINF attribute to sort by (default: tvg-name)
-- `SORT_DIRECTION`: Sort direction - asc or desc (default: asc)
-
-### Debug Settings
-- `DEBUG`: Enable verbose logging (default: false)
-
-## How It Works
-
-### Standard Mode (ENABLE_RESTREAMING=false)
-1. **Import Phase**: The proxy fetches M3U8 playlists from all configured sources
-2. **Channel Grouping**: Streams with the same name are grouped into channels
-3. **Sorting**: Streams within each channel are sorted based on configuration
-4. **Client Request**: When a client requests the playlist, a unified M3U8 is generated
-5. **Stream Proxy**: When a client plays a stream:
-   - Each client gets their own upstream connection
-   - On failure, automatically tries the next stream in the group
-   - Manages connections to prevent source overload
-   - Buffers data for smooth playback
-
-### Restreaming Mode (ENABLE_RESTREAMING=true) - Recommended
-1. **Single Upstream Connection**: Only one connection per channel to the upstream provider
-2. **Client Multiplexing**: Multiple clients share the same upstream stream
-3. **Automatic Cleanup**: Inactive channels are cleaned up after 10 seconds
-4. **Benefits**:
-   - Reduces load on upstream providers (prevents 429 errors)
-   - Better for providers with connection limits
-   - More efficient bandwidth usage
-   - Prevents rate limiting issues
-
-## Endpoints
-
-- `GET /playlist.m3u8`: Returns the unified M3U8 playlist
-- `GET /stream/{channel}`: Proxies the actual stream data with automatic failover
-
-## Advanced Usage
-
-### Custom Source Configuration
-
-Sources are configured as a comma-separated list with the format `URL|MaxConnections`:
+### Manual Build
 
 ```bash
-SOURCES="http://premium.iptv.com/playlist.m3u8|3,http://backup.iptv.com/playlist.m3u8|5,http://free.iptv.com/playlist.m3u8|10"
+go mod download
+go build -o kptv-proxy .
+./kptv-proxy
 ```
 
-This configuration:
-- Allows 3 concurrent connections to premium source
-- Allows 5 concurrent connections to backup source
-- Allows 10 concurrent connections to free source
+## Configuration Reference
 
-### Sorting Options
+### Core Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8080` | Server port |
+| `BASE_URL` | `http://localhost:8080` | Base URL for generated stream links |
+| `SOURCES` | Required | Comma-separated list: `URL\|MaxConns,URL\|MaxConns` |
 
-You can sort streams by any EXTINF attribute:
+### Operating Modes
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_RESTREAMING` | `true` | **Recommended**: Single upstream connection shared among clients |
 
-```yaml
-SORT_FIELD: "tvg-id"        # Sort by channel ID
-SORT_FIELD: "group-title"   # Sort by group
-SORT_FIELD: "tvg-logo"      # Sort by logo URL
-SORT_DIRECTION: "desc"      # Reverse order
-```
+**Restreaming Mode Benefits:**
+- ✅ Reduces provider load (prevents 429 rate limit errors)
+- ✅ Better for providers with strict connection limits  
+- ✅ More efficient bandwidth usage
+- ✅ Automatic stream cleanup
 
-### Cache Management
+**Direct Proxy Mode:**
+- ✅ Each client gets independent connection
+- ✅ Better isolation between clients
+- ❌ Higher provider load
+- ❌ More prone to rate limiting
 
-The cache can be configured with different durations:
-
-```yaml
-CACHE_DURATION: "1m"   # 1 minute cache
-CACHE_DURATION: "1h"   # 1 hour cache
-CACHE_DURATION: "0"    # Disable cache
-```
+### Stream Management
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_RETRIES` | `3` | Retry attempts per stream failure |
+| `MAX_FAILURES_BEFORE_BLOCK` | `5` | Failures before blocking a stream |
+| `RETRY_DELAY` | `5s` | Delay between retry attempts |
+| `IMPORT_REFRESH_INTERVAL` | `12h` | How often to refresh source playlists |
 
 ### Performance Tuning
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WORKER_THREADS` | `4` | Parallel workers for import processing |
+| `MAX_BUFFER_SIZE` | `268435456` | Total buffer size (256MB) |
+| `BUFFER_SIZE_PER_STREAM` | `16777216` | Per-stream buffer (16MB) |
+| `RATE_LIMIT` | `100` | Requests per second limit |
 
-For high-load environments:
+### Customization
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SORT_FIELD` | `tvg-name` | Sort streams by: `tvg-name`, `tvg-id`, `group-title`, etc. |
+| `SORT_DIRECTION` | `asc` | Sort direction: `asc` or `desc` |
+| `USER_AGENT` | `VLC/3.0.18 LibVLC/3.0.18` | Custom User-Agent header |
+| `REQ_ORIGIN` | `` | Optional Origin header |
+| `REQ_REFERRER` | `` | Optional Referrer header |
 
+### Privacy & Security
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OBFUSCATE_URLS` | `true` | Hide source URLs in logs for privacy |
+| `DEBUG` | `false` | Enable verbose logging |
+
+### Caching
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CACHE_ENABLED` | `true` | Enable playlist caching |
+| `CACHE_DURATION` | `30m` | Cache lifetime |
+
+## API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /playlist.m3u8` | Unified playlist (all channels) |
+| `GET /{group}/playlist.m3u8` | Group-filtered playlist |
+| `GET /stream/{channel}` | Stream proxy with automatic failover |
+| `GET /metrics` | Prometheus metrics |
+
+## Advanced Usage Examples
+
+### High-Performance Configuration
 ```yaml
-WORKER_THREADS: "50"              # Increase parallel workers
-MAX_BUFFER_SIZE: "52428800"       # 50MB buffer
-BUFFER_SIZE_PER_STREAM: "5242880" # 5MB per stream
+# For servers handling many concurrent clients
+WORKER_THREADS: "20"
+MAX_BUFFER_SIZE: "536870912"    # 512MB
+BUFFER_SIZE_PER_STREAM: "33554432"  # 32MB  
+RATE_LIMIT: "500"
 ```
 
-### Debug Mode
-
-Enable debug mode to see detailed logs:
-
+### Multi-Provider Setup with Priorities
 ```yaml
-DEBUG: "true"
+# Primary provider (lower connection limit = higher priority in failover)
+# Backup providers (higher limits)
+SOURCES: "http://premium.iptv.com/list.m3u8|3,http://backup1.iptv.com/list.m3u8|8,http://backup2.iptv.com/list.m3u8|15"
 ```
 
-This will log:
-- All HTTP requests
-- Stream parsing details
-- Failover attempts
-- Cache operations
-- Connection management
+### Custom Sorting and Grouping
+```yaml
+# Sort by channel group, then by name  
+SORT_FIELD: "group-title"
+SORT_DIRECTION: "asc"
 
-## Monitoring
-
-### Health Check
-
-The Docker container includes a health check that verifies the playlist endpoint:
-
-```bash
-docker-compose ps  # Check health status
+# Custom headers for specific providers
+USER_AGENT: "Mozilla/5.0 (Smart TV; Linux)"
+REQ_ORIGIN: "https://provider.com"
 ```
 
-### Logs
+## Master Playlist Handling
 
-Monitor real-time logs:
+The proxy automatically detects HLS master playlists and intelligently selects the best variant:
 
+```
+Input Master Playlist:
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=720x480
+low.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720  
+med.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
+high.m3u8
+
+Proxy Selection Logic:
+✅ Selects lowest bandwidth (most reliable)
+✅ Logs all available variants
+✅ Falls back gracefully on errors
+```
+
+## Monitoring & Troubleshooting
+
+### Health Monitoring
 ```bash
+# Check container health
+docker-compose ps
+
+# View real-time logs  
 docker-compose logs -f kptv-proxy
-```
 
-Filter for errors:
-
-```bash
+# Check specific errors
 docker-compose logs kptv-proxy | grep ERROR
 ```
 
-### Metrics
+### Key Metrics (Prometheus)
+- `iptv_proxy_active_connections` - Active connections per channel
+- `iptv_proxy_bytes_transferred` - Data transfer metrics
+- `iptv_proxy_stream_errors` - Error counts by type
+- `iptv_proxy_clients_connected` - Connected clients per channel
 
-When debug mode is enabled, you can track:
-- Number of active connections per source
-- Failed streams and retry attempts
-- Cache hit/miss rates
-- Channel and stream counts
+### Common Issues & Solutions
 
-## Troubleshooting
+**Problem**: No channels in playlist
+- ✅ Verify source URLs are accessible: `curl -I http://source.com/playlist.m3u8`
+- ✅ Check logs for parsing errors: `DEBUG: "true"`
+- ✅ Ensure M3U8 format is valid
 
-### Common Issues
+**Problem**: Streams failing to play  
+- ✅ Enable debug mode to see detailed connection attempts
+- ✅ Try increasing `MAX_RETRIES` and `RETRY_DELAY`
+- ✅ Check if sources have connection limits
+- ✅ Verify `BASE_URL` is accessible from clients
 
-1. **No streams appearing in playlist**
-   - Check source URLs are accessible
-   - Verify M3U8 format is valid
-   - Enable debug mode to see parsing errors
+**Problem**: Rate limiting (429 errors)
+- ✅ **Enable restreaming mode**: `ENABLE_RESTREAMING: "true"`
+- ✅ Reduce connection limits in `SOURCES`
+- ✅ Increase `RETRY_DELAY`
 
-2. **Streams failing to play**
-   - Check network connectivity
-   - Verify source streams are active
-   - Increase retry attempts and delays
+**Problem**: High memory usage
+- ✅ Reduce `MAX_BUFFER_SIZE` and `BUFFER_SIZE_PER_STREAM`
+- ✅ Decrease `WORKER_THREADS`
+- ✅ Enable cache expiration: `CACHE_DURATION: "5m"`
 
-3. **High memory usage**
-   - Reduce buffer sizes
-   - Limit worker threads
-   - Enable cache expiration
+## Client Configuration Examples
 
-4. **Connection refused errors**
-   - Ensure port is not in use
-   - Check firewall settings
-   - Verify Docker networking
-
-### Debug Commands
-
-Test source accessibility:
-```bash
-curl -I http://source.com/playlist.m3u8
+### VLC Media Player
+```
+Network → Open Network Stream → http://your-server:9500/playlist.m3u8
 ```
 
-Check generated playlist:
-```bash
-curl http://localhost:8080/playlist.m3u8
+### Kodi/LibreELEC
+```
+Add-ons → PVR IPTV Simple Client
+M3U Play List URL: http://your-server:9500/playlist.m3u8
 ```
 
-Test stream proxy:
-```bash
-curl -I http://localhost:8080/stream/ChannelName
+### Android/iOS IPTV Apps
+```
+Playlist URL: http://your-server:9500/playlist.m3u8
+Format: M3U8/HLS
 ```
 
 ## Security Considerations
 
-- Run as non-root user in Docker
-- Use HTTPS sources when possible
-- Implement rate limiting for production use
-- Consider adding authentication for private deployments
+- **Network Security**: Run behind reverse proxy (nginx/Cloudflare) for production
+- **Access Control**: Consider adding authentication for private deployments  
+- **Source Privacy**: Enable `OBFUSCATE_URLS` to hide provider URLs in logs
+- **Container Security**: Runs as non-root user (UID 1000)
+- **HTTPS**: Use HTTPS sources when available
+
+## Performance Optimization
+
+### For High-Concurrency (100+ clients)
+```yaml
+ENABLE_RESTREAMING: "true"     # Essential for high concurrency
+WORKER_THREADS: "20"
+MAX_BUFFER_SIZE: "1073741824"  # 1GB
+RATE_LIMIT: "1000"
+```
+
+### For Low-Resource Systems
+```yaml
+WORKER_THREADS: "2"
+MAX_BUFFER_SIZE: "67108864"    # 64MB
+BUFFER_SIZE_PER_STREAM: "4194304"  # 4MB
+```
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
 
 ## License
 
 This project is provided as-is for educational and personal use.
+
+---
+
+**Need Help?** Enable debug mode (`DEBUG: "true"`) and check the logs for detailed information about stream processing, connection attempts, and error details.

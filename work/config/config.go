@@ -33,7 +33,6 @@ type Config struct {
 	HealthCheckTimeout     time.Duration
 	EnableRestreaming      bool
 	RateLimit              int // requests per second
-	SegmentCacheSize       int // MB
 }
 
 // SourceConfig represents a stream source configuration
@@ -68,7 +67,6 @@ func LoadConfig() *Config {
 		HealthCheckTimeout:     getEnvDuration("HEALTH_CHECK_TIMEOUT", 15*time.Second),
 		EnableRestreaming:      getEnvBool("ENABLE_RESTREAMING", true),
 		RateLimit:              getEnvInt("RATE_LIMIT", 100),
-		SegmentCacheSize:       getEnvInt("SEGMENT_CACHE_SIZE", 512), // MB
 	}
 
 	// Load sources

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/VictoriaMetrics/fastcache"
 	"github.com/gorilla/mux"
 	"github.com/panjf2000/ants/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -51,14 +50,11 @@ func main() {
 	// Initialize rate limiter
 	rateLimiter := ratelimit.New(cfg.RateLimit)
 
-	// Initialize segment cache
-	segmentCache := fastcache.New(cfg.SegmentCacheSize * 1024 * 1024)
-
 	// Initialize cache
 	cacheInstance := cache.NewCache(cfg.CacheDuration)
 
 	// Create proxy instance
-	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, rateLimiter, segmentCache, cacheInstance)
+	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, rateLimiter, cacheInstance)
 
 	// Initialize master playlist handler
 	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger)
