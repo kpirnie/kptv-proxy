@@ -13,8 +13,7 @@ services:
       BASE_URL: "http://192.168.2.200:9500"
       
       # Stream Sources (format: URL:MaxConnections)
-      # Example: http://example.com/playlist1.m3u8:5,http://example.com/playlist2.m3u8:10
-      SOURCES: "https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/OGJ4L2psejYyWjJ6SnMvWGZSMW5pdz09/live|2,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/THlJa0x1bXhYMEl2V1NaM3hTK2p1Zz09/live|2,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/NXNYRGRNSTNFM1g2MyswcU0xN01Tdz09/live|3,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/V05DVmNkQnczcExBZzVndGxhM0txUT09/live|1,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/c21Ub0N2TG8wa0phajR6eWVlSkZGdz09/live|2,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/MTdPTmpRUU1idlNMaE0wWkwyMDVqdz09/live|3,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/bzZyNlJ0RVNxOW1ESUF2MlVabWVvQT09/live|5,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/MG0wM0pCRVYrNHZIeWs5dkJWd3d0Zz09/live|5,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/SVU3T2NNeXdUemFseWY3N0prS0E0Zz09/live|5,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/UHNGYlF3Zm9QWDJxOG15VXVWMmF3dz09/live|5,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/T0xBaHVTdTRDZE1yME5LVElPTmg5UT09/live|5https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/ZVNJL09JMk0vT0hsMUV1UHZ0NDkzUT09/live|5,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/UGxEczJoS2VTWDVuRm1rZ04vb1RNZz09/live|4"
+      SOURCES: "http://example.com/playlist1.m3u8:5,http://example.com/playlist2.m3u8|10"
       
       # Buffer Configuration
       MAX_BUFFER_SIZE: "268435456"          # 256MB total buffer
