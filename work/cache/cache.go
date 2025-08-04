@@ -19,6 +19,16 @@ type cacheEntry struct {
 	timestamp time.Time
 }
 
+// NewCache creates a new Cache instance with the specified duration
+func NewCache(duration time.Duration) *Cache {
+	return &Cache{
+		m3u8Cache:    make(map[string]cacheEntry),
+		channelCache: make(map[string]cacheEntry),
+		duration:     duration,
+		lastClear:    time.Now(),
+	}
+}
+
 // Cache methods
 func (c *Cache) GetM3U8(key string) (string, bool) {
 	c.mu.RLock()

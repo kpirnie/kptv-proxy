@@ -4,17 +4,22 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"kptv-proxy/work/buffer"
+	"kptv-proxy/work/cache"
+	"kptv-proxy/work/client"
+	"kptv-proxy/work/config"
+	"kptv-proxy/work/metrics"
+	"kptv-proxy/work/parser"
+	"kptv-proxy/work/restream"
+	streamAlias "kptv-proxy/work/stream"
+	"kptv-proxy/work/types"
+	"kptv-proxy/work/utils"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"kptv-proxy/work/buffer"
-	"kptv-proxy/work/cache"
-	"kptv-proxy/work/client"
-	"kptv-proxy/work/config"
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/panjf2000/ants/v2"
@@ -23,53 +28,66 @@ import (
 
 // StreamProxy is the main application struct
 type StreamProxy struct {
-	config       *config.Config
-	channels     sync.Map // Use sync.Map for concurrent access
-	cache        *cache.Cache
-	segmentCache *fastcache.Cache
-	logger       *log.Logger
-	bufferPool   *buffer.BufferPool
-	httpClient   *client.HeaderSettingClient
-	workerPool   *ants.Pool
-	rateLimiter  ratelimit.Limiter
+	Config       *config.Config
+	Channels     sync.Map // Use sync.Map for concurrent access
+	Cache        *cache.Cache
+	SegmentCache *fastcache.Cache
+	Logger       *log.Logger
+	BufferPool   *buffer.BufferPool
+	HttpClient   *client.HeaderSettingClient
+	WorkerPool   *ants.Pool
+	RateLimiter  ratelimit.Limiter
 }
 
-// Import streams using grafov/m3u8 for better parsing
-func (sp *StreamProxy) ImportStreams() {
-	sp.logger.Println("Starting stream import...")
+func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, rateLimiter ratelimit.Limiter, segmentCache *fastcache.Cache, cache *cache.Cache) *StreamProxy {
+	return &StreamProxy{
+		Config:       cfg,
+		Channels:     sync.Map{}, // Initialize empty sync.Map
+		Cache:        cache,
+		SegmentCache: segmentCache,
+		Logger:       logger,
+		BufferPool:   bufferPool,
+		HttpClient:   httpClient,
+		WorkerPool:   workerPool,
+		RateLimiter:  rateLimiter,
+	}
+}
 
-	if len(sp.config.Sources) == 0 {
-		sp.logger.Println("WARNING: No sources configured!")
+func (sp *StreamProxy) ImportStreams() {
+	sp.Logger.Println("Starting stream import...")
+
+	if len(sp.Config.Sources) == 0 {
+		sp.Logger.Println("WARNING: No sources configured!")
 		return
 	}
 
 	var wg sync.WaitGroup
 	newChannels := sync.Map{}
 
-	for i := range sp.config.Sources {
+	for i := range sp.Config.Sources {
 		wg.Add(1)
-		source := &sp.config.Sources[i]
+		source := &sp.Config.Sources[i]
 
-		err := sp.workerPool.Submit(func() {
+		err := sp.WorkerPool.Submit(func() {
 			defer wg.Done()
-			sp.rateLimiter.Take() // Rate limit imports
+			sp.RateLimiter.Take() // Rate limit imports
 
-			streams := sp.parser.ParseM3U8(source)
+			streams := parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, source)
 			for _, stream := range streams {
 				channelName := stream.Name
-				actual, _ := newChannels.LoadOrStore(channelName, &Channel{
+				actual, _ := newChannels.LoadOrStore(channelName, &types.Channel{
 					Name:    channelName,
-					Streams: []*Stream{},
+					Streams: []*types.Stream{},
 				})
-				channel := actual.(*Channel)
-				channel.mu.Lock()
+				channel := actual.(*types.Channel)
+				channel.Mu.Lock()
 				channel.Streams = append(channel.Streams, stream)
-				channel.mu.Unlock()
+				channel.Mu.Unlock()
 			}
 		})
 
 		if err != nil {
-			sp.logger.Printf("Worker pool error: %v", err)
+			sp.Logger.Printf("Worker pool error: %v", err)
 		}
 	}
 
@@ -78,32 +96,142 @@ func (sp *StreamProxy) ImportStreams() {
 	// Sort streams in each channel and migrate to main map
 	count := 0
 	newChannels.Range(func(key, value interface{}) bool {
-		channel := value.(*Channel)
-		sp.sortStreams(channel.Streams)
-		sp.channels.Store(key, channel)
+		channel := value.(*types.Channel)
+		parser.SortStreams(channel.Streams, sp.Config)
+		sp.Channels.Store(key, channel)
 		count++
 		return true
 	})
 
 	// Clear cache if needed
-	if sp.config.CacheEnabled {
-		sp.cache.clearIfNeeded()
+	if sp.Config.CacheEnabled {
+		sp.Cache.ClearIfNeeded()
 	}
 
-	sp.logger.Printf("Import complete. Found %d channels", count)
-}
+	sp.Logger.Printf("Import complete. Found %d channels", count)
 
-func (sp *StreamProxy) tryStreams(channel *Channel, startIndex int, w http.ResponseWriter, r *http.Request) bool {
-	channel.mu.RLock()
+}
+func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, groupFilter string) {
+	if groupFilter == "" {
+		sp.Logger.Println("Handling playlist request (all groups)")
+	} else {
+		sp.Logger.Printf("Handling playlist request for group: %s", groupFilter)
+	}
+
+	// Rate limit
+	sp.RateLimiter.Take()
+
+	// Create cache key
+	cacheKey := "playlist"
+	if groupFilter != "" {
+		cacheKey = "playlist_" + strings.ToLower(groupFilter)
+	}
+
+	// Check cache
+	if sp.Config.CacheEnabled {
+		if cached, ok := sp.Cache.GetM3U8(cacheKey); ok {
+			w.Header().Set("Content-Type", "application/x-mpegURL")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Write([]byte(cached))
+			return
+		}
+	}
+
+	var playlist strings.Builder
+	playlist.WriteString("#EXTM3U\n")
+
+	filteredCount := 0
+	totalCount := 0
+
+	// Iterate through channels
+	sp.Channels.Range(func(key, value interface{}) bool {
+		channelName := key.(string)
+		channel := value.(*types.Channel)
+		totalCount++
+
+		channel.Mu.RLock()
+		if len(channel.Streams) > 0 {
+			// Use attributes from first stream
+			attrs := channel.Streams[0].Attributes
+
+			// Apply group filter if specified
+			if groupFilter != "" {
+				channelGroup := sp.GetChannelGroup(attrs)
+				if !strings.EqualFold(channelGroup, groupFilter) {
+					channel.Mu.RUnlock()
+					return true // Continue to next channel
+				}
+			}
+
+			filteredCount++
+
+			playlist.WriteString("#EXTINF:-1")
+			for key, value := range attrs {
+				if key != "tvg-name" && key != "duration" {
+					// Ensure values are properly quoted if they contain special characters
+					if strings.ContainsAny(value, ",\"") {
+						value = fmt.Sprintf("%q", value)
+					}
+					playlist.WriteString(fmt.Sprintf(" %s=\"%s\"", key, value))
+				}
+			}
+
+			// Clean channel name for display
+			cleanName := strings.Trim(channelName, "\"")
+			playlist.WriteString(fmt.Sprintf(",%s\n", cleanName))
+
+			// Generate proxy URL
+			safeName := utils.SanitizeChannelName(channelName)
+			proxyURL := fmt.Sprintf("%s/stream/%s", sp.Config.BaseURL, safeName)
+			playlist.WriteString(proxyURL + "\n")
+		}
+		channel.Mu.RUnlock()
+		return true
+	})
+
+	result := playlist.String()
+
+	// Cache result
+	if sp.Config.CacheEnabled {
+		sp.Cache.SetM3U8(cacheKey, result)
+	}
+
+	w.Header().Set("Content-Type", "application/x-mpegURL")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write([]byte(result))
+
+	if groupFilter == "" {
+		sp.Logger.Printf("Generated playlist with %d channels", totalCount)
+	} else {
+		sp.Logger.Printf("Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, totalCount)
+	}
+
+}
+func (sp *StreamProxy) GetChannelGroup(attrs map[string]string) string {
+	// Check for tvg-group first
+	if group, exists := attrs["tvg-group"]; exists && group != "" {
+		return group
+	}
+
+	// Fall back to group-title
+	if group, exists := attrs["group-title"]; exists && group != "" {
+		return group
+	}
+
+	return ""
+
+}
+func (sp *StreamProxy) TryStreams(channel *types.Channel, startIndex int, w http.ResponseWriter, r *http.Request) bool {
+	channel.Mu.RLock()
 	streams := channel.Streams
-	channel.mu.RUnlock()
+	channel.Mu.RUnlock()
 
 	ctx := r.Context()
 
 	for i := 0; i < len(streams); i++ {
 		select {
 		case <-ctx.Done():
-			sp.logger.Printf("Client disconnected, stopping stream attempts")
+			sp.Logger.Printf("Client disconnected, stopping stream attempts")
 			return false
 		default:
 		}
@@ -111,43 +239,43 @@ func (sp *StreamProxy) tryStreams(channel *Channel, startIndex int, w http.Respo
 		idx := (startIndex + i) % len(streams)
 		stream := streams[idx]
 
-		if sp.tryStream(stream, w, r) {
+		if sp.TryStream(stream, w, r) {
 			return true
 		}
 	}
 
 	return false
-}
 
-func (sp *StreamProxy) tryStream(stream *Stream, w http.ResponseWriter, r *http.Request) bool {
+}
+func (sp *StreamProxy) TryStream(stream *types.Stream, w http.ResponseWriter, r *http.Request) bool {
 	if atomic.LoadInt32(&stream.Blocked) == 1 {
-		sp.logger.Printf("Stream blocked: %s", sp.logURL(stream.URL))
+		sp.Logger.Printf("Stream blocked: %s", utils.LogURL(sp.Config, stream.URL))
 		return false
 	}
 
 	// Check connection limit using atomic operations
 	if atomic.LoadInt32(&stream.Source.ActiveConns) >= int32(stream.Source.MaxConnections) {
-		sp.logger.Printf("Connection limit reached for source: %s", sp.logURL(stream.Source.URL))
+		sp.Logger.Printf("Connection limit reached for source: %s", utils.LogURL(sp.Config, stream.Source.URL))
 		return false
 	}
 
 	atomic.AddInt32(&stream.Source.ActiveConns, 1)
 	defer atomic.AddInt32(&stream.Source.ActiveConns, -1)
 
-	sp.logger.Printf("Attempting to connect to stream: %s", sp.logURL(stream.URL))
+	sp.Logger.Printf("Attempting to connect to stream: %s", utils.LogURL(sp.Config, stream.URL))
 
 	// Try to connect with retries
 	var resp *http.Response
 	var err error
 
-	for retry := 0; retry <= sp.config.MaxRetries; retry++ {
+	for retry := 0; retry <= sp.Config.MaxRetries; retry++ {
 		if retry > 0 {
-			sp.logger.Printf("Retry %d/%d for stream: %s", retry, sp.config.MaxRetries, sp.logURL(stream.URL))
-			time.Sleep(sp.config.RetryDelay)
+			sp.Logger.Printf("Retry %d/%d for stream: %s", retry, sp.Config.MaxRetries, utils.LogURL(sp.Config, stream.URL))
+			time.Sleep(sp.Config.RetryDelay)
 		}
 
 		// Rate limit
-		sp.rateLimiter.Take()
+		sp.RateLimiter.Take()
 
 		// Create request with proper timeout
 		req, _ := http.NewRequest("GET", stream.URL, nil)
@@ -155,25 +283,25 @@ func (sp *StreamProxy) tryStream(stream *Stream, w http.ResponseWriter, r *http.
 		defer cancel()
 		req = req.WithContext(ctx)
 
-		resp, err = sp.httpClient.Do(req)
+		resp, err = sp.HttpClient.Do(req)
 
 		if err == nil && resp.StatusCode == http.StatusOK {
-			sp.logger.Printf("Successfully connected to stream: %s", sp.logURL(stream.URL))
+			sp.Logger.Printf("Successfully connected to stream: %s", utils.LogURL(sp.Config, stream.URL))
 			break
 		}
 
 		if err != nil {
-			sp.logger.Printf("Error connecting to stream: %v", err)
-			streamErrors.WithLabelValues("direct", "connection").Inc()
+			sp.Logger.Printf("Error connecting to stream: %v", err)
+			metrics.StreamErrors.WithLabelValues("direct", "connection").Inc()
 		} else {
-			sp.logger.Printf("HTTP %d response from stream: %s", resp.StatusCode, sp.logURL(stream.URL))
-			streamErrors.WithLabelValues("direct", fmt.Sprintf("http_%d", resp.StatusCode)).Inc()
+			sp.Logger.Printf("HTTP %d response from stream: %s", resp.StatusCode, utils.LogURL(sp.Config, stream.URL))
+			metrics.StreamErrors.WithLabelValues("direct", fmt.Sprintf("http_%d", resp.StatusCode)).Inc()
 			switch resp.StatusCode {
 			case 407:
-				sp.logger.Printf("Stream requires proxy authentication: %s", sp.logURL(stream.URL))
+				sp.Logger.Printf("Stream requires proxy authentication: %s", utils.LogURL(sp.Config, stream.URL))
 			case 429:
-				sp.logger.Printf("Rate limited (429) on stream: %s", sp.logURL(stream.URL))
-				sp.handleStreamFailure(stream)
+				sp.Logger.Printf("Rate limited (429) on stream: %s", utils.LogURL(sp.Config, stream.URL))
+				streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
 			}
 		}
 
@@ -183,7 +311,7 @@ func (sp *StreamProxy) tryStream(stream *Stream, w http.ResponseWriter, r *http.
 	}
 
 	if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
-		sp.handleStreamFailure(stream)
+		streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
 		return false
 	}
 	defer resp.Body.Close()
@@ -191,8 +319,8 @@ func (sp *StreamProxy) tryStream(stream *Stream, w http.ResponseWriter, r *http.
 	// Check Content-Length to detect empty responses
 	contentLength := resp.Header.Get("Content-Length")
 	if contentLength == "0" {
-		sp.logger.Printf("Stream returned Content-Length: 0, skipping: %s", sp.logURL(stream.URL))
-		sp.handleStreamFailure(stream)
+		sp.Logger.Printf("Stream returned Content-Length: 0, skipping: %s", utils.LogURL(sp.Config, stream.URL))
+		streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
 		return false
 	}
 
@@ -218,13 +346,13 @@ func (sp *StreamProxy) tryStream(stream *Stream, w http.ResponseWriter, r *http.
 		}
 	}
 
-	sp.logger.Printf("Starting to stream data from: %s", sp.logURL(stream.URL))
-	activeConnections.WithLabelValues("direct").Inc()
-	defer activeConnections.WithLabelValues("direct").Dec()
+	sp.Logger.Printf("Starting to stream data from: %s", utils.LogURL(sp.Config, stream.URL))
+	metrics.ActiveConnections.WithLabelValues("direct").Inc()
+	defer metrics.ActiveConnections.WithLabelValues("direct").Dec()
 
 	// Get buffer from pool
-	buffer := sp.bufferPool.Get()
-	defer sp.bufferPool.Put(buffer)
+	buffer := sp.BufferPool.Get()
+	defer sp.BufferPool.Put(buffer)
 
 	totalBytes := int64(0)
 	ctx := r.Context()
@@ -235,12 +363,12 @@ func (sp *StreamProxy) tryStream(stream *Stream, w http.ResponseWriter, r *http.
 	for {
 		select {
 		case <-ctx.Done():
-			sp.logger.Printf("Client disconnected, stopping stream")
+			sp.Logger.Printf("Client disconnected, stopping stream")
 			return true
 		case <-dataTimer.C:
 			if firstData && totalBytes == 0 {
-				sp.logger.Printf("No data received in 5 seconds from: %s", sp.logURL(stream.URL))
-				sp.handleStreamFailure(stream)
+				sp.Logger.Printf("No data received in 5 seconds from: %s", utils.LogURL(sp.Config, stream.URL))
+				streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
 				return false
 			}
 		default:
@@ -256,100 +384,100 @@ func (sp *StreamProxy) tryStream(stream *Stream, w http.ResponseWriter, r *http.
 
 			select {
 			case <-ctx.Done():
-				sp.logger.Printf("Client disconnected during write")
+				sp.Logger.Printf("Client disconnected during write")
 				return true
 			default:
 			}
 
 			_, writeErr := w.Write(buffer[:n])
 			if writeErr != nil {
-				sp.logger.Printf("Error writing to client: %v", writeErr)
+				sp.Logger.Printf("Error writing to client: %v", writeErr)
 				return true
 			}
 			totalBytes += int64(n)
-			bytesTransferred.WithLabelValues("direct", "upstream").Add(float64(n))
+			metrics.BytesTransferred.WithLabelValues("direct", "upstream").Add(float64(n))
 
 			// Flush if possible
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
-			} else if crw, ok := w.(*CustomResponseWriter); ok {
+			} else if crw, ok := w.(*client.CustomResponseWriter); ok {
 				crw.Flush()
 			}
 		}
 
 		if err != nil {
 			if err == io.EOF {
-				sp.logger.Printf("Stream ended, transferred %d bytes", totalBytes)
-				if totalBytes >= sp.config.MinDataSize {
+				sp.Logger.Printf("Stream ended, transferred %d bytes", totalBytes)
+				if totalBytes >= sp.Config.MinDataSize {
 					return true
 				}
-				sp.logger.Printf("Stream ended but only transferred %d bytes (minimum: %d)", totalBytes, sp.config.MinDataSize)
+				sp.Logger.Printf("Stream ended but only transferred %d bytes (minimum: %d)", totalBytes, sp.Config.MinDataSize)
 			} else if strings.Contains(err.Error(), "context deadline exceeded") {
-				sp.logger.Printf("Stream timeout: %v", err)
+				sp.Logger.Printf("Stream timeout: %v", err)
 			} else {
-				sp.logger.Printf("Error reading stream: %v", err)
+				sp.Logger.Printf("Error reading stream: %v", err)
 			}
 
 			if totalBytes == 0 {
-				sp.handleStreamFailure(stream)
+				streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
 			}
 			return false
 		}
 
-		if totalBytes >= sp.config.MaxBufferSize {
-			sp.logger.Printf("Reached max buffer size (%d bytes)", totalBytes)
+		if totalBytes >= sp.Config.MaxBufferSize {
+			sp.Logger.Printf("Reached max buffer size (%d bytes)", totalBytes)
 			return true
 		}
 	}
-}
 
-func (sp *StreamProxy) startImportRefresh() {
-	ticker := time.NewTicker(sp.config.ImportRefreshInterval)
+}
+func (sp *StreamProxy) StartImportRefresh() {
+	ticker := time.NewTicker(sp.Config.ImportRefreshInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		sp.logger.Println("Refreshing imports...")
-		sp.importStreams()
+		sp.Logger.Println("Refreshing imports...")
+		sp.ImportStreams()
 	}
-}
 
-func (sp *StreamProxy) restreamCleanup() {
+}
+func (sp *StreamProxy) RestreamCleanup() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		now := time.Now().Unix()
 
-		sp.channels.Range(func(key, value interface{}) bool {
-			channel := value.(*Channel)
-			channel.mu.Lock()
-			if channel.restreamer != nil && !channel.restreamer.running.Load() {
+		sp.Channels.Range(func(key, value interface{}) bool {
+			channel := value.(*types.Channel)
+			channel.Mu.Lock()
+			if channel.Restreamer != nil && !channel.Restreamer.Running.Load() {
 				// Check if inactive for more than 10 seconds
-				lastActivity := channel.restreamer.lastActivity.Load()
+				lastActivity := channel.Restreamer.LastActivity.Load()
 				if now-lastActivity > 10 {
-					channel.restreamer.cancel()
-					channel.restreamer = nil
-					sp.logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
+					channel.Restreamer.Cancel()
+					channel.Restreamer = nil
+					sp.Logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
 				}
 			}
-			channel.mu.Unlock()
+			channel.Mu.Unlock()
 			return true
 		})
 	}
-}
 
-func (sp *StreamProxy) findChannelBySafeName(safeName string) string {
+}
+func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 	// First try exact match after simple space replacement
 	simpleName := strings.ReplaceAll(safeName, "_", " ")
-	if _, exists := sp.channels.Load(simpleName); exists {
+	if _, exists := sp.Channels.Load(simpleName); exists {
 		return simpleName
 	}
 
 	// Then try to find by matching sanitized names
 	var foundName string
-	sp.channels.Range(func(key, _ interface{}) bool {
+	sp.Channels.Range(func(key, _ interface{}) bool {
 		name := key.(string)
-		if sanitizeChannelName(name) == safeName {
+		if utils.SanitizeChannelName(name) == safeName {
 			foundName = name
 			return false // Stop iteration
 		}
@@ -360,4 +488,59 @@ func (sp *StreamProxy) findChannelBySafeName(safeName string) string {
 		return foundName
 	}
 	return safeName
+
+}
+func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Request, channel *types.Channel) {
+	sp.Logger.Printf("Starting restreaming client for channel: %s", channel.Name)
+
+	channel.Mu.Lock()
+	var restreamer *restream.Restream
+	if channel.Restreamer == nil {
+		sp.Logger.Printf("Creating new restreamer for channel: %s", channel.Name)
+		restreamer = restream.NewRestreamer(channel, sp.Config.MaxBufferSize, sp.Logger, sp.HttpClient, sp.RateLimiter, sp.Config)
+		channel.Restreamer = restreamer.Restreamer // Store the underlying Restreamer
+	} else {
+		// Wrap the existing Restreamer to access its methods
+		restreamer = &restream.Restream{Restreamer: channel.Restreamer}
+	}
+	channel.Mu.Unlock()
+
+	// Generate client ID
+	clientID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
+	sp.Logger.Printf("New client connected: %s for channel: %s", clientID, channel.Name)
+
+	// Set headers before checking for flusher
+	w.Header().Set("Content-Type", "video/mp2t")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Get flusher - use the underlying ResponseWriter if it's a CustomResponseWriter
+	var flusher http.Flusher
+	var ok bool
+
+	if crw, isCustom := w.(*client.CustomResponseWriter); isCustom {
+		flusher, ok = crw.ResponseWriter.(http.Flusher)
+	} else {
+		flusher, ok = w.(http.Flusher)
+	}
+
+	if !ok {
+		sp.Logger.Printf("Streaming not supported for client: %s", clientID)
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Write headers
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	restreamer.AddClient(clientID, w, flusher)
+	defer restreamer.RemoveClient(clientID)
+
+	sp.Logger.Printf("Client %s added to restreamer, waiting for disconnect", clientID)
+
+	// Wait for client disconnect
+	<-r.Context().Done()
+	sp.Logger.Printf("Restreaming client disconnected: %s", clientID)
+
 }

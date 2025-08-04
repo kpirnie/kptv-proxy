@@ -4,68 +4,67 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"kptv-proxy/work/client"
+	"kptv-proxy/work/config"
+	"kptv-proxy/work/types"
+	"kptv-proxy/work/utils"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
 
-	"kptv-proxy/work/config"
-	"kptv-proxy/work/parser"
-	"kptv-proxy/work/proxy"
-	"kptv-proxy/work/stream"
-	"kptv-proxy/work/utils"
-
 	"github.com/grafov/m3u8"
 )
 
-func (sp *proxy.StreamProxy) parseM3U8(source *config.SourceConfig) []*stream.Stream {
-	sp.logger.Printf("Parsing M3U8 from %s", utils.LogURL(config, source.URL))
+func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig) []*types.Stream {
+	logger.Printf("Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
 
 	req, err := http.NewRequest("GET", source.URL, nil)
 	if err != nil {
-		sp.logger.Printf("Error creating request for %s: %v", utils.LogURL(source.URL), err)
+		logger.Printf("Error creating request for %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
 
-	resp, err := client.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		sp.logger.Printf("Error fetching M3U8 from %s: %v", utils.LogURL(source.URL), err)
+		logger.Printf("Error fetching M3U8 from %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		sp.logger.Printf("HTTP error %d when fetching %s", resp.StatusCode, utils.LogURL(source.URL))
+		logger.Printf("HTTP error %d when fetching %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
 		return nil
 	}
 
 	// Try parsing with grafov/m3u8 first
 	playlist, listType, err := m3u8.DecodeFrom(bufio.NewReader(resp.Body), true)
 	if err == nil {
-		return parser.ParseWithGrafov(playlist, listType, source)
+		return ParseWithGrafov(playlist, listType, source, cfg, logger)
 	}
 
 	// Fallback to original parsing if grafov fails
-	sp.logger.Printf("Grafov parser failed, using fallback parser: %v", err)
+	logger.Printf("Grafov parser failed, using fallback parser: %v", err)
 	resp.Body.Close()
 
 	// Re-fetch for fallback parser
-	resp2, err := sp.httpClient.Do(req)
+	resp2, err := httpClient.Do(req)
 	if err != nil {
 		return nil
 	}
 	defer resp2.Body.Close()
 
-	return sp.parseM3U8Fallback(resp2.Body, source)
+	return ParseM3U8Fallback(resp2.Body, source, cfg, logger)
 }
 
-func (sp *StreamProxy) parseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *SourceConfig) []*Stream {
-	var streams []*Stream
+func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *config.SourceConfig, cfg *config.Config, logger *log.Logger) []*types.Stream {
+	var streams []*types.Stream
 
 	switch listType {
 	case m3u8.MEDIA:
 		//mediapl := playlist.(*m3u8.MediaPlaylist)
 		// For media playlists, we typically want the playlist URL itself, not individual segments
-		stream := &Stream{
+		stream := &types.Stream{
 			URL:        source.URL,
 			Name:       "Direct Stream",
 			Source:     source,
@@ -87,7 +86,7 @@ func (sp *StreamProxy) parseWithGrafov(playlist m3u8.Playlist, listType m3u8.Lis
 				name = fmt.Sprintf("Stream_%d", variant.Bandwidth)
 			}
 
-			stream := &Stream{
+			stream := &types.Stream{
 				URL:        variant.URI,
 				Name:       name,
 				Source:     source,
@@ -105,12 +104,12 @@ func (sp *StreamProxy) parseWithGrafov(playlist m3u8.Playlist, listType m3u8.Lis
 		}
 	}
 
-	sp.logger.Printf("Grafov parser found %d streams from %s", len(streams), sp.logURL(source.URL))
+	logger.Printf("Grafov parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
 	return streams
 }
 
-func (sp *StreamProxy) parseM3U8Fallback(reader io.Reader, source *SourceConfig) []*Stream {
-	var streams []*Stream
+func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *config.Config, logger *log.Logger) []*types.Stream {
+	var streams []*types.Stream
 	scanner := bufio.NewScanner(reader)
 	var currentAttrs map[string]string
 	lineNum := 0
@@ -119,17 +118,17 @@ func (sp *StreamProxy) parseM3U8Fallback(reader io.Reader, source *SourceConfig)
 		lineNum++
 		line := strings.TrimSpace(scanner.Text())
 
-		if sp.config.Debug && lineNum <= 10 {
-			sp.logger.Printf("Line %d: %s", lineNum, line)
+		if cfg.Debug && lineNum <= 10 {
+			logger.Printf("Line %d: %s", lineNum, line)
 		}
 
 		if strings.HasPrefix(line, "#EXTINF:") {
-			currentAttrs = parseEXTINF(line)
-			if sp.config.Debug {
-				sp.logger.Printf("Parsed EXTINF attributes: %+v", currentAttrs)
+			currentAttrs = ParseEXTINF(line)
+			if cfg.Debug {
+				logger.Printf("Parsed EXTINF attributes: %+v", currentAttrs)
 			}
 		} else if currentAttrs != nil && (strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://")) {
-			stream := &Stream{
+			stream := &types.Stream{
 				URL:        line,
 				Name:       currentAttrs["tvg-name"],
 				Attributes: currentAttrs,
@@ -141,18 +140,18 @@ func (sp *StreamProxy) parseM3U8Fallback(reader io.Reader, source *SourceConfig)
 			}
 
 			streams = append(streams, stream)
-			if sp.config.Debug {
-				sp.logger.Printf("Added stream: %s (URL: %s)", stream.Name, sp.logURL(stream.URL))
+			if cfg.Debug {
+				logger.Printf("Added stream: %s (URL: %s)", stream.Name, utils.LogURL(cfg, stream.URL))
 			}
 			currentAttrs = nil
 		}
 	}
 
-	sp.logger.Printf("Fallback parser found %d streams from %s", len(streams), sp.logURL(source.URL))
+	logger.Printf("Fallback parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
 	return streams
 }
 
-func parseEXTINF(line string) map[string]string {
+func ParseEXTINF(line string) map[string]string {
 	attrs := make(map[string]string)
 
 	// Remove #EXTINF: prefix
@@ -203,12 +202,12 @@ func parseEXTINF(line string) map[string]string {
 	return attrs
 }
 
-func (sp *StreamProxy) sortStreams(streams []*Stream) {
+func SortStreams(streams []*types.Stream, cfg *config.Config) {
 	sort.SliceStable(streams, func(i, j int) bool {
-		val1 := streams[i].Attributes[sp.config.SortField]
-		val2 := streams[j].Attributes[sp.config.SortField]
+		val1 := streams[i].Attributes[cfg.SortField]
+		val2 := streams[j].Attributes[cfg.SortField]
 
-		if sp.config.SortDirection == "desc" {
+		if cfg.SortDirection == "desc" {
 			return val1 > val2
 		}
 		return val1 < val2

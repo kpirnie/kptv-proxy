@@ -6,7 +6,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v0.1.48" -o kptv-proxy .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v0.1.78" -o kptv-proxy .
 
 # Final stage - ultra-small with just the binary and certs
 FROM scratch

@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/gorilla/mux"
@@ -17,6 +16,7 @@ import (
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/handlers"
 	"kptv-proxy/work/proxy"
 )
 
@@ -25,86 +25,76 @@ var (
 )
 
 func main() {
-	config := config.LoadConfig()
+	cfg := config.LoadConfig()
 
 	// Set up logging
 	logger := log.New(os.Stdout, "[KPTV-PROXY] ", log.LstdFlags)
 
 	// Debug message to confirm logging is working
-	logger.Printf("Starting KPTV Proxy - Debug mode: %v", config.Debug)
-	logger.Printf("URL obfuscation: %v", config.ObfuscateUrls)
+	logger.Printf("Starting KPTV Proxy - Debug mode: %v", cfg.Debug)
+	logger.Printf("URL obfuscation: %v", cfg.ObfuscateUrls)
 
 	// Initialize buffer pool
-	bufferPool := buffer.NewBufferPool(config.BufferSizePerStream)
+	bufferPool := buffer.NewBufferPool(cfg.BufferSizePerStream)
 
 	// Initialize HTTP client
-	httpClient := client.NewHeaderSettingClient(config)
+	httpClient := client.NewHeaderSettingClient(cfg)
 
 	// Initialize worker pool
-	workerPool, err := ants.NewPool(config.WorkerThreads, ants.WithPreAlloc(true))
+	workerPool, err := ants.NewPool(cfg.WorkerThreads, ants.WithPreAlloc(true))
 	if err != nil {
 		log.Fatalf("Failed to create worker pool: %v", err)
 	}
 	defer workerPool.Release()
 
 	// Initialize rate limiter
-	rateLimiter := ratelimit.New(config.RateLimit)
+	rateLimiter := ratelimit.New(cfg.RateLimit)
 
 	// Initialize segment cache
-	segmentCache := fastcache.New(config.SegmentCacheSize * 1024 * 1024)
+	segmentCache := fastcache.New(cfg.SegmentCacheSize * 1024 * 1024)
 
-	proxy := &proxy.StreamProxy{
-		config: config,
-		cache: &cache.Cache{
-			m3u8Cache:    make(map[string]cacheEntry),
-			channelCache: make(map[string]cacheEntry),
-			duration:     config.CacheDuration,
-			lastClear:    time.Now(),
-		},
-		segmentCache: segmentCache,
-		logger:       logger,
-		bufferPool:   bufferPool,
-		httpClient:   httpClient,
-		workerPool:   workerPool,
-		rateLimiter:  rateLimiter,
-	}
+	// Initialize cache
+	cacheInstance := cache.NewCache(cfg.CacheDuration)
+
+	// Create proxy instance
+	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, rateLimiter, segmentCache, cacheInstance)
 
 	// Start restreamer cleanup routine
-	if config.EnableRestreaming {
+	if cfg.EnableRestreaming {
 		logger.Printf("Restreaming mode enabled")
-		go proxy.restreamCleanup()
+		go proxyInstance.RestreamCleanup()
 	} else {
 		logger.Printf("Direct proxy mode enabled")
 	}
 
 	// Start import refresh routine
-	go proxy.startImportRefresh()
+	go proxyInstance.StartImportRefresh()
 
 	// Initial import
-	proxy.importStreams()
+	proxyInstance.ImportStreams()
 
 	// Setup HTTP routes
 	router := mux.NewRouter()
 
 	// Original playlist route (all channels)
-	router.HandleFunc("/playlist.m3u8", proxy.handlePlaylist).Methods("GET")
+	router.HandleFunc("/playlist.m3u8", handlers.HandlePlaylist(proxyInstance)).Methods("GET")
 
 	// Group-based playlist route
-	router.HandleFunc("/{group}/playlist.m3u8", proxy.handleGroupPlaylist).Methods("GET")
+	router.HandleFunc("/{group}/playlist.m3u8", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
 
-	router.HandleFunc("/stream/{channel}", proxy.handleStream).Methods("GET")
+	router.HandleFunc("/stream/{channel}", handlers.HandleStream(proxyInstance)).Methods("GET")
 	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
 
-	addr := fmt.Sprintf(":%s", config.Port)
+	addr := fmt.Sprintf(":%s", cfg.Port)
 	logger.Printf("Starting KPTV Proxy on %s", addr)
 	logger.Printf("  - Version: %s", Version)
 	logger.Printf("Server configuration:")
-	logger.Printf("  - Port: %s", config.Port)
-	logger.Printf("  - Base URL: %s", config.BaseURL)
-	logger.Printf("  - Restreaming: %v", config.EnableRestreaming)
-	logger.Printf("  - Sources: %d", len(config.Sources))
-	logger.Printf("  - Rate Limit: %d req/s", config.RateLimit)
-	logger.Printf("  - Worker Threads: %d", config.WorkerThreads)
+	logger.Printf("  - Port: %s", cfg.Port)
+	logger.Printf("  - Base URL: %s", cfg.BaseURL)
+	logger.Printf("  - Restreaming: %v", cfg.EnableRestreaming)
+	logger.Printf("  - Sources: %d", len(cfg.Sources))
+	logger.Printf("  - Rate Limit: %d req/s", cfg.RateLimit)
+	logger.Printf("  - Worker Threads: %d", cfg.WorkerThreads)
 
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Server failed to start: %v", err)

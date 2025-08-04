@@ -54,6 +54,7 @@ func SanitizeChannelName(name string) string {
 	return strings.Trim(sanitized, "_")
 }
 
+// Helper functions
 func ObfuscateURL(urlStr string) string {
 	if urlStr == "" {
 		return ""

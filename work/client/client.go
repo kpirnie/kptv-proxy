@@ -1,10 +1,9 @@
 package client
 
 import (
+	"kptv-proxy/work/config"
 	"net/http"
 	"time"
-
-	"kptv-proxy/work/config"
 )
 
 // HeaderSettingClient wraps http.Client to automatically set headers
