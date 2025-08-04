@@ -32,7 +32,6 @@ type Config struct {
 	ReqReferrer            string
 	HealthCheckTimeout     time.Duration
 	EnableRestreaming      bool
-	RateLimit              int // requests per second
 }
 
 // SourceConfig represents a stream source configuration
@@ -66,7 +65,6 @@ func LoadConfig() *Config {
 		ReqReferrer:            getEnv("REQ_REFERRER", ""),
 		HealthCheckTimeout:     getEnvDuration("HEALTH_CHECK_TIMEOUT", 15*time.Second),
 		EnableRestreaming:      getEnvBool("ENABLE_RESTREAMING", true),
-		RateLimit:              getEnvInt("RATE_LIMIT", 100),
 	}
 
 	// Load sources

@@ -11,8 +11,6 @@ import (
 	"kptv-proxy/work/buffer"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
-
-	"go.uber.org/ratelimit"
 )
 
 // Stream represents a single stream
@@ -47,7 +45,6 @@ type Restreamer struct {
 	LastActivity atomic.Int64 // Unix timestamp
 	Logger       *log.Logger
 	HttpClient   *client.HeaderSettingClient
-	RateLimiter  ratelimit.Limiter
 	Config       *config.Config // Add config reference for URL obfuscation
 }
 

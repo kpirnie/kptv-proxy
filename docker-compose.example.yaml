@@ -8,8 +8,8 @@ services:
     ports:
       - 9500:8080
     environment:
+    
       # Server Configuration
-      - PORT:=8080
       - BASE_URL=http://192.168.2.200:9500
       
       # Stream Sources (format: URL:MaxConnections)
@@ -34,7 +34,6 @@ services:
       
       # Performance Configuration
       - WORKER_THREADS=4                      # Number of worker threads for parsing
-      - RATE_LIMIT=100                        # Requests per second
 
       # Sorting Configuration
       - SORT_FIELD=tvg-type                   # Field to sort by (tvg-name, tvg-id, etc.)

@@ -39,7 +39,7 @@ type StreamProxy struct {
 	MasterPlaylistHandler *parser.MasterPlaylistHandler
 }
 
-func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, rateLimiter ratelimit.Limiter, cache *cache.Cache) *StreamProxy {
+func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, cache *cache.Cache) *StreamProxy {
 	return &StreamProxy{
 		Config:                cfg,
 		Channels:              sync.Map{}, // Initialize empty sync.Map
@@ -48,7 +48,6 @@ func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, 
 		BufferPool:            bufferPool,
 		HttpClient:            httpClient,
 		WorkerPool:            workerPool,
-		RateLimiter:           rateLimiter,
 		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(logger), // Add this line
 	}
 }
@@ -70,7 +69,6 @@ func (sp *StreamProxy) ImportStreams() {
 
 		err := sp.WorkerPool.Submit(func() {
 			defer wg.Done()
-			sp.RateLimiter.Take() // Rate limit imports
 
 			streams := parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, source)
 			for _, stream := range streams {
@@ -118,9 +116,6 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	} else {
 		sp.Logger.Printf("Handling playlist request for group: %s", groupFilter)
 	}
-
-	// Rate limit
-	sp.RateLimiter.Take()
 
 	// Create cache key
 	cacheKey := "playlist"
@@ -282,9 +277,6 @@ func (sp *StreamProxy) TryStream(stream *types.Stream, w http.ResponseWriter, r 
 				time.Sleep(sp.Config.RetryDelay)
 			}
 
-			// Rate limit
-			sp.RateLimiter.Take()
-
 			// Create request with proper timeout
 			req, _ := http.NewRequest("GET", finalURL, nil)
 			ctx, cancel := context.WithTimeout(r.Context(), 1*time.Minute)
@@ -439,7 +431,7 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	var restreamer *restream.Restream
 	if channel.Restreamer == nil {
 		sp.Logger.Printf("Creating new restreamer for channel: %s", channel.Name)
-		restreamer = restream.NewRestreamer(channel, sp.Config.MaxBufferSize, sp.Logger, sp.HttpClient, sp.RateLimiter, sp.Config)
+		restreamer = restream.NewRestreamer(channel, sp.Config.MaxBufferSize, sp.Logger, sp.HttpClient, sp.Config)
 		channel.Restreamer = restreamer.Restreamer // Store the underlying Restreamer
 	} else {
 		// Wrap the existing Restreamer to access its methods

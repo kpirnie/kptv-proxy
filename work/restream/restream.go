@@ -14,8 +14,6 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
-
-	"go.uber.org/ratelimit"
 )
 
 // Restream wraps types.Restreamer to allow adding methods in this package.
@@ -23,17 +21,16 @@ type Restream struct {
 	*types.Restreamer
 }
 
-func NewRestreamer(channel *types.Channel, bufferSize int64, logger *log.Logger, httpClient *client.HeaderSettingClient, rateLimiter ratelimit.Limiter, cfg *config.Config) *Restream {
+func NewRestreamer(channel *types.Channel, bufferSize int64, logger *log.Logger, httpClient *client.HeaderSettingClient, cfg *config.Config) *Restream {
 	ctx, cancel := context.WithCancel(context.Background())
 	base := &types.Restreamer{
-		Channel:     channel,
-		Buffer:      buffer.NewRingBuffer(bufferSize),
-		Ctx:         ctx,
-		Cancel:      cancel,
-		Logger:      logger,
-		HttpClient:  httpClient,
-		RateLimiter: rateLimiter,
-		Config:      cfg,
+		Channel:    channel,
+		Buffer:     buffer.NewRingBuffer(bufferSize),
+		Ctx:        ctx,
+		Cancel:     cancel,
+		Logger:     logger,
+		HttpClient: httpClient,
+		Config:     cfg,
 	}
 	base.LastActivity.Store(time.Now().Unix())
 	base.Running.Store(false)
@@ -142,9 +139,6 @@ func (r *Restream) StreamFromSource(index int) bool {
 		r.Logger.Printf("Stream blocked for channel %s: %s", r.Channel.Name, utils.LogURL(r.Config, stream.URL))
 		return false
 	}
-
-	// Rate limit the request
-	r.RateLimiter.Take()
 
 	r.Logger.Printf("Connecting to upstream for channel %s: %s", r.Channel.Name, utils.LogURL(r.Config, stream.URL))
 

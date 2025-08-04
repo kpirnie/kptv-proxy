@@ -9,7 +9,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/panjf2000/ants/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/ratelimit"
 
 	"kptv-proxy/work/buffer"
 	"kptv-proxy/work/cache"
@@ -47,14 +46,11 @@ func main() {
 	}
 	defer workerPool.Release()
 
-	// Initialize rate limiter
-	rateLimiter := ratelimit.New(cfg.RateLimit)
-
 	// Initialize cache
 	cacheInstance := cache.NewCache(cfg.CacheDuration)
 
 	// Create proxy instance
-	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, rateLimiter, cacheInstance)
+	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, cacheInstance)
 
 	// Initialize master playlist handler
 	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger)
@@ -93,7 +89,6 @@ func main() {
 	logger.Printf("  - Base URL: %s", cfg.BaseURL)
 	logger.Printf("  - Restreaming: %v", cfg.EnableRestreaming)
 	logger.Printf("  - Sources: %d", len(cfg.Sources))
-	logger.Printf("  - Rate Limit: %d req/s", cfg.RateLimit)
 	logger.Printf("  - Worker Threads: %d", cfg.WorkerThreads)
 
 	if err := http.ListenAndServe(addr, router); err != nil {
