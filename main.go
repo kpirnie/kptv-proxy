@@ -17,6 +17,7 @@ import (
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/handlers"
+	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
 )
 
@@ -58,6 +59,9 @@ func main() {
 
 	// Create proxy instance
 	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, rateLimiter, segmentCache, cacheInstance)
+
+	// Initialize master playlist handler
+	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger)
 
 	// Start restreamer cleanup routine
 	if cfg.EnableRestreaming {
