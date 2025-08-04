@@ -102,26 +102,28 @@ Discovery  → [Source3/Discovery] (single source)
 
 ## Quick Start
 
-### Using Docker Compose (Recommended)
+**Prerequisites**: Docker or Podman installed
 
-1. **Clone and configure:**
+1. **Get the configuration:**
 ```bash
-git clone <repository-url>
-cd kptv-proxy
-cp docker-compose.example.yaml docker-compose.yaml
+wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.example.yaml -O docker-compose.yaml
 ```
 
-2. **Edit your sources in `docker-compose.yaml`:**
+2. **Configure your sources** - Edit `docker-compose.yaml`:
 ```yaml
 environment:
-  # Format: URL|MaxConnections,URL|MaxConnections
+  # Replace with your IPTV provider URLs
   SOURCES: "http://provider1.com/playlist.m3u8|5,http://provider2.com/playlist.m3u8|10"
   BASE_URL: "http://your-server-ip:9500"
 ```
 
-3. **Start the service:**
+3. **Start the proxy:**
 ```bash
-docker-compose up -d
+# Docker
+docker compose up -d
+
+# Or Podman  
+podman-compose up -d
 ```
 
 4. **Access your unified playlist:**
@@ -129,13 +131,7 @@ docker-compose up -d
 http://your-server-ip:9500/playlist.m3u8
 ```
 
-### Manual Build
-
-```bash
-go mod download
-go build -o kptv-proxy .
-./kptv-proxy
-```
+**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover.
 
 ## Configuration Reference
 
