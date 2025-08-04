@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   kptv-proxy:
-    image: localhost/kptv-proxy:latest
+    image: ghcr.io/kpirnie/kptv-proxy:latest
     container_name: kptv_proxy
     restart: unless-stopped
     ports:
