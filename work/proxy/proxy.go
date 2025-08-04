@@ -306,11 +306,19 @@ func (sp *StreamProxy) TryStream(stream *types.Stream, w http.ResponseWriter, r 
 			} else {
 				sp.Logger.Printf("HTTP %d response from stream: %s", resp.StatusCode, utils.LogURL(sp.Config, finalURL))
 				switch resp.StatusCode {
+				case 403:
+					sp.Logger.Printf("Access forbidden: %s", utils.LogURL(sp.Config, finalURL))
+					streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
 				case 407:
 					sp.Logger.Printf("Stream requires proxy authentication: %s", utils.LogURL(sp.Config, finalURL))
+					streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
 				case 429:
 					sp.Logger.Printf("Rate limited (429) on stream: %s", utils.LogURL(sp.Config, finalURL))
 					streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
+				case 520:
+					sp.Logger.Printf("Origin issue (520) on stream: %s", utils.LogURL(sp.Config, finalURL))
+					streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
+
 				}
 			}
 
