@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  kptv-proxy:
+    image: localhost/kptv-proxy:latest
+    container_name: kptv_proxy
+    restart: unless-stopped
+    ports:
+      - "9500:8080"
+    environment:
+      # Server Configuration
+      PORT: "8080"
+      BASE_URL: "http://192.168.2.200:9500"
+      
+      # Stream Sources (format: URL:MaxConnections)
+      # Example: http://example.com/playlist1.m3u8:5,http://example.com/playlist2.m3u8:10
+      SOURCES: "https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/OGJ4L2psejYyWjJ6SnMvWGZSMW5pdz09/live|2,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/THlJa0x1bXhYMEl2V1NaM3hTK2p1Zz09/live|2,https://app.kptv.im/playlist/VmdoUUVjZ1Vac1gyRUdxdFg0by9aUT09/NXNYRGRNSTNFM1g2MyswcU0xN01Tdz09/live|3"
+      
+      # Buffer Configuration
+      MAX_BUFFER_SIZE: "268435456"          # 256MB total buffer
+      BUFFER_SIZE_PER_STREAM: "16777216"    # 16MB per stream buffer
+      MIN_DATA_SIZE: "2048"                # 2KB minimum data before considering success
+      
+      # Cache Configuration
+      CACHE_ENABLED: "true"
+      CACHE_DURATION: "30m"                 # Cache duration (5 minutes)
+      
+      # Import Configuration
+      IMPORT_REFRESH_INTERVAL: "12h"       # Refresh imports every 30 minutes
+      
+      # Retry Configuration
+      MAX_RETRIES: "3"                     # Max retries per stream
+      MAX_FAILURES_BEFORE_BLOCK: "5"      # Max failures before blocking a stream
+      RETRY_DELAY: "5s"                    # Delay between retries
+      
+      # Performance Configuration
+      WORKER_THREADS: "4"                 # Number of worker threads for parsing
+      RATE_LIMIT: "100"                    # Requests per second
+      SEGMENT_CACHE_SIZE: "512" 
+
+      # Sorting Configuration
+      SORT_FIELD: "tvg-type"               # Field to sort by (tvg-name, tvg-id, etc.)
+      SORT_DIRECTION: "asc"                # Sort direction (asc or desc)
+      
+      # Debug Mode
+      DEBUG: "true"                       # Set to true for verbose logging
+
+      # Enable obfuscation for security/privacy
+      OBFUSCATE_URLS: "true"
+      
+      ENABLE_RESTREAMING: "true"           # Enable restreaming mode (single upstream connection)
+      
+      # HTTP Client Configuration
+      USER_AGENT: "VLC/3.0.18 LibVLC/3.0.18"         # User agent for requests
+      REQ_ORIGIN: ""                       # Origin header (optional)
+      REQ_REFERRER: ""                     # Referrer header (optional)
+      HEALTH_CHECK_TIMEOUT: "30s"          # Timeout for health checks
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://192.168.2.200:9500/playlist.m3u8"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
