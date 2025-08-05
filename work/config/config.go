@@ -30,7 +30,6 @@ type Config struct {
 	UserAgent              string
 	ReqOrigin              string
 	ReqReferrer            string
-	HealthCheckTimeout     time.Duration
 	EnableRestreaming      bool
 }
 
@@ -63,7 +62,6 @@ func LoadConfig() *Config {
 		UserAgent:              getEnv("USER_AGENT", "VLC/3.0.18 LibVLC/3.0.18"),
 		ReqOrigin:              getEnv("REQ_ORIGIN", ""),
 		ReqReferrer:            getEnv("REQ_REFERRER", ""),
-		HealthCheckTimeout:     getEnvDuration("HEALTH_CHECK_TIMEOUT", 15*time.Second),
 		EnableRestreaming:      getEnvBool("ENABLE_RESTREAMING", true),
 	}
 

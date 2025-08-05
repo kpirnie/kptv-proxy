@@ -73,10 +73,10 @@ func main() {
 	router := mux.NewRouter()
 
 	// Original playlist route (all channels)
-	router.HandleFunc("/playlist.m3u8", handlers.HandlePlaylist(proxyInstance)).Methods("GET")
+	router.HandleFunc("/playlist", handlers.HandlePlaylist(proxyInstance)).Methods("GET")
 
 	// Group-based playlist route
-	router.HandleFunc("/{group}/playlist.m3u8", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
+	router.HandleFunc("/{group}/playlist", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
 
 	router.HandleFunc("/stream/{channel}", handlers.HandleStream(proxyInstance)).Methods("GET")
 	router.Handle("/metrics", promhttp.Handler()).Methods("GET")

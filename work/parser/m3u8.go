@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"kptv-proxy/work/client"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/grafov/m3u8"
 )
@@ -19,18 +21,28 @@ import (
 func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig) []*types.Stream {
 	logger.Printf("Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
 
+	// Create request with timeout for parsing
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	req, err := http.NewRequest("GET", source.URL, nil)
 	if err != nil {
 		logger.Printf("Error creating request for %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
+	req = req.WithContext(ctx)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		logger.Printf("Error fetching M3U8 from %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
-	defer resp.Body.Close()
+
+	// CRITICAL: Always close the response body
+	defer func() {
+		resp.Body.Close()
+		logger.Printf("[PARSE_CONNECTION_CLOSE] Closed connection for: %s", utils.LogURL(cfg, source.URL))
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		logger.Printf("HTTP error %d when fetching %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
@@ -40,20 +52,40 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 	// Try parsing with grafov/m3u8 first
 	playlist, listType, err := m3u8.DecodeFrom(bufio.NewReader(resp.Body), true)
 	if err == nil {
+		logger.Printf("Successfully parsed with grafov parser: %s", utils.LogURL(cfg, source.URL))
 		return ParseWithGrafov(playlist, listType, source, cfg, logger)
 	}
 
 	// Fallback to original parsing if grafov fails
 	logger.Printf("Grafov parser failed, using fallback parser: %v", err)
+
+	// Close current response and re-fetch for fallback parser
 	resp.Body.Close()
 
 	// Re-fetch for fallback parser
-	resp2, err := httpClient.Do(req)
+	req2, err := http.NewRequest("GET", source.URL, nil)
 	if err != nil {
+		logger.Printf("Error creating fallback request for %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
-	defer resp2.Body.Close()
+	req2 = req2.WithContext(ctx)
 
+	resp2, err := httpClient.Do(req2)
+	if err != nil {
+		logger.Printf("Error re-fetching for fallback parser: %v", err)
+		return nil
+	}
+	defer func() {
+		resp2.Body.Close()
+		logger.Printf("[PARSE_FALLBACK_CLOSE] Closed fallback connection for: %s", utils.LogURL(cfg, source.URL))
+	}()
+
+	if resp2.StatusCode != http.StatusOK {
+		logger.Printf("HTTP error %d on fallback fetch from %s", resp2.StatusCode, utils.LogURL(cfg, source.URL))
+		return nil
+	}
+
+	logger.Printf("Using fallback parser for: %s", utils.LogURL(cfg, source.URL))
 	return ParseM3U8Fallback(resp2.Body, source, cfg, logger)
 }
 
@@ -62,7 +94,6 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 
 	switch listType {
 	case m3u8.MEDIA:
-		//mediapl := playlist.(*m3u8.MediaPlaylist)
 		// For media playlists, we typically want the playlist URL itself, not individual segments
 		stream := &types.Stream{
 			URL:        source.URL,

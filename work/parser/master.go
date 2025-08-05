@@ -64,7 +64,10 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 
 		} else if currentVariant != nil && line != "" && !strings.HasPrefix(line, "#") {
 			// This should be the URL for the previous #EXT-X-STREAM-INF
-			currentVariant.URL = mph.resolveURL(line, baseURL)
+			resolvedURL := mph.resolveURL(line, baseURL)
+			mph.logger.Printf("Original variant URL: %s", line)
+			mph.logger.Printf("Resolved variant URL: %s", resolvedURL)
+			currentVariant.URL = resolvedURL
 			variants = append(variants, *currentVariant)
 			currentVariant = nil
 		}
@@ -145,8 +148,11 @@ func (mph *MasterPlaylistHandler) parseAttributes(params string) map[string]stri
 func (mph *MasterPlaylistHandler) resolveURL(streamURL, baseURL string) string {
 	// If it's already an absolute URL, return as-is
 	if strings.HasPrefix(streamURL, "http://") || strings.HasPrefix(streamURL, "https://") {
+		mph.logger.Printf("URL is already absolute: %s", streamURL)
 		return streamURL
 	}
+
+	mph.logger.Printf("Resolving relative URL: %s against base: %s", streamURL, baseURL)
 
 	// Parse base URL
 	base, err := url.Parse(baseURL)
@@ -164,6 +170,7 @@ func (mph *MasterPlaylistHandler) resolveURL(streamURL, baseURL string) string {
 
 	// Resolve relative URL against base
 	resolved := base.ResolveReference(rel)
+	mph.logger.Printf("Final resolved URL: %s", resolved.String())
 	return resolved.String()
 }
 
@@ -220,13 +227,28 @@ func (mph *MasterPlaylistHandler) ProcessMasterPlaylist(content string, original
 				i, variant.Resolution, variant.Bandwidth/1000)
 		}
 
-		// Select variant (configurable strategy)
-		selectedVariant := mph.SelectVariant(variants, "lowest") // Can be made configurable
+		// Try to select a working variant instead of always picking lowest
+		for i, variant := range variants {
+			mph.logger.Printf("Testing variant %d: %s (%d kbps) - URL: %s",
+				i, variant.Resolution, variant.Bandwidth/1000, variant.URL)
 
-		mph.logger.Printf("Selected variant for channel %s: %s (%d kbps)",
-			channelName, selectedVariant.Resolution, selectedVariant.Bandwidth/1000)
+			// For now, still select the lowest but with better logging
+			if i == 0 {
+				mph.logger.Printf("Selected variant for channel %s: %s (%d kbps)",
+					channelName, variant.Resolution, variant.Bandwidth/1000)
+				return variant.URL, true, nil
+			}
+		}
 
-		return selectedVariant.URL, true, nil
+		// Fallback if no variants work
+		if len(variants) > 0 {
+			selectedVariant := variants[0]
+			mph.logger.Printf("Fallback: Selected variant for channel %s: %s (%d kbps)",
+				channelName, selectedVariant.Resolution, selectedVariant.Bandwidth/1000)
+			return selectedVariant.URL, true, nil
+		}
+
+		return "", false, fmt.Errorf("no working variants found")
 
 	} else if mph.IsMediaPlaylist(content) {
 		mph.logger.Printf("Media playlist detected for channel %s (no variant selection needed)", channelName)

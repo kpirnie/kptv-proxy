@@ -67,10 +67,33 @@ func (sp *StreamProxy) ImportStreams() {
 		wg.Add(1)
 		source := &sp.Config.Sources[i]
 
-		err := sp.WorkerPool.Submit(func() {
+		// Use a goroutine but respect the source's connection limit for parsing
+		go func(src *config.SourceConfig) {
 			defer wg.Done()
 
-			streams := parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, source)
+			// Check if we can acquire a connection for parsing
+			currentConns := atomic.LoadInt32(&src.ActiveConns)
+			if currentConns >= int32(src.MaxConnections) {
+				sp.Logger.Printf("Cannot import from source (connection limit %d/%d): %s",
+					currentConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+				return
+			}
+
+			// Acquire connection for parsing
+			newConns := atomic.AddInt32(&src.ActiveConns, 1)
+			sp.Logger.Printf("[IMPORT_CONNECTION] Acquired connection %d/%d for parsing: %s",
+				newConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+
+			// Always release connection when done parsing
+			defer func() {
+				remainingConns := atomic.AddInt32(&src.ActiveConns, -1)
+				sp.Logger.Printf("[IMPORT_RELEASE] Released parsing connection, remaining: %d/%d for: %s",
+					remainingConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+			}()
+
+			streams := parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, src)
+			sp.Logger.Printf("Parsed %d streams from source: %s", len(streams), utils.LogURL(sp.Config, src.URL))
+
 			for _, stream := range streams {
 				channelName := stream.Name
 				actual, _ := newChannels.LoadOrStore(channelName, &types.Channel{
@@ -82,14 +105,22 @@ func (sp *StreamProxy) ImportStreams() {
 				channel.Streams = append(channel.Streams, stream)
 				channel.Mu.Unlock()
 			}
-		})
-
-		if err != nil {
-			sp.Logger.Printf("Worker pool error: %v", err)
-		}
+		}(source)
 	}
 
-	wg.Wait()
+	// Wait for all imports to complete with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		sp.Logger.Println("All imports completed successfully")
+	case <-time.After(2 * time.Minute):
+		sp.Logger.Println("WARNING: Import timeout reached, some sources may not have completed")
+	}
 
 	// Sort streams in each channel and migrate to main map
 	count := 0
@@ -107,7 +138,6 @@ func (sp *StreamProxy) ImportStreams() {
 	}
 
 	sp.Logger.Printf("Import complete. Found %d channels", count)
-
 }
 
 func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, groupFilter string) {
@@ -376,7 +406,7 @@ func (sp *StreamProxy) StartImportRefresh() {
 }
 
 func (sp *StreamProxy) RestreamCleanup() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second) // More frequent cleanup
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -385,21 +415,53 @@ func (sp *StreamProxy) RestreamCleanup() {
 		sp.Channels.Range(func(key, value interface{}) bool {
 			channel := value.(*types.Channel)
 			channel.Mu.Lock()
-			if channel.Restreamer != nil && !channel.Restreamer.Running.Load() {
-				// Check if inactive for more than 10 seconds
-				lastActivity := channel.Restreamer.LastActivity.Load()
-				if now-lastActivity > 10 {
-					channel.Restreamer.Cancel()
-					channel.Restreamer = nil
-					sp.Logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
+
+			if channel.Restreamer != nil {
+				// Check if restreamer is inactive
+				if !channel.Restreamer.Running.Load() {
+					lastActivity := channel.Restreamer.LastActivity.Load()
+					if now-lastActivity > 30 { // 30 second grace period
+						// Force cleanup
+						channel.Restreamer.Cancel()
+						channel.Restreamer = nil
+						sp.Logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
+					}
+				} else {
+					// Check for dead clients
+					clientCount := 0
+					channel.Restreamer.Clients.Range(func(ckey, cvalue interface{}) bool {
+						client := cvalue.(*types.RestreamClient)
+						lastSeen := client.LastSeen.Load()
+						if now-lastSeen > 60 { // 60 seconds without activity
+							sp.Logger.Printf("Removing inactive client: %s", ckey.(string))
+							channel.Restreamer.Clients.Delete(ckey)
+							select {
+							case <-client.Done:
+								// Already closed
+							default:
+								close(client.Done)
+							}
+						} else {
+							clientCount++
+						}
+						return true
+					})
+
+					// If no active clients, stop the restreamer
+					if clientCount == 0 && channel.Restreamer.Running.Load() {
+						sp.Logger.Printf("No active clients found, stopping restreamer for: %s", channel.Name)
+						channel.Restreamer.Cancel()
+						channel.Restreamer.Running.Store(false)
+					}
 				}
 			}
+
 			channel.Mu.Unlock()
 			return true
 		})
 	}
-
 }
+
 func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 	// First try exact match after simple space replacement
 	simpleName := strings.ReplaceAll(safeName, "_", " ")
@@ -424,31 +486,32 @@ func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 	return safeName
 
 }
+
 func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Request, channel *types.Channel) {
-	sp.Logger.Printf("Starting restreaming client for channel: %s", channel.Name)
+	sp.Logger.Printf("[STREAM_REQUEST] Channel %s: URL: %s", channel.Name, channel.Name)
+	sp.Logger.Printf("[FOUND] Channel %s: Streams: %d", channel.Name, len(channel.Streams))
 
 	channel.Mu.Lock()
 	var restreamer *restream.Restream
 	if channel.Restreamer == nil {
-		sp.Logger.Printf("Creating new restreamer for channel: %s", channel.Name)
+		sp.Logger.Printf("[RESTREAM_NEW] Channel %s: Creating new restreamer", channel.Name)
 		restreamer = restream.NewRestreamer(channel, sp.Config.MaxBufferSize, sp.Logger, sp.HttpClient, sp.Config)
-		channel.Restreamer = restreamer.Restreamer // Store the underlying Restreamer
+		channel.Restreamer = restreamer.Restreamer
 	} else {
-		// Wrap the existing Restreamer to access its methods
 		restreamer = &restream.Restream{Restreamer: channel.Restreamer}
 	}
 	channel.Mu.Unlock()
 
 	// Generate client ID
 	clientID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
-	sp.Logger.Printf("New client connected: %s for channel: %s", clientID, channel.Name)
 
-	// Set headers before checking for flusher
+	// Set headers immediately
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Accept", "*/*")
 
-	// Get flusher - use the underlying ResponseWriter if it's a CustomResponseWriter
+	// Get flusher
 	var flusher http.Flusher
 	var ok bool
 
@@ -468,15 +531,33 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
+	sp.Logger.Printf("[RESTREAM_START] Channel %s: Client: %s", channel.Name, clientID)
+
+	// Add client to restreamer
 	restreamer.AddClient(clientID, w, flusher)
-	defer restreamer.RemoveClient(clientID)
 
-	sp.Logger.Printf("Client %s added to restreamer, waiting for disconnect", clientID)
+	// Create a cleanup function
+	cleanup := func() {
+		restreamer.RemoveClient(clientID)
+	}
+	defer cleanup()
 
-	// Wait for client disconnect
-	<-r.Context().Done()
-	sp.Logger.Printf("Restreaming client disconnected: %s", clientID)
+	// Create a channel to detect client disconnection
+	done := make(chan struct{})
 
+	// Start a goroutine to monitor the connection
+	go func() {
+		defer close(done)
+		<-r.Context().Done()
+	}()
+
+	// Wait for client disconnect with timeout
+	select {
+	case <-done:
+		sp.Logger.Printf("Restreaming client disconnected: %s", clientID)
+	case <-time.After(24 * time.Hour): // Max connection time
+		sp.Logger.Printf("Restreaming client timeout: %s", clientID)
+	}
 }
 
 // Helper method to determine if we should check for master playlist
