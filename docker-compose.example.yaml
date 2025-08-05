@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   kptv-proxy:
     image: ghcr.io/kpirnie/kptv-proxy:latest
@@ -50,7 +48,6 @@ services:
       - USER_AGENT=VLC/3.0.18 LibVLC/3.0.18   # User agent for requests
       - REQ_ORIGIN=                           # Origin header (optional)
       - REQ_REFERRER=                         # Referrer header (optional)
-      - HEALTH_CHECK_TIMEOUT=30s              # Timeout for health checks
 
     # Health check
     healthcheck:
