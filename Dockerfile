@@ -1,4 +1,4 @@
-# Build stage
+# Build stage - compile Go application
 FROM docker.io/golang:alpine AS builder
 
 RUN apk add --no-cache git
@@ -6,20 +6,34 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v0.1.78" -o kptv-proxy .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v0.2.86" -o kptv-proxy .
 
-# Final stage - ultra-small with just the binary and certs
-FROM scratch
+# Final stage - your working ffmpeg setup + Go app
+FROM docker.io/alpine:latest
 
-# Import certificates from alpine (for HTTPS)
-COPY --from=docker.io/alpine:latest /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Copy static ffmpeg binaries (your working approach)
+COPY --from=docker.io/mwader/static-ffmpeg:latest /ffmpeg /usr/local/bin/
+COPY --from=docker.io/mwader/static-ffmpeg:latest /ffprobe /usr/local/bin/
 
-# Copy the static binary
-COPY --from=builder /app/kptv-proxy /kptv-proxy
+# Copy compiled Go application
+COPY --from=builder /app/kptv-proxy /usr/local/bin/kptv-proxy
 
-# Since we're using scratch, we can't create users (no useradd)
-# But we can specify the user numerically
-USER 1000:1000
+# Setup (adapted from your container)
+RUN mkdir -p /dev/dri && \
+    chmod 777 /dev/dri && \
+    addgroup -g 1000 kptv && \
+    adduser -u 1000 -G kptv -D kptv && \
+    chmod 755 /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/kptv-proxy && \
+    # Install CA certificates for HTTPS
+    apk add --no-cache ca-certificates && \
+    # Verify ffmpeg works
+    /usr/local/bin/ffmpeg -version && \
+    /usr/local/bin/ffprobe -version
+
+WORKDIR /workspace
+USER kptv
+
+ENV PATH="/usr/local/bin:${PATH}"
 
 EXPOSE 8080
-CMD ["/kptv-proxy"]
+CMD ["/usr/local/bin/kptv-proxy"]

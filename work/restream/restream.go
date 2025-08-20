@@ -1,3 +1,4 @@
+// work/restream/restream.go - Updated with variant testing
 package restream
 
 import (
@@ -8,10 +9,13 @@ import (
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/metrics"
+	"kptv-proxy/work/parser"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -170,43 +174,17 @@ func (r *Restream) Stream() {
 		r.Logger.Printf("[STREAM_RESULT] Channel %s: Index %d - Success: %v, Bytes: %d, Duration: %v",
 			r.Channel.Name, currentIdx, success, bytesReceived, streamDuration)
 
-		// Simple logic: If we got sufficient data, this stream works
-		if success && bytesReceived >= r.Config.MinDataSize {
-			r.Logger.Printf("[STREAM_SUCCESS] Channel %s: Found working stream with %d bytes, keeping connection alive",
+		// For master playlists, success means we found a working variant and started streaming
+		// For media streams, success means we got sufficient data
+		if success {
+			r.Logger.Printf("[STREAM_SUCCESS] Channel %s: Stream successful with %d bytes",
 				r.Channel.Name, bytesReceived)
 
-			// Keep connection alive until client disconnects or context cancels
-			for {
-				select {
-				case <-r.Ctx.Done():
-					r.Logger.Printf("[RESTREAM_STOP] Channel %s: Context cancelled", r.Channel.Name)
-					return
-				default:
-				}
-
-				// Check if we still have clients
-				clientCount := 0
-				r.Clients.Range(func(_, _ interface{}) bool {
-					clientCount++
-					return true
-				})
-
-				if clientCount == 0 {
-					r.Logger.Printf("[RESTREAM_STOP] Channel %s: No clients remain", r.Channel.Name)
-					return
-				}
-
-				// Just wait - don't re-fetch anything
-				r.Logger.Printf("[STREAM_IDLE] Channel %s: Keeping connection alive, waiting for client disconnect", r.Channel.Name)
-				select {
-				case <-r.Ctx.Done():
-					return
-				case <-time.After(30 * time.Second): // Just wait
-					continue
-				}
-			}
+			// If we have a successful stream, we should already be streaming to clients
+			// The stream will continue until context is cancelled or clients disconnect
+			return
 		} else {
-			r.Logger.Printf("[STREAM_FAIL] Channel %s: Stream failed or insufficient data", r.Channel.Name)
+			r.Logger.Printf("[STREAM_FAIL] Channel %s: Stream failed", r.Channel.Name)
 		}
 
 		// Move to next stream only if current one failed
@@ -269,19 +247,215 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 			r.Channel.Name, remainingConns, maxConns)
 	}()
 
-	r.Logger.Printf("Successfully connected to stream: %s", utils.LogURL(r.Config, stream.URL))
+	// Get all available variants for this stream
+	variants, isMaster, err := r.getStreamVariants(stream.URL)
+	if err != nil {
+		r.Logger.Printf("[VARIANT_ERROR] Channel %s: Error getting variants: %v", r.Channel.Name, err)
+		return false, 0
+	}
+
+	if isMaster {
+		r.Logger.Printf("[VARIANT_TEST] Channel %s: Testing %d variants from highest to lowest quality",
+			r.Channel.Name, len(variants))
+
+		// Try each variant from highest to lowest quality
+		for i, variant := range variants {
+			r.Logger.Printf("[VARIANT_TRY] Channel %s: Trying variant %d/%d - %s (%d kbps)",
+				r.Channel.Name, i+1, len(variants), variant.Resolution, variant.Bandwidth/1000)
+
+			success, bytes := r.testAndStreamVariant(variant)
+			if success {
+				r.Logger.Printf("[VARIANT_SUCCESS] Channel %s: Variant %d worked - %s (%d kbps), streaming with %d bytes",
+					r.Channel.Name, i+1, variant.Resolution, variant.Bandwidth/1000, bytes)
+				return true, bytes
+			} else {
+				r.Logger.Printf("[VARIANT_FAIL] Channel %s: Variant %d failed - %s (%d kbps)",
+					r.Channel.Name, i+1, variant.Resolution, variant.Bandwidth/1000)
+			}
+		}
+
+		r.Logger.Printf("[VARIANT_EXHAUSTED] Channel %s: All %d variants failed", r.Channel.Name, len(variants))
+		return false, 0
+
+	} else {
+		// Single variant (media playlist or direct stream)
+		r.Logger.Printf("[SINGLE_STREAM] Channel %s: Processing single stream/media playlist", r.Channel.Name)
+		return r.streamFromURL(variants[0].URL)
+	}
+}
+
+// getStreamVariants resolves master playlist and returns all variants
+func (r *Restream) getStreamVariants(url string) ([]parser.StreamVariant, bool, error) {
+	// Create master playlist handler
+	masterHandler := parser.NewMasterPlaylistHandler(r.Logger)
+
+	// Create request to check the playlist
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Use context with timeout for playlist check
+	checkCtx, checkCancel := context.WithTimeout(r.Ctx, 15*time.Second)
+	defer checkCancel()
+	req = req.WithContext(checkCtx)
+
+	resp, err := r.HttpClient.Do(req)
+	if err != nil {
+		return nil, false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, false, fmt.Errorf("HTTP %d response", resp.StatusCode)
+	}
+
+	// Check if this might be a master playlist based on response headers
+	if !r.shouldCheckForMasterPlaylist(resp) {
+		r.Logger.Printf("[PLAYLIST_CHECK] Channel %s: Response doesn't look like playlist", r.Channel.Name)
+		// Return single variant for direct stream
+		singleVariant := parser.StreamVariant{
+			URL:        url,
+			Bandwidth:  0,
+			Resolution: "unknown",
+		}
+		return []parser.StreamVariant{singleVariant}, false, nil
+	}
+
+	// Read the response to check content
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, false, err
+	}
+
+	content := string(body)
+	r.Logger.Printf("[PLAYLIST_CONTENT] Channel %s: Downloaded %d bytes", r.Channel.Name, len(content))
+
+	// Process with master playlist handler
+	variants, isMaster, err := masterHandler.ProcessMasterPlaylistVariants(content, url, r.Channel.Name)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return variants, isMaster, nil
+}
+
+// testAndStreamVariant tests a specific variant and streams if it works
+func (r *Restream) testAndStreamVariant(variant parser.StreamVariant) (bool, int64) {
+	r.Logger.Printf("[VARIANT_TEST_START] Testing variant: %s", utils.LogURL(r.Config, variant.URL))
+
+	testReq, err := http.NewRequest("GET", variant.URL, nil)
+	if err != nil {
+		r.Logger.Printf("[VARIANT_TEST_ERROR] Error creating test request: %v", err)
+		return false, 0
+	}
+
+	testCtx, testCancel := context.WithTimeout(r.Ctx, 10*time.Second)
+	defer testCancel()
+	testReq = testReq.WithContext(testCtx)
+
+	resp, err := r.HttpClient.Do(testReq)
+	if err != nil {
+		r.Logger.Printf("[VARIANT_TEST_ERROR] Error testing variant: %v", err)
+		return false, 0
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		r.Logger.Printf("[VARIANT_TEST_ERROR] Variant returned HTTP %d", resp.StatusCode)
+		return false, 0
+	}
+
+	testBuffer := make([]byte, 8192)
+	n, err := resp.Body.Read(testBuffer)
+
+	if err != nil && err != io.EOF {
+		r.Logger.Printf("[VARIANT_TEST_ERROR] Error reading test data: %v", err)
+		return false, 0
+	}
+
+	if n == 0 {
+		r.Logger.Printf("[VARIANT_TEST_ERROR] No data received from variant")
+		return false, 0
+	}
+
+	content := string(testBuffer[:n])
+
+	// Check if this is HLS
+	if strings.Contains(content, "#EXTINF") || strings.Contains(content, "#EXT-X-TARGETDURATION") {
+		r.Logger.Printf("[HLS_DETECTED] HLS media playlist detected, testing with ffprobe")
+
+		// Test with enhanced ffprobe
+		result, _ := r.testStreamWithFFprobe(variant.URL)
+
+		switch result {
+		case "video":
+			r.Logger.Printf("[HLS_VALID] Stream has valid video, starting segment streaming")
+			resp.Body.Close()
+			return r.streamHLSSegments(variant.URL)
+
+		case "timeout":
+			r.Logger.Printf("[HLS_TIMEOUT] Stream caused ffprobe timeout - invalid stream, trying next")
+			return false, 0
+
+		case "error":
+			r.Logger.Printf("[HLS_ERROR] ffprobe error but no timeout - might work with proxying")
+			resp.Body.Close()
+			return r.streamHLSSegments(variant.URL)
+
+		case "no_video":
+			r.Logger.Printf("[HLS_NO_VIDEO] No video stream found, trying next variant")
+			return false, 0
+
+		default:
+			r.Logger.Printf("[HLS_UNKNOWN] Unknown ffprobe result: %s", result)
+			return false, 0
+		}
+	}
+
+	r.Logger.Printf("[VARIANT_TEST_SUCCESS] Direct stream variant, got %d test bytes", n)
+	resp.Body.Close()
+
+	return r.streamFromURL(variant.URL)
+}
+
+// shouldCheckForMasterPlaylist determines if response might be a master playlist
+func (r *Restream) shouldCheckForMasterPlaylist(resp *http.Response) bool {
+	contentType := resp.Header.Get("Content-Type")
+	contentLength := resp.Header.Get("Content-Length")
+
+	// Check for M3U8 content type
+	if strings.Contains(strings.ToLower(contentType), "mpegurl") ||
+		strings.Contains(strings.ToLower(contentType), "m3u8") {
+		return true
+	}
+
+	// Check for small content length (master playlists are typically small)
+	if contentLength != "" {
+		if length, err := strconv.ParseInt(contentLength, 10, 64); err == nil {
+			// Master playlists are typically under 100KB
+			if length > 0 && length < 100*1024 {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// streamFromURL handles the actual streaming from a resolved URL
+func (r *Restream) streamFromURL(url string) (bool, int64) {
+	r.Logger.Printf("[STREAMING_START] Channel %s: Starting stream from %s", r.Channel.Name, utils.LogURL(r.Config, url))
 
 	// Create request with reasonable timeout
-	req, err := http.NewRequest("GET", stream.URL, nil)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		r.Logger.Printf("Error creating request for channel %s: %v", r.Channel.Name, err)
 		return false, 0
 	}
 
-	// Use context with timeout for the entire request
-	requestCtx, requestCancel := context.WithTimeout(r.Ctx, 30*time.Second)
-	defer requestCancel()
-	req = req.WithContext(requestCtx)
+	// Use context without timeout for streaming (let it run until cancelled)
+	req = req.WithContext(r.Ctx)
 
 	// Make request
 	resp, err := r.HttpClient.Do(req)
@@ -304,7 +478,7 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		return false, 0
 	}
 
-	r.Logger.Printf("[CONNECTED] Channel %s: Streaming from index %d", r.Channel.Name, index)
+	r.Logger.Printf("[CONNECTED] Channel %s: Streaming from resolved URL", r.Channel.Name)
 	metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(1)
 
 	// Stream data with frequent cancellation checks
@@ -312,7 +486,7 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 	totalBytes := int64(0)
 
 	// Set a deadline for receiving first data
-	firstDataTimer := time.NewTimer(10 * time.Second)
+	firstDataTimer := time.NewTimer(15 * time.Second) // Increased timeout for variants
 	defer firstDataTimer.Stop()
 	firstData := true
 	lastDataTime := time.Now()
@@ -321,15 +495,11 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		// Check for cancellation more frequently
 		select {
 		case <-r.Ctx.Done():
-			r.Logger.Printf("Error reading stream for %s: context canceled", r.Channel.Name)
-			r.Logger.Printf("[STREAM_ERROR] Channel %s: Error after %d bytes: context canceled", r.Channel.Name, totalBytes)
-			return totalBytes >= r.Config.MinDataSize, totalBytes
-		case <-requestCtx.Done():
-			r.Logger.Printf("Request timeout for channel %s after %d bytes", r.Channel.Name, totalBytes)
+			r.Logger.Printf("[STREAM_CANCELLED] Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
 			return totalBytes >= r.Config.MinDataSize, totalBytes
 		case <-firstDataTimer.C:
 			if firstData && totalBytes == 0 {
-				r.Logger.Printf("[STREAM_ERROR] Channel %s: No data received in 10 seconds", r.Channel.Name)
+				r.Logger.Printf("[STREAM_ERROR] Channel %s: No data received in 15 seconds", r.Channel.Name)
 				return false, 0
 			}
 		default:
@@ -346,7 +516,7 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 			if firstData {
 				firstData = false
 				firstDataTimer.Stop()
-				r.Logger.Printf("[STREAM_DATA] Channel %s: First data received", r.Channel.Name)
+				r.Logger.Printf("[STREAM_DATA] Channel %s: First video data received", r.Channel.Name)
 			}
 
 			lastDataTime = time.Now()
@@ -366,21 +536,13 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		if err != nil {
 			if err == io.EOF {
 				r.Logger.Printf("Stream ended normally for channel %s after %d bytes", r.Channel.Name, totalBytes)
-				// Check if we got enough data according to MIN_DATA_SIZE
-				if totalBytes >= r.Config.MinDataSize {
-					r.Logger.Printf("Stream provided sufficient data (%d >= %d bytes)", totalBytes, r.Config.MinDataSize)
-					return true, totalBytes
-				} else {
-					r.Logger.Printf("Stream ended but only transferred %d bytes (minimum: %d)", totalBytes, r.Config.MinDataSize)
-					return false, totalBytes
-				}
+				return totalBytes >= r.Config.MinDataSize, totalBytes
 			}
 
 			// Check if error is due to context cancellation
 			select {
 			case <-r.Ctx.Done():
-				r.Logger.Printf("Error reading stream for %s: context canceled", r.Channel.Name)
-				r.Logger.Printf("[STREAM_ERROR] Channel %s: Error after %d bytes: context canceled", r.Channel.Name, totalBytes)
+				r.Logger.Printf("[STREAM_CANCELLED] Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
 				return totalBytes >= r.Config.MinDataSize, totalBytes
 			default:
 				r.Logger.Printf("Error reading stream for channel %s after %d bytes: %v", r.Channel.Name, totalBytes, err)

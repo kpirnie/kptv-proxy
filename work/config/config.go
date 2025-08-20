@@ -30,7 +30,7 @@ type Config struct {
 	UserAgent              string
 	ReqOrigin              string
 	ReqReferrer            string
-	EnableRestreaming      bool
+	StreamTimeout          time.Duration
 }
 
 // SourceConfig represents a stream source configuration
@@ -62,7 +62,7 @@ func LoadConfig() *Config {
 		UserAgent:              getEnv("USER_AGENT", "VLC/3.0.18 LibVLC/3.0.18"),
 		ReqOrigin:              getEnv("REQ_ORIGIN", ""),
 		ReqReferrer:            getEnv("REQ_REFERRER", ""),
-		EnableRestreaming:      getEnvBool("ENABLE_RESTREAMING", true),
+		StreamTimeout:          getEnvDuration("STREAM_TIMEOUT", 10*time.Second),
 	}
 
 	// Load sources
@@ -92,7 +92,6 @@ func LoadConfig() *Config {
 		}
 		log.Printf("  Debug: %v", config.Debug)
 		log.Printf("  Obfuscate URLs: %v", config.ObfuscateUrls)
-		log.Printf("  Enable Restreaming: %v", config.EnableRestreaming)
 	}
 
 	return config

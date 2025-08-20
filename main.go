@@ -56,12 +56,8 @@ func main() {
 	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger)
 
 	// Start restreamer cleanup routine
-	if cfg.EnableRestreaming {
-		logger.Printf("Restreaming mode enabled")
-		go proxyInstance.RestreamCleanup()
-	} else {
-		logger.Printf("Direct proxy mode enabled")
-	}
+	logger.Printf("Restreaming mode enabled")
+	go proxyInstance.RestreamCleanup()
 
 	// Start import refresh routine
 	go proxyInstance.StartImportRefresh()
@@ -78,7 +74,10 @@ func main() {
 	// Group-based playlist route
 	router.HandleFunc("/{group}/playlist", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
 
+	// Channel stream handler
 	router.HandleFunc("/stream/{channel}", handlers.HandleStream(proxyInstance)).Methods("GET")
+
+	// Metrics handler
 	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
@@ -87,7 +86,6 @@ func main() {
 	logger.Printf("Server configuration:")
 	logger.Printf("  - Port: %s", cfg.Port)
 	logger.Printf("  - Base URL: %s", cfg.BaseURL)
-	logger.Printf("  - Restreaming: %v", cfg.EnableRestreaming)
 	logger.Printf("  - Sources: %d", len(cfg.Sources))
 	logger.Printf("  - Worker Threads: %d", cfg.WorkerThreads)
 

@@ -142,11 +142,6 @@ http://your-server-ip:9500/playlist.m3u8
 | `BASE_URL` | `http://localhost:8080` | Base URL for generated stream links |
 | `SOURCES` | Required | Comma-separated list: `URL\|MaxConns,URL\|MaxConns` |
 
-### Operating Modes
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENABLE_RESTREAMING` | `true` | **Recommended**: Single upstream connection shared among clients |
-
 **Restreaming Mode Benefits:**
 - ✅ Reduces provider load (prevents 429 rate limit errors)
 - ✅ Better for providers with strict connection limits  
@@ -286,7 +281,6 @@ docker-compose logs kptv-proxy | grep ERROR
 - ✅ Verify `BASE_URL` is accessible from clients
 
 **Problem**: Rate limiting (429 errors)
-- ✅ **Enable restreaming mode**: `ENABLE_RESTREAMING: "true"`
 - ✅ Reduce connection limits in `SOURCES`
 - ✅ Increase `RETRY_DELAY`
 
@@ -326,7 +320,6 @@ Format: M3U8/HLS
 
 ### For High-Concurrency (100+ clients)
 ```yaml
-ENABLE_RESTREAMING: "true"     # Essential for high concurrency
 WORKER_THREADS: "20"
 MAX_BUFFER_SIZE: "1073741824"  # 1GB
 ```

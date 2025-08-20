@@ -30,9 +30,6 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		// Find original channel name
 		channelName := sp.FindChannelBySafeName(safeName)
 
-		// DEBUG: Log the restreaming mode setting
-		sp.Logger.Printf("DEBUG: EnableRestreaming = %v for channel: %s", sp.Config.EnableRestreaming, channelName)
-
 		value, exists := sp.Channels.Load(channelName)
 		if !exists {
 			sp.Logger.Printf("Channel not found: %s", channelName)
@@ -42,18 +39,7 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		channel := value.(*types.Channel)
 
-		// FORCE restreaming mode for debugging - change this back to sp.Config.EnableRestreaming after testing
-		if sp.Config.EnableRestreaming {
-			sp.Logger.Printf("Using RESTREAMING mode for channel: %s", channelName)
-			sp.HandleRestreamingClient(w, r, channel)
-		} else {
-			sp.Logger.Printf("Using DIRECT PROXY mode for channel: %s", channelName)
-			// Direct proxy mode
-			success := sp.TryStreams(channel, 0, w, r)
-			if !success {
-				sp.Logger.Printf("All streams failed for channel: %s", channelName)
-				http.Error(w, "All streams failed", http.StatusServiceUnavailable)
-			}
-		}
+		sp.Logger.Printf("Using RESTREAMING mode for channel: %s", channelName)
+		sp.HandleRestreamingClient(w, r, channel)
 	}
 }

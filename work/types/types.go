@@ -13,16 +13,28 @@ import (
 	"kptv-proxy/work/config"
 )
 
+// represents a stream type
+type StreamType int
+
+// the actual types
+const (
+	StreamTypeDirect StreamType = iota
+	StreamTypeHLS
+)
+
 // Stream represents a single stream
 type Stream struct {
-	URL        string
-	Name       string
-	Attributes map[string]string
-	Source     *config.SourceConfig
-	Failures   int32
-	LastFail   time.Time
-	Blocked    int32
-	Mu         sync.Mutex
+	URL         string
+	Name        string
+	Attributes  map[string]string
+	Source      *config.SourceConfig
+	Failures    int32
+	LastFail    time.Time
+	Blocked     int32
+	Mu          sync.Mutex
+	StreamType  StreamType
+	ResolvedURL string // For HLS, this will be the selected variant URL
+	LastChecked time.Time
 }
 
 // Channel represents a group of streams

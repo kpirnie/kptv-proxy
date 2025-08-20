@@ -41,9 +41,6 @@ services:
       - DEBUG=true                            # Set to true for verbose logging
       - OBFUSCATE_URLS=true                   # Enable obfuscation for security/privacy
       
-      # Enable restream mode
-      - ENABLE_RESTREAMING=true               # Enable restreaming mode (single upstream connection)
-      
       # HTTP Client Configuration
       - USER_AGENT=VLC/3.0.18 LibVLC/3.0.18   # User agent for requests
       - REQ_ORIGIN=                           # Origin header (optional)

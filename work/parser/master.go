@@ -1,3 +1,4 @@
+// work/parser/master.go - Enhanced with variant testing
 package parser
 
 import (
@@ -81,12 +82,51 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 		return nil, fmt.Errorf("no variants found in master playlist")
 	}
 
-	// Sort variants by bandwidth (lowest first for reliability)
+	// Sort variants by bandwidth (HIGHEST first for better quality preference)
 	sort.SliceStable(variants, func(i, j int) bool {
-		return variants[i].Bandwidth < variants[j].Bandwidth
+		return variants[i].Bandwidth > variants[j].Bandwidth
 	})
 
 	return variants, nil
+}
+
+// ProcessMasterPlaylist handles master playlist detection and variant selection (original method for backward compatibility)
+func (mph *MasterPlaylistHandler) ProcessMasterPlaylist(content string, originalURL string, channelName string) (string, bool, error) {
+	// Check what type of playlist this is
+	if mph.IsMasterPlaylist(content) {
+		mph.logger.Printf("Master playlist detected for channel %s", channelName)
+
+		// Parse master playlist
+		variants, err := mph.ParseMasterPlaylist(content, originalURL)
+		if err != nil {
+			return "", false, fmt.Errorf("failed to parse master playlist: %v", err)
+		}
+
+		mph.logger.Printf("Found %d variants for channel %s", len(variants), channelName)
+		for i, variant := range variants {
+			mph.logger.Printf("Variant %d: %s (%d kbps)",
+				i, variant.Resolution, variant.Bandwidth/1000)
+		}
+
+		if len(variants) > 0 {
+			// Select highest quality variant (first in sorted array since we sort highest first)
+			selectedVariant := variants[0]
+			mph.logger.Printf("Selected variant for channel %s: %s (%d kbps)",
+				channelName, selectedVariant.Resolution, selectedVariant.Bandwidth/1000)
+			return selectedVariant.URL, true, nil
+		}
+
+		return "", false, fmt.Errorf("no working variants found")
+
+	} else if mph.IsMediaPlaylist(content) {
+		mph.logger.Printf("Media playlist detected for channel %s (no variant selection needed)", channelName)
+		return originalURL, false, nil
+
+	} else {
+		// Not an M3U8 playlist at all
+		mph.logger.Printf("Content is not an M3U8 playlist for channel %s", channelName)
+		return originalURL, false, nil
+	}
 }
 
 // parseStreamInf parses a #EXT-X-STREAM-INF line
@@ -182,11 +222,12 @@ func (mph *MasterPlaylistHandler) SelectVariant(variants []StreamVariant, strate
 
 	switch strategy {
 	case "lowest":
-		// Already sorted by bandwidth (lowest first)
-		return variants[0]
+		// Select lowest bandwidth (last in sorted array since we sort highest first)
+		return variants[len(variants)-1]
 
 	case "highest":
-		return variants[len(variants)-1]
+		// Select highest bandwidth (first in sorted array)
+		return variants[0]
 
 	case "medium":
 		// Select middle variant
@@ -204,59 +245,38 @@ func (mph *MasterPlaylistHandler) SelectVariant(variants []StreamVariant, strate
 		return mph.SelectVariant(variants, "medium")
 
 	default:
-		// Default to lowest for reliability
+		// Default to highest for best quality (changed from lowest)
 		return variants[0]
 	}
 }
 
-// ProcessMasterPlaylist handles master playlist detection and variant selection
-func (mph *MasterPlaylistHandler) ProcessMasterPlaylist(content string, originalURL string, channelName string) (string, bool, error) {
-	// Check what type of playlist this is
+// ProcessMasterPlaylist handles master playlist detection and returns ALL variants for testing
+func (mph *MasterPlaylistHandler) ProcessMasterPlaylistVariants(content string, originalURL string, channelName string) ([]StreamVariant, bool, error) {
 	if mph.IsMasterPlaylist(content) {
-		mph.logger.Printf("Master playlist detected for channel %s", channelName)
-
-		// Parse master playlist
 		variants, err := mph.ParseMasterPlaylist(content, originalURL)
 		if err != nil {
-			return "", false, fmt.Errorf("failed to parse master playlist: %v", err)
+			return nil, false, err
 		}
-
-		mph.logger.Printf("Found %d variants for channel %s", len(variants), channelName)
-		for i, variant := range variants {
-			mph.logger.Printf("Variant %d: %s (%d kbps)",
-				i, variant.Resolution, variant.Bandwidth/1000)
-		}
-
-		// Try to select a working variant instead of always picking lowest
-		for i, variant := range variants {
-			mph.logger.Printf("Testing variant %d: %s (%d kbps) - URL: %s",
-				i, variant.Resolution, variant.Bandwidth/1000, variant.URL)
-
-			// For now, still select the lowest but with better logging
-			if i == 0 {
-				mph.logger.Printf("Selected variant for channel %s: %s (%d kbps)",
-					channelName, variant.Resolution, variant.Bandwidth/1000)
-				return variant.URL, true, nil
-			}
-		}
-
-		// Fallback if no variants work
-		if len(variants) > 0 {
-			selectedVariant := variants[0]
-			mph.logger.Printf("Fallback: Selected variant for channel %s: %s (%d kbps)",
-				channelName, selectedVariant.Resolution, selectedVariant.Bandwidth/1000)
-			return selectedVariant.URL, true, nil
-		}
-
-		return "", false, fmt.Errorf("no working variants found")
-
+		return variants, true, nil
 	} else if mph.IsMediaPlaylist(content) {
-		mph.logger.Printf("Media playlist detected for channel %s (no variant selection needed)", channelName)
-		return originalURL, false, nil
-
+		singleVariant := StreamVariant{URL: originalURL, Bandwidth: 0, Resolution: "unknown"}
+		return []StreamVariant{singleVariant}, false, nil
 	} else {
-		// Not an M3U8 playlist at all
-		mph.logger.Printf("Content is not an M3U8 playlist for channel %s", channelName)
-		return originalURL, false, nil
+		singleVariant := StreamVariant{URL: originalURL, Bandwidth: 0, Resolution: "unknown"}
+		return []StreamVariant{singleVariant}, false, nil
 	}
+}
+
+// GetVariantsOrderedByQuality returns variants ordered from highest to lowest quality
+func (mph *MasterPlaylistHandler) GetVariantsOrderedByQuality(variants []StreamVariant) []StreamVariant {
+	// Make a copy to avoid modifying the original slice
+	orderedVariants := make([]StreamVariant, len(variants))
+	copy(orderedVariants, variants)
+
+	// Sort by bandwidth, highest first
+	sort.SliceStable(orderedVariants, func(i, j int) bool {
+		return orderedVariants[i].Bandwidth > orderedVariants[j].Bandwidth
+	})
+
+	return orderedVariants
 }
