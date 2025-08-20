@@ -383,33 +383,52 @@ func (r *Restream) testAndStreamVariant(variant parser.StreamVariant) (bool, int
 
 	// Check if this is HLS
 	if strings.Contains(content, "#EXTINF") || strings.Contains(content, "#EXT-X-TARGETDURATION") {
-		r.Logger.Printf("[HLS_DETECTED] HLS media playlist detected, testing with ffprobe")
+		r.Logger.Printf("[HLS_DETECTED] HLS media playlist detected")
 
-		// Test with enhanced ffprobe
-		result, _ := r.testStreamWithFFprobe(variant.URL)
+		// Check if this playlist contains tracking URLs
+		hasTrackingURLs := strings.Contains(content, "/beacon/") ||
+			strings.Contains(content, "redirect_url=") ||
+			strings.Contains(content, "bcn=") ||
+			strings.Contains(content, "seen-ad=")
 
-		switch result {
-		case "video":
-			r.Logger.Printf("[HLS_VALID] Stream has valid video, starting segment streaming")
+		if hasTrackingURLs {
+			r.Logger.Printf("[HLS_TRACKING] Detected tracking URLs in playlist, skipping ffprobe validation")
+			// For streams with tracking URLs, skip ffprobe and try streaming directly
 			resp.Body.Close()
 			return r.streamHLSSegments(variant.URL)
+		} else {
+			// Standard HLS validation with ffprobe
+			r.Logger.Printf("[HLS_STANDARD] Standard HLS playlist, testing with ffprobe")
+			result, _ := r.testStreamWithFFprobe(variant.URL)
 
-		case "timeout":
-			r.Logger.Printf("[HLS_TIMEOUT] Stream caused ffprobe timeout - invalid stream, trying next")
-			return false, 0
+			switch result {
+			case "video":
+				r.Logger.Printf("[HLS_VALID] Stream has valid video, starting segment streaming")
+				resp.Body.Close()
+				return r.streamHLSSegments(variant.URL)
 
-		case "error":
-			r.Logger.Printf("[HLS_ERROR] ffprobe error but no timeout - might work with proxying")
-			resp.Body.Close()
-			return r.streamHLSSegments(variant.URL)
+			case "timeout":
+				r.Logger.Printf("[HLS_TIMEOUT] Stream caused ffprobe timeout - invalid stream, trying next")
+				return false, 0
 
-		case "no_video":
-			r.Logger.Printf("[HLS_NO_VIDEO] No video stream found, trying next variant")
-			return false, 0
+			case "invalid_format":
+				r.Logger.Printf("[HLS_INVALID_FORMAT] Stream has invalid format, skipping")
+				return false, 0
 
-		default:
-			r.Logger.Printf("[HLS_UNKNOWN] Unknown ffprobe result: %s", result)
-			return false, 0
+			case "error":
+				r.Logger.Printf("[HLS_ERROR] ffprobe error but no timeout - might work with proxying")
+				resp.Body.Close()
+				return r.streamHLSSegments(variant.URL)
+
+			case "no_video":
+				r.Logger.Printf("[HLS_NO_VIDEO] No video stream found, trying next variant")
+				return false, 0
+
+			default:
+				r.Logger.Printf("[HLS_UNKNOWN] Unknown ffprobe result: %s, attempting to stream anyway", result)
+				resp.Body.Close()
+				return r.streamHLSSegments(variant.URL)
+			}
 		}
 	}
 

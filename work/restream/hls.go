@@ -4,27 +4,45 @@ package restream
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
-	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"strings"
 	"time"
 )
 
 func (r *Restream) testStreamWithFFprobe(streamURL string) (string, error) {
+	// Check if this looks like a tracking URL that might need special handling
+	if strings.Contains(streamURL, "/beacon/") || strings.Contains(streamURL, "redirect_url") {
+		r.Logger.Printf("[FFPROBE_TEST] Detected tracking URL, attempting to resolve: %s", utils.LogURL(r.Config, streamURL))
+
+		// Try to resolve redirect URL first
+		if resolvedURL := r.resolveRedirectURL(streamURL); resolvedURL != "" {
+			r.Logger.Printf("[FFPROBE_TEST] Testing resolved URL: %s", utils.LogURL(r.Config, resolvedURL))
+			streamURL = resolvedURL
+		} else {
+			r.Logger.Printf("[FFPROBE_TEST] Could not resolve tracking URL, skipping ffprobe validation")
+			// For tracking URLs we can't resolve, assume they might work with proxying
+			return "error", fmt.Errorf("tracking URL requires proxying")
+		}
+	}
+
 	// Test with ffprobe using configured timeout
 	ctx, cancel := context.WithTimeout(context.Background(), r.Config.StreamTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffprobe",
-		"-v", "quiet",
+		"-v", "error",
 		"-select_streams", "v:0",
-		"-show_entries", "stream=codec_type",
-		"-of", "csv=p=0",
-		streamURL)
+		"-show_entries", "stream=codec_type,codec_name,width,height",
+		"-analyzeduration", "5M",
+		"-probesize", "5M",
+		"-of", "json",
+		"-i", streamURL)
 
 	r.Logger.Printf("[FFPROBE_TEST] Testing stream with %v timeout: %s", r.Config.StreamTimeout, utils.LogURL(r.Config, streamURL))
 
@@ -41,18 +59,55 @@ func (r *Restream) testStreamWithFFprobe(streamURL string) (string, error) {
 			return "timeout", err
 		}
 
-		r.Logger.Printf("[FFPROBE_TEST] ffprobe failed with error: %v", err)
+		// Check the specific error output to distinguish between types of failures
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr := string(exitErr.Stderr)
+			r.Logger.Printf("[FFPROBE_TEST] ffprobe stderr: %s", stderr)
+
+			// Check for specific error patterns that indicate fundamentally invalid streams
+			if strings.Contains(stderr, "Invalid data found") ||
+				strings.Contains(stderr, "Unable to find a suitable output format") ||
+				strings.Contains(stderr, "not in allowed_segment_extensions") {
+				r.Logger.Printf("[FFPROBE_TEST] Stream has fundamental format errors")
+				return "invalid_format", err
+			}
+
+			r.Logger.Printf("[FFPROBE_TEST] ffprobe failed with exit error: %v", err)
+			return "error", err
+		}
+
+		r.Logger.Printf("[FFPROBE_TEST] ffprobe failed with execution error: %v", err)
 		return "error", err
 	}
 
-	outputStr := strings.TrimSpace(string(output))
-	r.Logger.Printf("[FFPROBE_TEST] ffprobe output: %q", outputStr)
-
-	if strings.Contains(outputStr, "video") {
-		r.Logger.Printf("[FFPROBE_TEST] Stream contains valid video")
-		return "video", nil
+	// Parse JSON output to get more detailed information
+	var probeResult struct {
+		Streams []struct {
+			CodecType string `json:"codec_type"`
+			CodecName string `json:"codec_name"`
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
+		} `json:"streams"`
 	}
 
+	if err := json.Unmarshal(output, &probeResult); err != nil {
+		r.Logger.Printf("[FFPROBE_TEST] Error parsing ffprobe JSON: %v", err)
+		return "no_video", fmt.Errorf("failed to parse ffprobe output")
+	}
+
+	outputStr := string(output)
+	r.Logger.Printf("[FFPROBE_TEST] ffprobe output: %q", outputStr)
+
+	// Check if we found video streams with valid properties
+	if len(probeResult.Streams) > 0 {
+		stream := probeResult.Streams[0]
+		if stream.CodecType == "video" && stream.Width > 0 && stream.Height > 0 {
+			r.Logger.Printf("[FFPROBE_TEST] Stream contains valid video: %s %dx%d", stream.CodecName, stream.Width, stream.Height)
+			return "video", nil
+		}
+	}
+
+	r.Logger.Printf("[FFPROBE_TEST] No valid video streams found")
 	return "no_video", fmt.Errorf("no video stream found")
 }
 
@@ -137,6 +192,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	}
 }
 
+// Enhanced getHLSSegments function to handle redirect URLs
 func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	req, err := http.NewRequest("GET", playlistURL, nil)
 	if err != nil {
@@ -168,24 +224,72 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, "#") {
+			var segmentURL string
+
 			if strings.HasPrefix(line, "http") {
-				segments = append(segments, line)
+				segmentURL = line
 			} else {
 				// Relative URL - resolve against playlist URL
 				baseURL := playlistURL[:strings.LastIndex(playlistURL, "/")]
-				segmentURL := baseURL + "/" + line
-				segments = append(segments, segmentURL)
+				segmentURL = baseURL + "/" + line
 			}
+
+			// Check if this is a tracking/beacon URL with redirect
+			if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
+				segmentURL = resolvedURL
+				r.Logger.Printf("[HLS_REDIRECT] Resolved tracking URL to: %s", utils.LogURL(r.Config, segmentURL))
+			}
+
+			segments = append(segments, segmentURL)
 		}
 	}
 
 	return segments, nil
 }
 
+func (r *Restream) resolveRedirectURL(segmentURL string) string {
+	// Parse the URL to extract redirect_url parameter
+	if strings.Contains(segmentURL, "redirect_url=") {
+		if parsedURL, err := url.Parse(segmentURL); err == nil {
+			if redirectURL := parsedURL.Query().Get("redirect_url"); redirectURL != "" {
+				if decodedURL, err := url.QueryUnescape(redirectURL); err == nil {
+					return decodedURL
+				}
+			}
+		}
+	}
+
+	// Check for other redirect patterns (beacon URLs, etc.)
+	if strings.Contains(segmentURL, "/beacon/") && strings.Contains(segmentURL, "redirect_url") {
+		if parsedURL, err := url.Parse(segmentURL); err == nil {
+			if redirectURL := parsedURL.Query().Get("redirect_url"); redirectURL != "" {
+				if decodedURL, err := url.QueryUnescape(redirectURL); err == nil {
+					return decodedURL
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
+// Enhanced streamSegment to handle tracking URLs
 func (r *Restream) streamSegment(segmentURL string) (int64, error) {
+	// Resolve redirect URL if this is a tracking URL
+	originalURL := segmentURL
+	if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
+		segmentURL = resolvedURL
+		r.Logger.Printf("[HLS_SEGMENT_REDIRECT] Using resolved URL: %s", utils.LogURL(r.Config, segmentURL))
+	}
+
 	req, err := http.NewRequest("GET", segmentURL, nil)
 	if err != nil {
 		return 0, err
+	}
+
+	// Add headers that might be needed for tracking URLs
+	if originalURL != segmentURL {
+		req.Header.Set("Referer", originalURL)
 	}
 
 	ctx, cancel := context.WithTimeout(r.Ctx, 30*time.Second)
@@ -223,76 +327,6 @@ func (r *Restream) streamSegment(segmentURL string) (int64, error) {
 				return totalBytes, nil
 			}
 			return totalBytes, err
-		}
-	}
-}
-
-// Test if HLS stream works for direct playback
-func (r *Restream) testHLSDirectPlayback(playlistURL, content string) bool {
-	r.Logger.Printf("[HLS_DIRECT_TEST] Testing HLS direct playback: %s", utils.LogURL(r.Config, playlistURL))
-
-	// Parse the first segment URL from playlist content
-	lines := strings.Split(content, "\n")
-	var firstSegmentURL string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
-			if strings.HasPrefix(line, "http") {
-				firstSegmentURL = line
-			} else {
-				// Relative URL - resolve against playlist URL
-				baseURL := playlistURL[:strings.LastIndex(playlistURL, "/")]
-				firstSegmentURL = baseURL + "/" + line
-			}
-			break
-		}
-	}
-
-	if firstSegmentURL == "" {
-		r.Logger.Printf("[HLS_DIRECT_TEST] No segments found in playlist")
-		return false
-	}
-
-	r.Logger.Printf("[HLS_DIRECT_TEST] Testing segment accessibility: %s", utils.LogURL(r.Config, firstSegmentURL))
-
-	// Test if segment is accessible without special headers
-	req, err := http.NewRequest("HEAD", firstSegmentURL, nil)
-	if err != nil {
-		r.Logger.Printf("[HLS_DIRECT_TEST] Error creating segment test request: %v", err)
-		return false
-	}
-
-	// Use a basic client without custom headers to simulate VLC
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		r.Logger.Printf("[HLS_DIRECT_TEST] Segment not accessible: %v", err)
-		return false
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		r.Logger.Printf("[HLS_DIRECT_TEST] Segment returned HTTP %d", resp.StatusCode)
-		return false
-	}
-
-	r.Logger.Printf("[HLS_DIRECT_TEST] HLS stream is valid for direct playback")
-	return true
-}
-
-// Mark stream as valid HLS for direct serving
-func (r *Restream) markStreamAsValidHLS(hlsURL string) {
-	r.Channel.Mu.Lock()
-	defer r.Channel.Mu.Unlock()
-
-	for _, stream := range r.Channel.Streams {
-		if stream.URL == hlsURL || strings.Contains(hlsURL, stream.URL) {
-			stream.StreamType = types.StreamTypeHLS
-			stream.ResolvedURL = hlsURL
-			stream.LastChecked = time.Now()
-			r.Logger.Printf("[HLS_MARKED] Marked stream as valid HLS: %s", stream.Name)
-			break
 		}
 	}
 }
