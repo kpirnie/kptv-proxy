@@ -77,11 +77,14 @@ func main() {
 	// Metrics handler
 	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
 
-	addr := fmt.Sprintf(":%s", cfg.Port)
-	logger.Printf("Starting KPTV Proxy on %s", addr)
-	logger.Printf("  - Version: %s", Version)
+	// add the admin routes
+	setupAdminRoutes(router, proxyInstance)
+
+	addr := fmt.Sprintf(":%d", 8080)
+
+	// show into
+	logger.Printf("Starting KPTV Proxy %s", Version)
 	logger.Printf("Server configuration:")
-	logger.Printf("  - Port: %s", cfg.Port)
 	logger.Printf("  - Base URL: %s", cfg.BaseURL)
 	logger.Printf("  - Worker Threads: %d", cfg.WorkerThreads)
 	logger.Printf("  - Sources: %d", len(cfg.Sources))
@@ -90,12 +93,44 @@ func main() {
 	logger.Printf("  - Cache Enabled: %v", cfg.CacheEnabled)
 	logger.Printf("  - Cache Duration: %s", cfg.CacheDuration)
 	logger.Printf("  - Source Refresh Rate: %s", cfg.ImportRefreshInterval)
-	logger.Printf("  - Stream Timeout: %s", cfg.StreamTimeout)
 	logger.Printf("  - Stream Sort Attr.: %s", cfg.SortField)
 	logger.Printf("  - Stream Sort Dir.: %s", cfg.SortDirection)
 	logger.Printf("  - Debug Enabled: %v", cfg.Debug)
 	logger.Printf("  - URL Obfuscation: %v", cfg.ObfuscateUrls)
 
+	// gracefully restart if it's requested to do.
+	go func() {
+		for {
+			<-restartChan
+			if cfg.Debug {
+				logger.Printf("Graceful restart requested...")
+			}
+			// Stop import refresh
+			proxyInstance.StopImportRefresh()
+
+			// CLEAR CONFIG CACHE FIRST
+			config.ClearConfigCache()
+
+			// Reload config from file
+			newConfig := config.LoadConfig()
+			proxyInstance.Config = newConfig
+
+			// Clear existing channels
+			proxyInstance.Channels.Range(func(key, value interface{}) bool {
+				proxyInstance.Channels.Delete(key)
+				return true
+			})
+
+			// Restart import process
+			proxyInstance.ImportStreams()
+			go proxyInstance.StartImportRefresh()
+			if cfg.Debug {
+				logger.Printf("Graceful restart completed - loaded %d sources", len(newConfig.Sources))
+			}
+		}
+	}()
+
+	// fire us up
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}

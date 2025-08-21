@@ -6,9 +6,9 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v0.3.42" -o kptv-proxy .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v0.4.39" -o kptv-proxy .
 
-# Final stage - your working ffmpeg setup + Go app
+# Final stage - your working ffmpeg setup + Go app + Admin interface
 FROM docker.io/alpine:latest
 
 # Copy static ffmpeg binaries (your working approach)
@@ -18,6 +18,9 @@ COPY --from=docker.io/mwader/static-ffmpeg:latest /ffprobe /usr/local/bin/
 # Copy compiled Go application
 COPY --from=builder /app/kptv-proxy /usr/local/bin/kptv-proxy
 
+# Copy admin interface static files
+COPY --from=builder /app/static /static
+
 # Setup (adapted from your container)
 RUN mkdir -p /dev/dri && \
     chmod 777 /dev/dri && \
@@ -25,6 +28,11 @@ RUN mkdir -p /dev/dri && \
     adduser -u 1000 -G kptv -D kptv && \
     #chmod 755 /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/kptv-proxy && \
     chmod 755 /usr/local/bin/ffprobe /usr/local/bin/kptv-proxy && \
+    # Make static files readable and settings writable by kptv user
+    mkdir -p /settings && \
+    chmod -R 755 /static && \
+    chown -R kptv:kptv /settings && \
+    chmod 755 /settings && \
     # Install CA certificates for HTTPS
     apk add --no-cache ca-certificates && \
     # Verify ffmpeg works

@@ -12,7 +12,6 @@ import (
 
 // Config holds all configuration values
 type Config struct {
-	Port                  string         `json:"port"`
 	BaseURL               string         `json:"baseURL"`
 	MaxBufferSize         int64          `json:"maxBufferSize"`
 	BufferSizePerStream   int64          `json:"bufferSizePerStream"`
@@ -48,7 +47,6 @@ type SourceConfig struct {
 
 // ConfigFile represents the JSON structure for marshaling/unmarshaling
 type ConfigFile struct {
-	Port                  string             `json:"port"`
 	BaseURL               string             `json:"baseURL"`
 	MaxBufferSize         int64              `json:"maxBufferSize"`
 	BufferSizePerStream   int64              `json:"bufferSizePerStream"`
@@ -148,7 +146,6 @@ func loadFromFile(path string) (*Config, error) {
 
 func convertFromFile(cf *ConfigFile) (*Config, error) {
 	config := &Config{
-		Port:                cf.Port,
 		BaseURL:             cf.BaseURL,
 		MaxBufferSize:       cf.MaxBufferSize,
 		BufferSizePerStream: cf.BufferSizePerStream,
@@ -202,7 +199,6 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 
 func getDefaultConfig() *Config {
 	return &Config{
-		Port:                  "8080",
 		BaseURL:               "http://localhost:8080",
 		MaxBufferSize:         16,
 		BufferSizePerStream:   1,
@@ -222,9 +218,6 @@ func getDefaultConfig() *Config {
 }
 
 func validateAndSetDefaults(config *Config) {
-	if config.Port == "" {
-		config.Port = "8080"
-	}
 	if config.BaseURL == "" {
 		config.BaseURL = "http://localhost:8080"
 	}
@@ -321,7 +314,6 @@ func (c *Config) GetSourcesByOrder() []SourceConfig {
 // CreateExampleConfig creates an example configuration file
 func CreateExampleConfig(path string) error {
 	example := ConfigFile{
-		Port:                  "8080",
 		BaseURL:               "http://localhost:8080",
 		MaxBufferSize:         256,
 		BufferSizePerStream:   16,
@@ -374,6 +366,13 @@ func CreateExampleConfig(path string) error {
 	}
 
 	return os.WriteFile(path, data, 0644)
+}
+
+// ClearConfigCache clears the cached configuration to force a reload
+func ClearConfigCache() {
+	configMutex.Lock()
+	defer configMutex.Unlock()
+	configCache = nil
 }
 
 func obfuscateURL(urlStr string) string {

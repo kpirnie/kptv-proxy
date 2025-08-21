@@ -35,6 +35,7 @@ type StreamProxy struct {
 	WorkerPool            *ants.Pool
 	RateLimiter           ratelimit.Limiter
 	MasterPlaylistHandler *parser.MasterPlaylistHandler
+	importStopChan        chan bool
 }
 
 // ensure we fire up the struct
@@ -47,7 +48,8 @@ func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, 
 		BufferPool:            bufferPool,
 		HttpClient:            httpClient,
 		WorkerPool:            workerPool,
-		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(logger, cfg), // Add this line
+		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(logger, cfg),
+		importStopChan:        make(chan bool, 1),
 	}
 }
 
@@ -276,14 +278,31 @@ func (sp *StreamProxy) StartImportRefresh() {
 	ticker := time.NewTicker(sp.Config.ImportRefreshInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if sp.Config.Debug {
-			sp.Logger.Println("Refreshing imports...")
+	for {
+		select {
+		case <-sp.importStopChan:
+			if sp.Config.Debug {
+				sp.Logger.Println("Import refresh stopped")
+			}
+			return
+		case <-ticker.C:
+			if sp.Config.Debug {
+				sp.Logger.Println("Refreshing imports...")
+			}
+			sp.ImportStreams()
 		}
-
-		sp.ImportStreams()
 	}
+}
 
+// stop the import refresh routine
+func (sp *StreamProxy) StopImportRefresh() {
+	if sp.importStopChan != nil {
+		select {
+		case sp.importStopChan <- true:
+		default:
+			// Channel is full or closed, that's fine
+		}
+	}
 }
 
 // clean up the streamer

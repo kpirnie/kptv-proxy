@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPTV Proxy</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/uikit/3.17.11/css/uikit.min.css">
+    <link rel="stylesheet" href="/static/admin.css">
+    <link rel="icon" type="image/png" href="https://cdn.kevp.us/tv/kptv-icon.png" />
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay uk-hidden">
+        <div class="uk-text-center">
+            <div uk-spinner="ratio: 2"></div>
+            <div class="uk-margin-small-top">Restarting KPTV Proxy...</div>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="uk-navbar uk-navbar-container" uk-navbar>
+        <div class="uk-navbar-left">
+            <a class="uk-navbar-item uk-logo" href="#">
+                <img src="https://cdn.kevp.us/tv/kptv-icon.svg" alt="KPTV" style="height: 100px; width: 100px;">
+                <span>KPTV Proxy</span>
+            </a>
+        </div>
+        <div class="uk-navbar-right uk-padding uk-padding-remove-vertical">
+            <ul class="uk-navbar-nav">
+                <li>
+                    <a href="#" id="restart-btn">
+                        <span uk-icon="refresh"></span>
+                        <span class="uk-visible@s">Restart</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="uk-container uk-container-expand uk-margin-top">
+        <!-- Tabs -->
+        <ul class="uk-tab" uk-tab>
+            <li class="uk-active"><a href="#">Dashboard</a></li>
+            <li><a href="#">Global Settings</a></li>
+            <li><a href="#">Sources</a></li>
+            <li><a href="#">Channels</a></li>
+            <li><a href="#">Logs</a></li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="uk-switcher uk-margin">
+            <!-- Dashboard Tab -->
+            <div>
+                <!-- Stats Cards -->
+                <div class="uk-grid-small uk-grid-match" uk-grid>
+                    <div class="uk-width-1-2@s uk-width-1-4@m">
+                        <div class="uk-card uk-card-body uk-text-center stat-card">
+                            <div class="stat-value" id="total-channels">-</div>
+                            <div class="stat-label">Total Channels</div>
+                        </div>
+                    </div>
+                    <div class="uk-width-1-2@s uk-width-1-4@m">
+                        <div class="uk-card uk-card-body uk-text-center stat-card success-card">
+                            <div class="stat-value" id="active-streams">-</div>
+                            <div class="stat-label">Active Streams</div>
+                        </div>
+                    </div>
+                    <div class="uk-width-1-2@s uk-width-1-4@m">
+                        <div class="uk-card uk-card-body uk-text-center stat-card warning-card">
+                            <div class="stat-value" id="total-sources">-</div>
+                            <div class="stat-label">Sources</div>
+                        </div>
+                    </div>
+                    <div class="uk-width-1-2@s uk-width-1-4@m">
+                        <div class="uk-card uk-card-body uk-text-center stat-card danger-card">
+                            <div class="stat-value" id="connected-clients">-</div>
+                            <div class="stat-label">Connected Clients</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Status -->
+                <div class="uk-grid-small uk-margin-top" uk-grid>
+                    <div class="uk-width-1-2@m">
+                        <div class="uk-card uk-card-default">
+                            <div class="uk-card-header">
+                                <h3 class="uk-card-title">System Status</h3>
+                            </div>
+                            <div class="uk-card-body">
+                                <div class="metric-row">
+                                    <span>Server Status</span>
+                                    <span class="uk-label uk-label-success">Running</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Uptime</span>
+                                    <span id="uptime">-</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Memory Usage</span>
+                                    <span id="memory-usage">-</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Cache Status</span>
+                                    <span id="cache-status">-</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Worker Threads</span>
+                                    <span id="worker-threads">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="uk-width-1-2@m">
+                        <div class="uk-card uk-card-default">
+                            <div class="uk-card-header">
+                                <h3 class="uk-card-title">Traffic Stats</h3>
+                            </div>
+                            <div class="uk-card-body">
+                                <div class="metric-row">
+                                    <span>Total Connections</span>
+                                    <span id="total-connections">-</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Bytes Transferred</span>
+                                    <span id="bytes-transferred">-</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Active Restreamers</span>
+                                    <span id="active-restreamers">-</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Stream Errors</span>
+                                    <span id="stream-errors">-</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Avg Response Time</span>
+                                    <span id="response-time">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Channels -->
+                <div class="uk-margin-top">
+                    <div class="uk-card uk-card-default">
+                        <div class="uk-card-header">
+                            <h3 class="uk-card-title">Active Channels</h3>
+                            <button class="uk-button uk-button-primary uk-button-small" id="refresh-channels">
+                                <span uk-icon="refresh"></span> Refresh
+                            </button>
+                        </div>
+                        <div class="uk-card-body">
+                            <div id="active-channels-list">
+                                <div class="uk-text-center uk-margin">
+                                    <div uk-spinner></div>
+                                    <div class="uk-margin-small-top">Loading channels...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Global Settings Tab -->
+            <div>
+                <form id="global-settings-form">
+                    <div class="uk-card uk-card-default">
+                        <div class="uk-card-header">
+                            <h3 class="uk-card-title">Global Configuration</h3>
+                        </div>
+                        <div class="uk-card-body">
+                            <div class="uk-grid-small" uk-grid>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Base URL</label>
+                                    <input class="uk-input" type="url" name="baseURL" placeholder="http://localhost:8080">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Max Buffer Size (MB)</label>
+                                    <input class="uk-input" type="number" name="maxBufferSize" min="1" max="2048">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Buffer Size Per Stream (MB)</label>
+                                    <input class="uk-input" type="number" name="bufferSizePerStream" min="1" max="256">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Global Stream Timeout</label>
+                                    <input class="uk-input" type="text" name="streamTimeout" placeholder="30s">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Worker Threads</label>
+                                    <input class="uk-input" type="number" name="workerThreads" min="1" max="32">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Max Connections to App</label>
+                                    <input class="uk-input" type="number" name="maxConnectionsToApp" min="1" max="1000">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Cache Duration</label>
+                                    <input class="uk-input" type="text" name="cacheDuration" placeholder="30m">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Import Refresh Interval</label>
+                                    <input class="uk-input" type="text" name="importRefreshInterval" placeholder="12h">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Sort Field</label>
+                                    <select class="uk-select" name="sortField">
+                                        <option value="tvg-name">TVG Name</option>
+                                        <option value="tvg-id">TVG ID</option>
+                                        <option value="group-title">Group Title</option>
+                                    </select>
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Sort Direction</label>
+                                    <select class="uk-select" name="sortDirection">
+                                        <option value="asc">Ascending</option>
+                                        <option value="desc">Descending</option>
+                                    </select>
+                                </div>
+                                <div class="uk-width-1-1">
+                                    <label><input class="uk-checkbox" type="checkbox" name="cacheEnabled"> Enable Cache</label>
+                                </div>
+                                <div class="uk-width-1-1">
+                                    <label><input class="uk-checkbox" type="checkbox" name="debug"> Debug Mode</label>
+                                </div>
+                                <div class="uk-width-1-1">
+                                    <label><input class="uk-checkbox" type="checkbox" name="obfuscateUrls"> Obfuscate URLs in Logs</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="uk-card-footer">
+                            <button class="uk-button uk-button-primary" type="submit">
+                                <span uk-icon="check"></span> Save & Restart
+                            </button>
+                            <button class="uk-button uk-button-secondary uk-margin-small-left" type="button" id="load-global-settings">
+                                <span uk-icon="refresh"></span> Load Current
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Sources Tab -->
+            <div>
+                <div class="uk-margin-bottom">
+                    <button class="uk-button uk-button-primary" id="add-source-btn">
+                        <span uk-icon="plus"></span> Add Source
+                    </button>
+                </div>
+
+                <div id="sources-container">
+                    <!-- Sources will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Channels Tab -->
+            <div>
+                <div class="uk-card uk-card-default">
+                    <div class="uk-card-header">
+                        <h3 class="uk-card-title">All Channels</h3>
+                        <div class="uk-flex uk-flex-middle">
+                            <input class="uk-input uk-form-width-medium" type="text" placeholder="Search channels..." id="channel-search">
+                            <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left" id="refresh-all-channels" style="padding:5px 10px;">
+                                <span uk-icon="refresh"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="uk-card-body">
+                        <div id="all-channels-list">
+                            <div class="uk-text-center uk-margin">
+                                <div uk-spinner></div>
+                                <div class="uk-margin-small-top">Loading channels...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div>
+                <div class="uk-card uk-card-default">
+                    <div class="uk-card-header">
+                        <h3 class="uk-card-title">Application Logs</h3>
+                        <div class="uk-flex uk-flex-middle">
+                            <select class="uk-select uk-form-width-small" id="log-level">
+                                <option value="all">All Levels</option>
+                                <option value="error">Errors</option>
+                                <option value="warning">Warnings</option>
+                                <option value="info">Info</option>
+                                <option value="debug">Debug</option>
+                            </select>
+                            <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left" id="refresh-logs">
+                                <span uk-icon="refresh"></span>
+                            </button>
+                            <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-left" id="clear-logs">
+                                <span uk-icon="trash"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="uk-card-body">
+                        <div id="logs-container" style="height: 500px; overflow-y: auto; background: #1a1a1a; padding: 1rem; font-family: monospace; font-size: 0.875rem;">
+                            <div class="uk-text-center uk-margin">
+                                <div uk-spinner></div>
+                                <div class="uk-margin-small-top">Loading logs...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Source Modal -->
+    <div id="source-modal" uk-modal>
+        <div class="uk-modal-dialog">
+            <button class="uk-modal-close-default" type="button" uk-close></button>
+            <div class="uk-modal-header">
+                <h2 class="uk-modal-title" id="source-modal-title">Add Source</h2>
+            </div>
+            <div class="uk-modal-body">
+                <form id="source-form">
+                    <input type="hidden" id="source-index" value="">
+                    <div class="uk-margin">
+                        <label class="uk-form-label">Name</label>
+                        <input class="uk-input" type="text" id="source-name" placeholder="Source Name" required>
+                    </div>
+                    <div class="uk-margin">
+                        <label class="uk-form-label">URL</label>
+                        <input class="uk-input" type="url" id="source-url" placeholder="http://example.com/playlist.m3u8" required>
+                    </div>
+                    <div class="uk-grid-small" uk-grid>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">Order</label>
+                            <input class="uk-input" type="number" id="source-order" min="1" value="1">
+                        </div>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">Max Connections</label>
+                            <input class="uk-input" type="number" id="source-max-connections" min="1" value="5">
+                        </div>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">Max Stream Timeout</label>
+                            <input class="uk-input" type="text" id="source-max-stream-timeout" placeholder="30s">
+                        </div>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">Retry Delay</label>
+                            <input class="uk-input" type="text" id="source-retry-delay" placeholder="5s">
+                        </div>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">Max Retries</label>
+                            <input class="uk-input" type="number" id="source-max-retries" min="1" value="3">
+                        </div>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">Max Failures Before Block</label>
+                            <input class="uk-input" type="number" id="source-max-failures" min="1" value="5">
+                        </div>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">Min Data Size (KB)</label>
+                            <input class="uk-input" type="number" id="source-min-data-size" min="1" value="2">
+                        </div>
+                        <div class="uk-width-1-1">
+                            <label class="uk-form-label">User Agent</label>
+                            <input class="uk-input" type="text" id="source-user-agent" placeholder="VLC/3.0.18 LibVLC/3.0.18">
+                        </div>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">Origin</label>
+                            <input class="uk-input" type="text" id="source-origin" placeholder="https://example.com">
+                        </div>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">Referrer</label>
+                            <input class="uk-input" type="text" id="source-referrer" placeholder="https://example.com/player">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="uk-modal-footer uk-text-right">
+                <button class="uk-button uk-button-secondary uk-modal-close" type="button">Cancel</button>
+                <button class="uk-button uk-button-primary" id="save-source-btn" type="button">Save</button>
+            </div>
+        </div>
+    </div>
+    <!-- Footer -->
+    <footer class="uk-section uk-section-small uk-text-center" style="margin-top: 2rem; border-top: 1px solid var(--uk-border-color);">
+        <div class="uk-container">
+            <p class="uk-text-muted uk-margin-remove">
+                &copy; 2025 <a href="https://www.westernmasshosting.com" target="_blank">Kevin C. Pirnie</a> Licensed under MIT License.<br>
+                <small>Admin Interface v1.0 | Visit <a href="https://github.com/kpirnie/kptv-proxy" target="_blank">GitHub</a> for updates</small>
+            </p>
+        </div>
+    </footer>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/uikit/3.17.11/js/uikit.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/uikit/3.17.11/js/uikit-icons.min.js"></script>
+    <script src="/static/admin.js"></script>
+</body>
+</html>
