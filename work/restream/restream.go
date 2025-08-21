@@ -14,6 +14,7 @@ import (
 	"kptv-proxy/work/utils"
 	"log"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -124,12 +125,19 @@ func (r *Restream) RemoveClient(id string) {
 func (r *Restream) stopStream() {
 	if r.Running.CompareAndSwap(true, false) {
 		r.Cancel() // Cancel current context
+
+		// CRITICAL: Destroy the buffer to free memory
+		if r.Buffer != nil {
+			r.Buffer.Destroy()
+			r.Buffer = nil
+		}
+
 		// Create new context for next time (but don't start until new client)
 		r.Ctx, r.Cancel = context.WithCancel(context.Background())
 		atomic.StoreInt32(&r.CurrentIndex, 0) // Reset to first stream
 
-		// Clear the buffer and all client positions
-		r.Buffer.Reset()
+		// Force garbage collection
+		runtime.GC()
 	}
 }
 

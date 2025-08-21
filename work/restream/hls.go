@@ -144,6 +144,7 @@ func (r *Restream) testStreamWithFFprobe(streamURL string) (string, error) {
 	return "no_video", fmt.Errorf("no video stream found")
 }
 
+// stream url segments
 func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	if r.Config.Debug {
 		r.Logger.Printf("[HLS_STREAM] Starting HLS segment streaming for: %s", utils.LogURL(r.Config, playlistURL))
@@ -151,6 +152,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 
 	totalBytes := int64(0)
 	processedSegments := make(map[string]bool) // Track by URL instead of index
+	maxSegmentsInMemory := 10                  // LIMIT: Only keep 10 recent segments in memory
 
 	for {
 		select {
@@ -170,7 +172,6 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			if r.Config.Debug {
 				r.Logger.Printf("[HLS_STREAM] No clients remaining")
 			}
-
 			return totalBytes > 0, totalBytes
 		}
 
@@ -179,7 +180,6 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			if r.Config.Debug {
 				r.Logger.Printf("[HLS_STREAM_ERROR] Error getting segments: %v", err)
 			}
-
 			return false, totalBytes
 		}
 		if r.Config.Debug {
@@ -201,7 +201,6 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 				if r.Config.Debug {
 					r.Logger.Printf("[HLS_SEGMENT_ERROR] Error streaming segment: %v", err)
 				}
-
 				continue
 			}
 
@@ -211,25 +210,35 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			if r.Config.Debug {
 				r.Logger.Printf("[HLS_SEGMENT] Streamed segment: %d bytes", segmentBytes)
 			}
-
 		}
 
 		if r.Config.Debug && newSegmentCount > 0 {
 			r.Logger.Printf("[HLS_BATCH] Streamed %d new segments", newSegmentCount)
 		}
 
-		// Clean up old processed segments to prevent memory growth
-		if len(processedSegments) > 20 {
+		// CRITICAL: Aggressively clean up old processed segments to prevent memory growth
+		if len(processedSegments) > maxSegmentsInMemory {
 			// Keep only the most recent segments
 			newProcessed := make(map[string]bool)
-			recentCount := 0
-			for i := len(segments) - 10; i < len(segments) && i >= 0; i++ {
-				newProcessed[segments[i]] = true
-				recentCount++
+			keepCount := maxSegmentsInMemory / 2 // Keep half
+
+			// Keep only the last few segments
+			startIdx := len(segments) - keepCount
+			if startIdx < 0 {
+				startIdx = 0
 			}
+
+			for i := startIdx; i < len(segments); i++ {
+				if processedSegments[segments[i]] {
+					newProcessed[segments[i]] = true
+				}
+			}
+
+			// Replace the map completely to free memory
 			processedSegments = newProcessed
+
 			if r.Config.Debug {
-				r.Logger.Printf("[HLS_CLEANUP] Cleaned segment cache, kept %d recent segments", recentCount)
+				r.Logger.Printf("[HLS_CLEANUP] Cleaned segment cache, kept %d recent segments", len(newProcessed))
 			}
 		}
 

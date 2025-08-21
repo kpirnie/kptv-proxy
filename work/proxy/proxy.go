@@ -10,6 +10,7 @@ import (
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
+	"runtime"
 	"strconv"
 
 	"log"
@@ -302,13 +303,16 @@ func (sp *StreamProxy) RestreamCleanup() {
 				if !channel.Restreamer.Running.Load() {
 					lastActivity := channel.Restreamer.LastActivity.Load()
 					if now-lastActivity > 30 { // 30 second grace period
-						// Force cleanup
+						// CRITICAL: Properly destroy the restreamer and free memory
+						if channel.Restreamer.Buffer != nil {
+							channel.Restreamer.Buffer.Destroy()
+						}
 						channel.Restreamer.Cancel()
 						channel.Restreamer = nil
+
 						if sp.Config.Debug {
 							sp.Logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
 						}
-
 					}
 				} else {
 					// Check for dead clients
@@ -320,7 +324,6 @@ func (sp *StreamProxy) RestreamCleanup() {
 							if sp.Config.Debug {
 								sp.Logger.Printf("Removing inactive client: %s", ckey.(string))
 							}
-
 							channel.Restreamer.Clients.Delete(ckey)
 							select {
 							case <-client.Done:
@@ -339,9 +342,13 @@ func (sp *StreamProxy) RestreamCleanup() {
 						if sp.Config.Debug {
 							sp.Logger.Printf("No active clients found, stopping restreamer for: %s", channel.Name)
 						}
-
 						channel.Restreamer.Cancel()
 						channel.Restreamer.Running.Store(false)
+
+						// CRITICAL: Destroy buffer when no clients
+						if channel.Restreamer.Buffer != nil {
+							channel.Restreamer.Buffer.Destroy()
+						}
 					}
 				}
 			}
@@ -349,6 +356,9 @@ func (sp *StreamProxy) RestreamCleanup() {
 			channel.Mu.Unlock()
 			return true
 		})
+
+		// CRITICAL: Force garbage collection during cleanup
+		runtime.GC()
 	}
 }
 

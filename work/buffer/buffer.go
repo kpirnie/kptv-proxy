@@ -1,6 +1,7 @@
 package buffer
 
 import (
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -100,4 +101,24 @@ func (rb *RingBuffer) Reset() {
 		rb.readPos.Delete(key)
 		return true
 	})
+}
+
+// NEW: Destroy method to explicitly free memory
+func (rb *RingBuffer) Destroy() {
+	// Clear all client positions
+	rb.readPos.Range(func(key, value interface{}) bool {
+		rb.readPos.Delete(key)
+		return true
+	})
+
+	// Zero out the data buffer to help GC
+	if rb.data != nil {
+		for i := range rb.data {
+			rb.data[i] = 0
+		}
+		rb.data = nil
+	}
+
+	// Force garbage collection hint
+	runtime.GC()
 }
