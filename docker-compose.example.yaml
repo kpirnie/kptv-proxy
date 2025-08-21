@@ -5,50 +5,12 @@ services:
     restart: unless-stopped
     ports:
       - 9500:8080
-    environment:
-    
-      # Server Configuration
-      - BASE_URL=http://192.168.2.200:9500
-      
-      # Stream Sources (format: URL:MaxConnections)
-      - SOURCES=http://example.com/playlist1.m3u8:5,http://example.com/playlist2.m3u8|10
-      
-      # Buffer Configuration
-      - MAX_BUFFER_SIZE=256                   # 256MB total buffer
-      - BUFFER_SIZE_PER_STREAM=16             # 16MB per stream buffer
-      - MIN_DATA_SIZE=2                       # 2KB minimum data before considering success (number is in KB)
-      
-      # Cache Configuration
-      - CACHE_ENABLED=true                    # Enable caching
-      - CACHE_DURATION=30m                    # Cache duration (5 minutes)
-      
-      # Import Configuration
-      - IMPORT_REFRESH_INTERVAL=12h           # Refresh imports every 30 minutes
-      
-      # Retry Configuration
-      - MAX_RETRIES=3                         # Max retries per stream
-      - MAX_FAILURES_BEFORE_BLOCK=5           # Max failures before blocking a stream
-      - RETRY_DELAY=5s                        # Delay between retries
-      
-      # Performance Configuration
-      - WORKER_THREADS=4                      # Number of worker threads for parsing
-
-      # Sorting Configuration
-      - SORT_FIELD=tvg-type                   # Field to sort by (tvg-name, tvg-id, etc.)
-      - SORT_DIRECTION=asc                    # Sort direction (asc or desc)
-      
-      # Debug Mode
-      - DEBUG=true                            # Set to true for verbose logging
-      - OBFUSCATE_URLS=true                   # Enable obfuscation for security/privacy
-      
-      # HTTP Client Configuration
-      - USER_AGENT=VLC/3.0.18 LibVLC/3.0.18   # User agent for requests
-      - REQ_ORIGIN=                           # Origin header (optional)
-      - REQ_REFERRER=                         # Referrer header (optional)
+    volumes:
+      - /home/kpirnie/Development/Go/kptv-proxy/settings/:/settings/
 
     # Health check
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://192.168.2.200:9500/playlist.m3u8"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9500/playlist"]
       interval: 30s
       timeout: 10s
       retries: 3

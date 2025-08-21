@@ -35,7 +35,7 @@ func main() {
 	bufferPool := buffer.NewBufferPool(cfg.BufferSizePerStream * 1024 * 1024)
 
 	// Initialize HTTP client
-	httpClient := client.NewHeaderSettingClient(cfg)
+	httpClient := client.NewHeaderSettingClient()
 
 	// Initialize worker pool
 	workerPool, err := ants.NewPool(cfg.WorkerThreads, ants.WithPreAlloc(true))
@@ -90,16 +90,9 @@ func main() {
 	logger.Printf("  - Cache Enabled: %v", cfg.CacheEnabled)
 	logger.Printf("  - Cache Duration: %s", cfg.CacheDuration)
 	logger.Printf("  - Source Refresh Rate: %s", cfg.ImportRefreshInterval)
-	logger.Printf("  - Min. Stream Size: %s", utils.FormatBytes(cfg.MinDataSize*1024))
-	logger.Printf("  - Max. Stream Retries: %d", cfg.MaxRetries)
-	logger.Printf("  - Stream Retry Delay: %s", cfg.RetryDelay)
-	logger.Printf("  - Max. Stream Failures: %d", cfg.MaxFailuresBeforeBlock)
 	logger.Printf("  - Stream Timeout: %s", cfg.StreamTimeout)
 	logger.Printf("  - Stream Sort Attr.: %s", cfg.SortField)
 	logger.Printf("  - Stream Sort Dir.: %s", cfg.SortDirection)
-	logger.Printf("  - User Agent Header: %s", cfg.UserAgent)
-	logger.Printf("  - Origin Header: %s", cfg.ReqOrigin)
-	logger.Printf("  - Referrer Header: %s", cfg.ReqReferrer)
 	logger.Printf("  - Debug Enabled: %v", cfg.Debug)
 	logger.Printf("  - URL Obfuscation: %v", cfg.ObfuscateUrls)
 

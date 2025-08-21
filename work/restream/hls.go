@@ -196,7 +196,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 				r.Logger.Printf("[HLS_SEGMENT_NEW] Processing new segment: %s", utils.LogURL(r.Config, segmentURL))
 			}
 
-			segmentBytes, err := r.streamSegment(segmentURL)
+			segmentBytes, err := r.streamSegment(segmentURL, playlistURL)
 			if err != nil {
 				if r.Config.Debug {
 					r.Logger.Printf("[HLS_SEGMENT_ERROR] Error streaming segment: %v", err)
@@ -254,6 +254,20 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 
 // Enhanced getHLSSegments function to handle redirect URLs
 func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
+	// Get source config for headers
+	source := r.Config.GetSourceByURL(playlistURL)
+	if source == nil {
+		// Try to find source by matching any stream URL in the channel
+		r.Channel.Mu.RLock()
+		for _, stream := range r.Channel.Streams {
+			if strings.Contains(playlistURL, stream.Source.URL) || strings.Contains(stream.URL, playlistURL) {
+				source = stream.Source
+				break
+			}
+		}
+		r.Channel.Mu.RUnlock()
+	}
+
 	req, err := http.NewRequest("GET", playlistURL, nil)
 	if err != nil {
 		return nil, err
@@ -263,7 +277,15 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	defer cancel()
 	req = req.WithContext(ctx)
 
-	resp, err := r.HttpClient.Do(req)
+	var resp *http.Response
+	if source != nil {
+		// Use source-specific headers
+		resp, err = r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
+	} else {
+		// Fallback to basic request
+		resp, err = r.HttpClient.Do(req)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +358,21 @@ func (r *Restream) resolveRedirectURL(segmentURL string) string {
 }
 
 // Enhanced streamSegment to handle tracking URLs
-func (r *Restream) streamSegment(segmentURL string) (int64, error) {
+func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) {
+	// Get source config for headers
+	source := r.Config.GetSourceByURL(playlistURL)
+	if source == nil {
+		// Try to find source by matching any stream URL in the channel
+		r.Channel.Mu.RLock()
+		for _, stream := range r.Channel.Streams {
+			if strings.Contains(playlistURL, stream.Source.URL) || strings.Contains(stream.URL, playlistURL) {
+				source = stream.Source
+				break
+			}
+		}
+		r.Channel.Mu.RUnlock()
+	}
+
 	// Resolve redirect URL if this is a tracking URL
 	originalURL := segmentURL
 	if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
@@ -360,7 +396,15 @@ func (r *Restream) streamSegment(segmentURL string) (int64, error) {
 	defer cancel()
 	req = req.WithContext(ctx)
 
-	resp, err := r.HttpClient.Do(req)
+	var resp *http.Response
+	if source != nil {
+		// Use source-specific headers
+		resp, err = r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
+	} else {
+		// Fallback to basic request
+		resp, err = r.HttpClient.Do(req)
+	}
+
 	if err != nil {
 		return 0, err
 	}

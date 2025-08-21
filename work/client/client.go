@@ -1,7 +1,6 @@
 package client
 
 import (
-	"kptv-proxy/work/config"
 	"net/http"
 	"time"
 )
@@ -9,7 +8,6 @@ import (
 // HeaderSettingClient wraps http.Client to automatically set headers
 type HeaderSettingClient struct {
 	Client *http.Client
-	config *config.Config
 }
 
 // CustomResponseWriter wraps http.ResponseWriter to track headers and implement Flusher
@@ -20,7 +18,7 @@ type CustomResponseWriter struct {
 }
 
 // HeaderSettingClient implementation
-func NewHeaderSettingClient(config *config.Config) *HeaderSettingClient {
+func NewHeaderSettingClient() *HeaderSettingClient {
 	client := &http.Client{
 		Timeout: 0, // No overall timeout for streaming
 		Transport: &http.Transport{
@@ -36,25 +34,31 @@ func NewHeaderSettingClient(config *config.Config) *HeaderSettingClient {
 
 	return &HeaderSettingClient{
 		Client: client,
-		config: config,
 	}
 }
 
 func (hsc *HeaderSettingClient) Do(req *http.Request) (*http.Response, error) {
-	hsc.setHeaders(req)
 	return hsc.Client.Do(req)
 }
 
-func (hsc *HeaderSettingClient) setHeaders(req *http.Request) {
-	req.Header.Set("User-Agent", hsc.config.UserAgent)
+// DoWithHeaders performs a request with custom headers
+func (hsc *HeaderSettingClient) DoWithHeaders(req *http.Request, userAgent, origin, referrer string) (*http.Response, error) {
+	hsc.setHeaders(req, userAgent, origin, referrer)
+	return hsc.Client.Do(req)
+}
+
+func (hsc *HeaderSettingClient) setHeaders(req *http.Request, userAgent, origin, referrer string) {
+	if userAgent != "" {
+		req.Header.Set("User-Agent", userAgent)
+	}
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Accept", "*/*")
 
-	if hsc.config.ReqOrigin != "" {
-		req.Header.Set("Origin", hsc.config.ReqOrigin)
+	if origin != "" {
+		req.Header.Set("Origin", origin)
 	}
-	if hsc.config.ReqReferrer != "" {
-		req.Header.Set("Referer", hsc.config.ReqReferrer)
+	if referrer != "" {
+		req.Header.Set("Referer", referrer)
 	}
 }
 

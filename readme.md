@@ -40,12 +40,13 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - Stream health monitoring and automatic blocking of failed sources
 
 ### 🔧 **Advanced Configuration**
-- Flexible source configuration with connection limits
-- Customizable stream sorting by any M3U8 attribute
-- URL obfuscation for privacy and security
-- Custom HTTP headers (User-Agent, Origin, Referrer)
-- Configurable timeouts and buffer sizes
-- Debug mode with extensive logging
+- **JSON-based configuration** with per-source customization
+- **Per-source settings** for headers, timeouts, retries, and connection limits
+- **Flexible source configuration** with custom User-Agent, Origin, and Referrer headers
+- **Customizable stream sorting** by any M3U8 attribute
+- **URL obfuscation** for privacy and security
+- **Configurable timeouts and buffer sizes**
+- **Debug mode** with extensive logging
 
 ### 📊 **Monitoring & Metrics**
 - Prometheus metrics integration
@@ -60,6 +61,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   IPTV Source 1 │    │   IPTV Source 2  │    │   IPTV Source N │
 │   (5 max conns) │    │  (10 max conns)  │    │  (3 max conns)  │
+│ Custom Headers  │    │ Custom Headers   │    │ Custom Headers  │
 └─────────┬───────┘    └─────────┬────────┘    └─────────┬───────┘
           │                      │                       │
           └──────────────────────┼───────────────────────┘
@@ -71,6 +73,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                     │    detection            │
                     │  • Tracking URL         │
                     │    resolution           │
+                    │  • Per-source config    │
                     │  • Failover logic       │
                     │  • Connection mgmt      │
                     └────────────┬────────────┘
@@ -89,109 +92,64 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
-## Restreaming Architecture
-
-**How It Works:**
-```
-┌─────────────┐    ┌─────────────────┐    ┌──────────────┐
-│ IPTV Source │───▶│   KPTV Proxy    │───▶│   Client 1   │
-│             │    │ ┌─────────────┐ │    ├──────────────┤
-│ (1 stream   │    │ │ Restreamer  │ │───▶│   Client 2   │  
-│  connection)│    │ │  - Buffer   │ │    ├──────────────┤
-│             │    │ │  - Segments │ │───▶│   Client N   │
-└─────────────┘    │ └─────────────┘ │    └──────────────┘
-                   └─────────────────┘
-```
-
-**Benefits:**
-- ✅ Prevents 429 rate limit errors from providers
-- ✅ Reduces bandwidth costs and server load  
-- ✅ Better for providers with strict connection limits
-- ✅ Automatic stream cleanup when no clients connected
-- ✅ Real-time client connection management
-
-## How Channel Grouping Works
-
-The proxy intelligently groups channels with the same name from different sources:
-
-**Input Sources:**
-```
-Source 1: BBC One, CNN, ESPN
-Source 2: BBC One, Fox News, ESPN  
-Source 3: CNN, ESPN, Discovery
-```
-
-**Unified Output:**
-```
-BBC One    → [Source1/BBC_One, Source2/BBC_One] (auto-failover)
-CNN        → [Source1/CNN, Source3/CNN] (auto-failover)  
-ESPN       → [Source1/ESPN, Source2/ESPN, Source3/ESPN] (auto-failover)
-Fox News   → [Source2/Fox_News] (single source)
-Discovery  → [Source3/Discovery] (single source)
-```
-
-## Advanced HLS Stream Handling
-
-The proxy includes sophisticated HLS processing that handles complex streaming scenarios:
-
-### **Tracking URL Resolution**
-Automatically detects and resolves ad-insertion tracking URLs:
-```
-Input:  https://provider.com/beacon/track?redirect_url=https%3A%2F%2Freal-video.ts
-Output: https://real-video.ts (extracted and decoded)
-```
-
-### **Format Error Recovery**  
-Handles streams with format quirks (like BBC America) by:
-- Detecting problematic ffprobe validation patterns
-- Bypassing validation for known problematic formats
-- Attempting direct streaming when validation fails
-
-### **Multi-Variant Testing**
-For master playlists, tests variants from highest to lowest quality:
-```
-Testing variants:
-✅ 1920x1080 (5000 kbps) - Success → Stream this quality
-❌ 1280x720  (3000 kbps) - Failed  → Try next
-❌ 854x480   (1500 kbps) - Failed  → Try next
-```
-
-## Master Playlist Processing
-
-The proxy automatically detects HLS master playlists and intelligently selects the best variant:
-
-```
-Input Master Playlist:
-#EXTM3U
-#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=720x480
-low.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720  
-med.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
-high.m3u8
-
-Proxy Selection Logic:
-✅ Selects highest quality first (most reliable providers)
-✅ Falls back to lower quality on errors
-✅ Logs all available variants
-✅ Handles tracking URLs automatically
-```
-
 ## Quick Start
 
 **Prerequisites**: Docker or Podman installed
 
-1. **Get the configuration:**
+1. **Create settings directory and get configuration:**
 ```bash
+mkdir settings
 wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.example.yaml -O docker-compose.yaml
 ```
 
-2. **Configure your sources** - Edit `docker-compose.yaml`:
-```yaml
-environment:
-  # Replace with your IPTV provider URLs
-  SOURCES: "http://provider1.com/playlist.m3u8|5,http://provider2.com/playlist.m3u8|10"
-  BASE_URL: "http://your-server-ip:9500"
+2. **Create your configuration file** - Create `settings/config.json`:
+```json
+{
+  "port": "8080",
+  "baseURL": "http://your-server-ip:9500",
+  "maxBufferSize": 256,
+  "bufferSizePerStream": 16,
+  "cacheEnabled": true,
+  "cacheDuration": "30m",
+  "importRefreshInterval": "12h",
+  "workerThreads": 4,
+  "debug": false,
+  "obfuscateUrls": true,
+  "sortField": "tvg-name",
+  "sortDirection": "asc",
+  "streamTimeout": "10s",
+  "maxConnectionsToApp": 100,
+  "sources": [
+    {
+      "name": "Primary IPTV Source",
+      "url": "http://provider1.com/playlist.m3u8",
+      "order": 1,
+      "maxConnections": 5,
+      "maxStreamTimeout": "30s",
+      "retryDelay": "5s",
+      "maxRetries": 3,
+      "maxFailuresBeforeBlock": 5,
+      "minDataSize": 2,
+      "userAgent": "VLC/3.0.18 LibVLC/3.0.18",
+      "reqOrigin": "",
+      "reqReferrer": ""
+    },
+    {
+      "name": "Backup IPTV Source",
+      "url": "http://provider2.com/playlist.m3u8",
+      "order": 2,
+      "maxConnections": 10,
+      "maxStreamTimeout": "45s",
+      "retryDelay": "10s",
+      "maxRetries": 2,
+      "maxFailuresBeforeBlock": 3,
+      "minDataSize": 1,
+      "userAgent": "Mozilla/5.0 (Smart TV; Linux)",
+      "reqOrigin": "https://provider2.com",
+      "reqReferrer": "https://provider2.com/player"
+    }
+  ]
+}
 ```
 
 3. **Start the proxy:**
@@ -205,63 +163,72 @@ podman-compose up -d
 
 4. **Access your unified playlist:**
 ```
-http://your-server-ip:9500/playlist.m3u8
+http://your-server-ip:9500/playlist
 ```
 
-**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover.
+**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover and per-source configuration.
 
 ## Configuration Reference
 
-### Core Settings
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8080` | Server port |
-| `BASE_URL` | `http://localhost:8080` | Base URL for generated stream links |
-| `SOURCES` | Required | Comma-separated list: `URL\|MaxConns,URL\|MaxConns` |
+### Global Settings
+All configuration is done via a JSON file mounted at `/settings/config.json`.
 
-**Why Restreaming?**
-- ✅ Reduces provider load (prevents 429 rate limit errors)
-- ✅ Better for providers with strict connection limits  
-- ✅ More efficient bandwidth usage
-- ✅ Automatic stream cleanup
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `port` | `"8080"` | Server port |
+| `baseURL` | `"http://localhost:8080"` | Base URL for generated stream links |
+| `maxBufferSize` | `256` | Total buffer size in MB |
+| `bufferSizePerStream` | `16` | Per-stream buffer size in MB |
+| `cacheEnabled` | `true` | Enable playlist caching |
+| `cacheDuration` | `"30m"` | Cache lifetime (e.g., "30m", "1h") |
+| `importRefreshInterval` | `"12h"` | How often to refresh source playlists |
+| `workerThreads` | `4` | Parallel workers for import processing |
+| `debug` | `false` | Enable verbose logging |
+| `obfuscateUrls` | `true` | Hide source URLs in logs for privacy |
+| `sortField` | `"tvg-name"` | Sort streams by: `tvg-name`, `tvg-id`, `group-title`, etc. |
+| `sortDirection` | `"asc"` | Sort direction: `asc` or `desc` |
+| `streamTimeout` | `"10s"` | Global timeout for stream validation |
+| `maxConnectionsToApp` | `100` | Maximum total connections to the application |
 
-### Stream Management
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MAX_RETRIES` | `3` | Retry attempts per stream failure |
-| `MAX_FAILURES_BEFORE_BLOCK` | `5` | Failures before blocking a stream |
-| `RETRY_DELAY` | `5s` | Delay between retry attempts |
-| `MIN_DATA_SIZE` | `1` | Minimum amount of data the stream must contain to be considered valid in KB |
-| `IMPORT_REFRESH_INTERVAL` | `12h` | How often to refresh source playlists |
+### Per-Source Settings
+Each source in the `sources` array supports these individual settings:
 
-### Performance Tuning
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WORKER_THREADS` | `4` | Parallel workers for import processing |
-| `MAX_BUFFER_SIZE` | `256` | Total buffer size (256MB) |
-| `BUFFER_SIZE_PER_STREAM` | `16` | Per-stream buffer (16MB) |
-| `STREAM_TIMEOUT` | `10s` | Timeout for stream validation and ffprobe |
+| Setting | Required | Description | Example |
+|---------|----------|-------------|---------|
+| `name` | Yes | Friendly name for the source | `"Primary IPTV"` |
+| `url` | Yes | M3U8 playlist URL | `"http://provider.com/list.m3u8"` |
+| `order` | No | Priority order (lower = higher priority) | `1` |
+| `maxConnections` | No | Max concurrent connections to this source | `5` |
+| `maxStreamTimeout` | No | Timeout for streams from this source | `"30s"` |
+| `retryDelay` | No | Delay between retry attempts | `"5s"` |
+| `maxRetries` | No | Retry attempts per stream failure | `3` |
+| `maxFailuresBeforeBlock` | No | Failures before blocking a stream | `5` |
+| `minDataSize` | No | Minimum data size in KB to consider success | `2` |
+| `userAgent` | No | Custom User-Agent header | `"VLC/3.0.18 LibVLC/3.0.18"` |
+| `reqOrigin` | No | Custom Origin header | `"https://provider.com"` |
+| `reqReferrer` | No | Custom Referrer header | `"https://provider.com/player"` |
 
-### Customization
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SORT_FIELD` | `tvg-name` | Sort streams by: `tvg-name`, `tvg-id`, `group-title`, etc. |
-| `SORT_DIRECTION` | `asc` | Sort direction: `asc` or `desc` |
-| `USER_AGENT` | `VLC/3.0.18 LibVLC/3.0.18` | Custom User-Agent header |
-| `REQ_ORIGIN` | `` | Optional Origin header |
-| `REQ_REFERRER` | `` | Optional Referrer header |
+### Example Docker Compose
 
-### Privacy & Security
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OBFUSCATE_URLS` | `true` | Hide source URLs in logs for privacy |
-| `DEBUG` | `false` | Enable verbose logging |
-
-### Caching
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CACHE_ENABLED` | `true` | Enable playlist caching |
-| `CACHE_DURATION` | `30m` | Cache lifetime |
+```yaml
+services:
+  kptv-proxy:
+    image: ghcr.io/kpirnie/kptv-proxy:latest
+    container_name: kptv_proxy
+    restart: unless-stopped
+    ports:
+      - 9500:8080
+    volumes:
+      - ./settings:/settings:ro  # Mount configuration directory
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9500/playlist"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+```
 
 ## API Endpoints
 
@@ -272,32 +239,104 @@ http://your-server-ip:9500/playlist.m3u8
 | `GET /stream/{channel}` | Stream proxy with automatic failover |
 | `GET /metrics` | Prometheus metrics |
 
-## Advanced Usage Examples
+## Advanced Configuration Examples
 
-### High-Performance Configuration
-```yaml
-# For servers handling many concurrent clients
-WORKER_THREADS: "20"
-MAX_BUFFER_SIZE: "512"    # 512MB
-BUFFER_SIZE_PER_STREAM: "32"  # 32MB  
+### High-Performance Multi-Provider Setup
+```json
+{
+  "port": "8080",
+  "baseURL": "http://your-server:9500",
+  "maxBufferSize": 512,
+  "bufferSizePerStream": 32,
+  "workerThreads": 20,
+  "maxConnectionsToApp": 500,
+  "sources": [
+    {
+      "name": "Premium Provider",
+      "url": "http://premium.iptv.com/playlist.m3u8",
+      "order": 1,
+      "maxConnections": 3,
+      "maxStreamTimeout": "20s",
+      "retryDelay": "3s",
+      "maxRetries": 2,
+      "maxFailuresBeforeBlock": 3,
+      "minDataSize": 5,
+      "userAgent": "PREMIUM_CLIENT/1.0"
+    },
+    {
+      "name": "Backup Provider 1",
+      "url": "http://backup1.iptv.com/playlist.m3u8", 
+      "order": 2,
+      "maxConnections": 8,
+      "maxStreamTimeout": "30s",
+      "retryDelay": "5s",
+      "maxRetries": 3,
+      "maxFailuresBeforeBlock": 5,
+      "minDataSize": 2,
+      "userAgent": "VLC/3.0.18 LibVLC/3.0.18"
+    },
+    {
+      "name": "Backup Provider 2",
+      "url": "http://backup2.iptv.com/playlist.m3u8",
+      "order": 3,
+      "maxConnections": 15,
+      "maxStreamTimeout": "45s", 
+      "retryDelay": "10s",
+      "maxRetries": 5,
+      "maxFailuresBeforeBlock": 8,
+      "minDataSize": 1,
+      "userAgent": "Mozilla/5.0 (Smart TV; Linux)",
+      "reqOrigin": "https://backup2.iptv.com",
+      "reqReferrer": "https://backup2.iptv.com/player"
+    }
+  ]
+}
 ```
 
-### Multi-Provider Setup with Priorities
-```yaml
-# Primary provider (lower connection limit = higher priority in failover)
-# Backup providers (higher limits)
-SOURCES: "http://premium.iptv.com/list.m3u8|3,http://backup1.iptv.com/list.m3u8|8,http://backup2.iptv.com/list.m3u8|15"
+### Provider-Specific Headers Configuration
+```json
+{
+  "sources": [
+    {
+      "name": "Provider with Custom Headers",
+      "url": "http://special-provider.com/list.m3u8",
+      "order": 1,
+      "maxConnections": 5,
+      "userAgent": "SpecialClient/2.1 (Linux; Smart TV)",
+      "reqOrigin": "https://special-provider.com",
+      "reqReferrer": "https://special-provider.com/tv-guide"
+    },
+    {
+      "name": "Standard Provider",
+      "url": "http://standard-provider.com/playlist.m3u8",
+      "order": 2,
+      "maxConnections": 10,
+      "userAgent": "VLC/3.0.18 LibVLC/3.0.18"
+    }
+  ]
+}
 ```
 
-### Custom Sorting and Grouping
-```yaml
-# Sort by channel group, then by name  
-SORT_FIELD: "group-title"
-SORT_DIRECTION: "asc"
-
-# Custom headers for specific providers
-USER_AGENT: "Mozilla/5.0 (Smart TV; Linux)"
-REQ_ORIGIN: "https://provider.com"
+### Low-Resource Configuration
+```json
+{
+  "maxBufferSize": 64,
+  "bufferSizePerStream": 4,
+  "workerThreads": 2,
+  "maxConnectionsToApp": 50,
+  "sources": [
+    {
+      "name": "Single Provider",
+      "url": "http://provider.com/playlist.m3u8",
+      "order": 1,
+      "maxConnections": 2,
+      "maxStreamTimeout": "15s",
+      "retryDelay": "3s",
+      "maxRetries": 2,
+      "minDataSize": 1
+    }
+  ]
+}
 ```
 
 ## Monitoring & Troubleshooting
@@ -312,6 +351,9 @@ docker-compose logs -f kptv-proxy
 
 # Check specific errors
 docker-compose logs kptv-proxy | grep ERROR
+
+# View configuration loading
+docker-compose logs kptv-proxy | grep "Configuration loaded"
 ```
 
 ### Key Metrics (Prometheus)
@@ -322,26 +364,41 @@ docker-compose logs kptv-proxy | grep ERROR
 
 ### Common Issues & Solutions
 
+**Problem**: Configuration not loading
+- ✅ Ensure `settings/config.json` exists and is properly mounted
+- ✅ Check JSON syntax: `cat settings/config.json | jq .`
+- ✅ Verify file permissions: `ls -la settings/`
+- ✅ Check logs for parsing errors: `docker logs kptv_proxy | grep "Configuration"`
+
 **Problem**: No channels in playlist
 - ✅ Verify source URLs are accessible: `curl -I http://source.com/playlist.m3u8`
-- ✅ Check logs for parsing errors: `DEBUG: "true"`
+- ✅ Check source-specific debug logs: `"debug": true`
 - ✅ Ensure M3U8 format is valid
+- ✅ Check connection limits aren't too restrictive
 
 **Problem**: Streams failing to play  
 - ✅ Enable debug mode to see detailed connection attempts
-- ✅ Try increasing `MAX_RETRIES` and `RETRY_DELAY`
-- ✅ Check if sources have connection limits
-- ✅ Verify `BASE_URL` is accessible from clients
+- ✅ Check per-source retry settings: `maxRetries`, `retryDelay`
+- ✅ Verify source-specific connection limits: `maxConnections`
+- ✅ Test custom headers: `userAgent`, `reqOrigin`, `reqReferrer`
+- ✅ Verify `baseURL` is accessible from clients
 
 **Problem**: Rate limiting (429 errors)
-- ✅ Reduce connection limits in `SOURCES`
-- ✅ Increase `RETRY_DELAY`
+- ✅ Reduce `maxConnections` for affected sources
+- ✅ Increase `retryDelay` for affected sources
 - ✅ Use restreaming architecture (automatically enabled)
+- ✅ Check `maxConnectionsToApp` limit
 
 **Problem**: High memory usage
-- ✅ Reduce `MAX_BUFFER_SIZE` and `BUFFER_SIZE_PER_STREAM`
-- ✅ Decrease `WORKER_THREADS`
-- ✅ Enable cache expiration: `CACHE_DURATION: "5m"`
+- ✅ Reduce `maxBufferSize` and `bufferSizePerStream`
+- ✅ Decrease `workerThreads`
+- ✅ Enable cache expiration: `cacheDuration: "5m"`
+- ✅ Lower `maxConnections` per source
+
+**Problem**: Provider-specific authentication issues
+- ✅ Configure proper headers: `userAgent`, `reqOrigin`, `reqReferrer`
+- ✅ Check provider documentation for required headers
+- ✅ Test headers manually: `curl -H "User-Agent: xyz" URL`
 
 ## Client Configuration Examples
 
@@ -366,23 +423,92 @@ Format: M3U8/HLS
 
 - **Network Security**: Run behind reverse proxy (nginx/Cloudflare) for production
 - **Access Control**: Consider adding authentication for private deployments  
-- **Source Privacy**: Enable `OBFUSCATE_URLS` to hide provider URLs in logs
+- **Source Privacy**: Enable `obfuscateUrls` to hide provider URLs in logs
 - **Container Security**: Runs as non-root user (UID 1000)
 - **HTTPS**: Use HTTPS sources when available
+- **Configuration Security**: Protect `/settings/config.json` with appropriate file permissions
 
 ## Performance Optimization
 
 ### For High-Concurrency (100+ clients)
-```yaml
-WORKER_THREADS: "20"
-MAX_BUFFER_SIZE: "1024"  # 1GB
+```json
+{
+  "workerThreads": 20,
+  "maxBufferSize": 1024,
+  "maxConnectionsToApp": 500,
+  "sources": [
+    {
+      "maxConnections": 3,
+      "maxStreamTimeout": "15s"
+    }
+  ]
+}
 ```
 
 ### For Low-Resource Systems
+```json
+{
+  "workerThreads": 2,
+  "maxBufferSize": 64,
+  "bufferSizePerStream": 4,
+  "maxConnectionsToApp": 50
+}
+```
+
+### For Provider-Specific Optimization
+```json
+{
+  "sources": [
+    {
+      "name": "Fast Provider",
+      "maxStreamTimeout": "10s",
+      "retryDelay": "2s",
+      "maxRetries": 2
+    },
+    {
+      "name": "Slow Provider", 
+      "maxStreamTimeout": "60s",
+      "retryDelay": "15s",
+      "maxRetries": 5
+    }
+  ]
+}
+```
+
+## Migration from Environment Variables
+
+If you're upgrading from a version that used environment variables, here's how to convert:
+
+**Old (Environment Variables):**
 ```yaml
-WORKER_THREADS: "2"
-MAX_BUFFER_SIZE: "64"    # 64MB
-BUFFER_SIZE_PER_STREAM: "4"  # 4MB
+environment:
+  - SOURCES=http://provider1.com/list.m3u8:5,http://provider2.com/list.m3u8:10
+  - USER_AGENT=VLC/3.0.18 LibVLC/3.0.18
+  - MAX_RETRIES=3
+```
+
+**New (JSON Configuration):**
+```json
+{
+  "sources": [
+    {
+      "name": "Provider 1",
+      "url": "http://provider1.com/list.m3u8",
+      "order": 1,
+      "maxConnections": 5,
+      "maxRetries": 3,
+      "userAgent": "VLC/3.0.18 LibVLC/3.0.18"
+    },
+    {
+      "name": "Provider 2", 
+      "url": "http://provider2.com/list.m3u8",
+      "order": 2,
+      "maxConnections": 10,
+      "maxRetries": 3,
+      "userAgent": "VLC/3.0.18 LibVLC/3.0.18"
+    }
+  ]
+}
 ```
 
 ## Third-Party Software
@@ -420,4 +546,4 @@ This project incorporates or uses the following third-party software:
 
 ---
 
-**Need Help?** Enable debug mode (`DEBUG: "true"`) and check the logs for detailed information about stream processing, connection attempts, and error details.
+**Need Help?** Enable debug mode (`"debug": true` in config.json) and check the logs for detailed information about stream processing, connection attempts, and error details.

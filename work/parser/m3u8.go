@@ -37,7 +37,8 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 	}
 	req = req.WithContext(ctx)
 
-	resp, err := httpClient.Do(req)
+	// Use source-specific headers
+	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		if cfg.Debug {
 			logger.Printf("Error fetching M3U8 from %s: %v", utils.LogURL(cfg, source.URL), err)
@@ -92,7 +93,8 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 	}
 	req2 = req2.WithContext(ctx)
 
-	resp2, err := httpClient.Do(req2)
+	// Use source-specific headers for fallback request too
+	resp2, err := httpClient.DoWithHeaders(req2, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		if cfg.Debug {
 			logger.Printf("Error re-fetching for fallback parser: %v", err)

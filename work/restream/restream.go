@@ -148,7 +148,7 @@ func (r *Restream) Stream() {
 		metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(0)
 	}()
 	if r.Config.Debug {
-		r.Logger.Printf("[RESTREAM_CONFIG] Channel %s: MinDataSize = %d bytes", r.Channel.Name, r.Config.MinDataSize)
+		r.Logger.Printf("[RESTREAM_CONFIG] Channel %s: Using per-source MinDataSize", r.Channel.Name)
 	}
 
 	r.Channel.Mu.RLock()
@@ -313,7 +313,7 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 	}()
 
 	// Get all available variants for this stream
-	variants, isMaster, err := r.getStreamVariants(stream.URL)
+	variants, isMaster, err := r.getStreamVariants(stream.URL, stream.Source)
 	if err != nil {
 		if r.Config.Debug {
 			r.Logger.Printf("[VARIANT_ERROR] Channel %s: Error getting variants: %v", r.Channel.Name, err)
@@ -334,7 +334,7 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 					r.Channel.Name, i+1, len(variants), variant.Resolution, variant.Bandwidth/1000)
 			}
 
-			success, bytes := r.testAndStreamVariant(variant)
+			success, bytes := r.testAndStreamVariant(variant, stream.Source)
 			if success {
 				if r.Config.Debug {
 					r.Logger.Printf("[VARIANT_SUCCESS] Channel %s: Variant %d worked - %s (%d kbps), streaming with %d bytes",
@@ -358,12 +358,12 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		if r.Config.Debug {
 			r.Logger.Printf("[SINGLE_STREAM] Channel %s: Processing single stream/media playlist", r.Channel.Name)
 		}
-		return r.streamFromURL(variants[0].URL)
+		return r.streamFromURL(variants[0].URL, stream.Source)
 	}
 }
 
 // getStreamVariants resolves master playlist and returns all variants
-func (r *Restream) getStreamVariants(url string) ([]parser.StreamVariant, bool, error) {
+func (r *Restream) getStreamVariants(url string, source *config.SourceConfig) ([]parser.StreamVariant, bool, error) {
 	// Create master playlist handler
 	masterHandler := parser.NewMasterPlaylistHandler(r.Logger, r.Config)
 
@@ -378,7 +378,8 @@ func (r *Restream) getStreamVariants(url string) ([]parser.StreamVariant, bool, 
 	defer checkCancel()
 	req = req.WithContext(checkCtx)
 
-	resp, err := r.HttpClient.Do(req)
+	// Use source-specific headers
+	resp, err := r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		return nil, false, err
 	}
@@ -422,7 +423,7 @@ func (r *Restream) getStreamVariants(url string) ([]parser.StreamVariant, bool, 
 }
 
 // testAndStreamVariant tests a specific variant and streams if it works
-func (r *Restream) testAndStreamVariant(variant parser.StreamVariant) (bool, int64) {
+func (r *Restream) testAndStreamVariant(variant parser.StreamVariant, source *config.SourceConfig) (bool, int64) {
 	if r.Config.Debug {
 		r.Logger.Printf("[VARIANT_TEST_START] Testing variant: %s", utils.LogURL(r.Config, variant.URL))
 	}
@@ -439,7 +440,8 @@ func (r *Restream) testAndStreamVariant(variant parser.StreamVariant) (bool, int
 	defer testCancel()
 	testReq = testReq.WithContext(testCtx)
 
-	resp, err := r.HttpClient.Do(testReq)
+	// Use source-specific headers
+	resp, err := r.HttpClient.DoWithHeaders(testReq, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		if r.Config.Debug {
 			r.Logger.Printf("[VARIANT_TEST_ERROR] Error testing variant: %v", err)
@@ -549,7 +551,7 @@ func (r *Restream) testAndStreamVariant(variant parser.StreamVariant) (bool, int
 	}
 	resp.Body.Close()
 
-	return r.streamFromURL(variant.URL)
+	return r.streamFromURL(variant.URL, source)
 }
 
 // shouldCheckForMasterPlaylist determines if response might be a master playlist
@@ -577,7 +579,7 @@ func (r *Restream) shouldCheckForMasterPlaylist(resp *http.Response) bool {
 }
 
 // streamFromURL handles the actual streaming from a resolved URL
-func (r *Restream) streamFromURL(url string) (bool, int64) {
+func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool, int64) {
 	if r.Config.Debug {
 		r.Logger.Printf("[STREAMING_START] Channel %s: Starting stream from %s", r.Channel.Name, utils.LogURL(r.Config, url))
 	}
@@ -594,8 +596,8 @@ func (r *Restream) streamFromURL(url string) (bool, int64) {
 	// Use context without timeout for streaming (let it run until cancelled)
 	req = req.WithContext(r.Ctx)
 
-	// Make request
-	resp, err := r.HttpClient.Do(req)
+	// Use source-specific headers
+	resp, err := r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		if r.Config.Debug {
 			r.Logger.Printf("Error connecting to stream for %s: %v", r.Channel.Name, err)
@@ -635,6 +637,9 @@ func (r *Restream) streamFromURL(url string) (bool, int64) {
 	firstData := true
 	lastDataTime := time.Now()
 
+	// Get source-specific MinDataSize
+	minDataSize := source.MinDataSize * 1024
+
 	for {
 		// Check for cancellation more frequently
 		select {
@@ -642,7 +647,7 @@ func (r *Restream) streamFromURL(url string) (bool, int64) {
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_CANCELLED] Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
 			}
-			return totalBytes >= (r.Config.MinDataSize * 1024), totalBytes
+			return totalBytes >= minDataSize, totalBytes
 		case <-firstDataTimer.C:
 			if firstData && totalBytes == 0 {
 				if r.Config.Debug {
@@ -658,7 +663,7 @@ func (r *Restream) streamFromURL(url string) (bool, int64) {
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_TIMEOUT] Channel %s: No data for 30 seconds, ending stream", r.Channel.Name)
 			}
-			return totalBytes >= (r.Config.MinDataSize * 1024), totalBytes
+			return totalBytes >= minDataSize, totalBytes
 		}
 
 		n, err := resp.Body.Read(buffer)
@@ -683,14 +688,14 @@ func (r *Restream) streamFromURL(url string) (bool, int64) {
 				if r.Config.Debug {
 					r.Logger.Printf("[STREAM_STOP] Channel %s: No active clients", r.Channel.Name)
 				}
-				return totalBytes >= (r.Config.MinDataSize * 1024), totalBytes
+				return totalBytes >= minDataSize, totalBytes
 			}
 
 			if totalBytes >= (r.Config.MaxBufferSize * 1024 * 1024) {
 				if r.Config.Debug {
 					r.Logger.Printf("[STREAM_MAX_BUFFER] Channel %s: Reached max buffer size (%d bytes)", r.Channel.Name, totalBytes)
 				}
-				return totalBytes >= (r.Config.MinDataSize * 1024), totalBytes
+				return totalBytes >= minDataSize, totalBytes
 			}
 		}
 
@@ -699,7 +704,7 @@ func (r *Restream) streamFromURL(url string) (bool, int64) {
 				if r.Config.Debug {
 					r.Logger.Printf("Stream ended normally for channel %s after %d bytes", r.Channel.Name, totalBytes)
 				}
-				return totalBytes >= (r.Config.MinDataSize * 1024), totalBytes
+				return totalBytes >= minDataSize, totalBytes
 			}
 
 			// Check if error is due to context cancellation
@@ -708,7 +713,7 @@ func (r *Restream) streamFromURL(url string) (bool, int64) {
 				if r.Config.Debug {
 					r.Logger.Printf("[STREAM_CANCELLED] Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
 				}
-				return totalBytes >= (r.Config.MinDataSize * 1024), totalBytes
+				return totalBytes >= minDataSize, totalBytes
 			default:
 				if r.Config.Debug {
 					r.Logger.Printf("Error reading stream for channel %s after %d bytes: %v", r.Channel.Name, totalBytes, err)

@@ -17,10 +17,18 @@ func HandleStreamFailure(stream *types.Stream, cfg *config.Config, logger *log.L
 	stream.LastFail = time.Now()
 	stream.Mu.Unlock()
 
-	if failures >= int32(cfg.MaxFailuresBeforeBlock) {
+	// Get the source-specific failure threshold
+	source := cfg.GetSourceByURL(stream.Source.URL)
+	maxFailures := int32(5) // default
+	if source != nil {
+		maxFailures = int32(source.MaxFailuresBeforeBlock)
+	}
+
+	if failures >= maxFailures {
 		atomic.StoreInt32(&stream.Blocked, 1)
 		if cfg.Debug {
-			logger.Printf("Stream blocked due to excessive failures: %s", utils.LogURL(cfg, stream.URL))
+			logger.Printf("Stream blocked due to excessive failures (%d/%d): %s",
+				failures, maxFailures, utils.LogURL(cfg, stream.URL))
 		}
 	}
 }
