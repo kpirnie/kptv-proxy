@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"kptv-proxy/work/config"
 	"net/url"
 	"strings"
@@ -22,6 +23,7 @@ func LogURLWithFlag(obfuscate bool, url string) string {
 	return url
 }
 
+// sanitize the channel names
 func SanitizeChannelName(name string) string {
 	sanitized := name
 	replacements := map[string]string{
@@ -80,4 +82,28 @@ func ObfuscateURL(urlStr string) string {
 	}
 
 	return result
+}
+
+// human redable size...
+func FormatBytes(bytes int64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%d B", bytes)
+	}
+
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	value := float64(bytes)
+	unitIndex := 0
+
+	for value >= 1024 && unitIndex < len(units)-1 {
+		value /= 1024
+		unitIndex++
+	}
+
+	if value >= 100 {
+		return fmt.Sprintf("%.0f %s", value, units[unitIndex])
+	} else if value >= 10 {
+		return fmt.Sprintf("%.1f %s", value, units[unitIndex])
+	} else {
+		return fmt.Sprintf("%.2f %s", value, units[unitIndex])
+	}
 }

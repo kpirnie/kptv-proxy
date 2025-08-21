@@ -14,9 +14,9 @@ services:
       - SOURCES=http://example.com/playlist1.m3u8:5,http://example.com/playlist2.m3u8|10
       
       # Buffer Configuration
-      - MAX_BUFFER_SIZE=268435456             # 256MB total buffer
-      - BUFFER_SIZE_PER_STREAM=16777216       # 16MB per stream buffer
-      - MIN_DATA_SIZE=2048                    # 2KB minimum data before considering success
+      - MAX_BUFFER_SIZE=256                   # 256MB total buffer
+      - BUFFER_SIZE_PER_STREAM=16             # 16MB per stream buffer
+      - MIN_DATA_SIZE=2                       # 2KB minimum data before considering success (number is in KB)
       
       # Cache Configuration
       - CACHE_ENABLED=true                    # Enable caching

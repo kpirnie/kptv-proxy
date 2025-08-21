@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// handle the stream failers
 func HandleStreamFailure(stream *types.Stream, cfg *config.Config, logger *log.Logger) {
 	failures := atomic.AddInt32(&stream.Failures, 1)
 
@@ -18,6 +19,8 @@ func HandleStreamFailure(stream *types.Stream, cfg *config.Config, logger *log.L
 
 	if failures >= int32(cfg.MaxFailuresBeforeBlock) {
 		atomic.StoreInt32(&stream.Blocked, 1)
-		logger.Printf("Stream blocked due to excessive failures: %s", utils.LogURL(cfg, stream.URL))
+		if cfg.Debug {
+			logger.Printf("Stream blocked due to excessive failures: %s", utils.LogURL(cfg, stream.URL))
+		}
 	}
 }

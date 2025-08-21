@@ -1,16 +1,13 @@
 package proxy
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"kptv-proxy/work/buffer"
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/restream"
-	streamAlias "kptv-proxy/work/stream"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"strconv"
@@ -39,6 +36,7 @@ type StreamProxy struct {
 	MasterPlaylistHandler *parser.MasterPlaylistHandler
 }
 
+// ensure we fire up the struct
 func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, cache *cache.Cache) *StreamProxy {
 	return &StreamProxy{
 		Config:                cfg,
@@ -48,12 +46,15 @@ func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, 
 		BufferPool:            bufferPool,
 		HttpClient:            httpClient,
 		WorkerPool:            workerPool,
-		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(logger), // Add this line
+		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(logger, cfg), // Add this line
 	}
 }
 
+// import streams from the sources
 func (sp *StreamProxy) ImportStreams() {
-	sp.Logger.Println("Starting stream import...")
+	if sp.Config.Debug {
+		sp.Logger.Println("Starting stream import...")
+	}
 
 	if len(sp.Config.Sources) == 0 {
 		sp.Logger.Println("WARNING: No sources configured!")
@@ -74,25 +75,33 @@ func (sp *StreamProxy) ImportStreams() {
 			// Check if we can acquire a connection for parsing
 			currentConns := atomic.LoadInt32(&src.ActiveConns)
 			if currentConns >= int32(src.MaxConnections) {
-				sp.Logger.Printf("Cannot import from source (connection limit %d/%d): %s",
-					currentConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+				if sp.Config.Debug {
+					sp.Logger.Printf("Cannot import from source (connection limit %d/%d): %s",
+						currentConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+				}
+
 				return
 			}
 
 			// Acquire connection for parsing
 			newConns := atomic.AddInt32(&src.ActiveConns, 1)
-			sp.Logger.Printf("[IMPORT_CONNECTION] Acquired connection %d/%d for parsing: %s",
-				newConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
-
+			if sp.Config.Debug {
+				sp.Logger.Printf("[IMPORT_CONNECTION] Acquired connection %d/%d for parsing: %s",
+					newConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+			}
 			// Always release connection when done parsing
 			defer func() {
 				remainingConns := atomic.AddInt32(&src.ActiveConns, -1)
-				sp.Logger.Printf("[IMPORT_RELEASE] Released parsing connection, remaining: %d/%d for: %s",
-					remainingConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+				if sp.Config.Debug {
+					sp.Logger.Printf("[IMPORT_RELEASE] Released parsing connection, remaining: %d/%d for: %s",
+						remainingConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+				}
 			}()
 
 			streams := parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, src)
-			sp.Logger.Printf("Parsed %d streams from source: %s", len(streams), utils.LogURL(sp.Config, src.URL))
+			if sp.Config.Debug {
+				sp.Logger.Printf("Parsed %d streams from source: %s", len(streams), utils.LogURL(sp.Config, src.URL))
+			}
 
 			for _, stream := range streams {
 				channelName := stream.Name
@@ -117,9 +126,13 @@ func (sp *StreamProxy) ImportStreams() {
 
 	select {
 	case <-done:
-		sp.Logger.Println("All imports completed successfully")
+		if sp.Config.Debug {
+			sp.Logger.Println("All imports completed successfully")
+		}
 	case <-time.After(2 * time.Minute):
-		sp.Logger.Println("WARNING: Import timeout reached, some sources may not have completed")
+		if sp.Config.Debug {
+			sp.Logger.Println("WARNING: Import timeout reached, some sources may not have completed")
+		}
 	}
 
 	// Sort streams in each channel and migrate to main map
@@ -137,14 +150,19 @@ func (sp *StreamProxy) ImportStreams() {
 		sp.Cache.ClearIfNeeded()
 	}
 
-	sp.Logger.Printf("Import complete. Found %d channels", count)
+	if sp.Config.Debug {
+		sp.Logger.Printf("Import complete. Found %d channels", count)
+	}
 }
 
+// generate our playlist
 func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, groupFilter string) {
-	if groupFilter == "" {
-		sp.Logger.Println("Handling playlist request (all groups)")
-	} else {
-		sp.Logger.Printf("Handling playlist request for group: %s", groupFilter)
+	if sp.Config.Debug {
+		if groupFilter == "" {
+			sp.Logger.Println("Handling playlist request (all groups)")
+		} else {
+			sp.Logger.Printf("Handling playlist request for group: %s", groupFilter)
+		}
 	}
 
 	// Create cache key
@@ -226,14 +244,17 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(result))
 
-	if groupFilter == "" {
-		sp.Logger.Printf("Generated playlist with %d channels", totalCount)
-	} else {
-		sp.Logger.Printf("Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, totalCount)
+	if sp.Config.Debug {
+		if groupFilter == "" {
+			sp.Logger.Printf("Generated playlist with %d channels", totalCount)
+		} else {
+			sp.Logger.Printf("Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, totalCount)
+		}
 	}
 
 }
 
+// setup the channel groups
 func (sp *StreamProxy) GetChannelGroup(attrs map[string]string) string {
 	// Check for tvg-group first
 	if group, exists := attrs["tvg-group"]; exists && group != "" {
@@ -249,162 +270,22 @@ func (sp *StreamProxy) GetChannelGroup(attrs map[string]string) string {
 
 }
 
-func (sp *StreamProxy) TryStreams(channel *types.Channel, startIndex int, w http.ResponseWriter, r *http.Request) bool {
-	channel.Mu.RLock()
-	streams := channel.Streams
-	channel.Mu.RUnlock()
-
-	ctx := r.Context()
-
-	for i := 0; i < len(streams); i++ {
-		select {
-		case <-ctx.Done():
-			sp.Logger.Printf("Client disconnected, stopping stream attempts")
-			return false
-		default:
-		}
-
-		idx := (startIndex + i) % len(streams)
-		stream := streams[idx]
-
-		if sp.TryStream(stream, w, r) {
-			return true
-		}
-	}
-
-	return false
-
-}
-
-func (sp *StreamProxy) TryStream(stream *types.Stream, w http.ResponseWriter, r *http.Request) bool {
-	if atomic.LoadInt32(&stream.Blocked) == 1 {
-		sp.Logger.Printf("Stream blocked: %s", utils.LogURL(sp.Config, stream.URL))
-		return false
-	}
-
-	// Check connection limit using atomic operations
-	if atomic.LoadInt32(&stream.Source.ActiveConns) >= int32(stream.Source.MaxConnections) {
-		sp.Logger.Printf("Connection limit reached for source: %s", utils.LogURL(sp.Config, stream.URL))
-		return false
-	}
-
-	atomic.AddInt32(&stream.Source.ActiveConns, 1)
-	defer atomic.AddInt32(&stream.Source.ActiveConns, -1)
-
-	finalURL := stream.URL
-	maxRedirects := 3 // Prevent infinite redirects
-
-	for redirect := 0; redirect < maxRedirects; redirect++ {
-		sp.Logger.Printf("Attempting to connect to stream: %s", utils.LogURL(sp.Config, stream.URL))
-
-		// Try to connect with retries
-		var resp *http.Response
-		var err error
-
-		for retry := 0; retry <= sp.Config.MaxRetries; retry++ {
-			if retry > 0 {
-				sp.Logger.Printf("Retry %d/%d for stream: %s", retry, sp.Config.MaxRetries, utils.LogURL(sp.Config, finalURL))
-				time.Sleep(sp.Config.RetryDelay)
-			}
-
-			// Create request with proper timeout
-			req, _ := http.NewRequest("GET", finalURL, nil)
-			ctx, cancel := context.WithTimeout(r.Context(), 1*time.Minute)
-			defer cancel()
-			req = req.WithContext(ctx)
-
-			resp, err = sp.HttpClient.Do(req)
-
-			if err == nil && resp.StatusCode == http.StatusOK {
-				sp.Logger.Printf("Successfully connected to stream: %s", utils.LogURL(sp.Config, finalURL))
-				break
-			}
-
-			if err != nil {
-				sp.Logger.Printf("Error connecting to stream: %v", err)
-			} else {
-				sp.Logger.Printf("HTTP %d response from stream: %s", resp.StatusCode, utils.LogURL(sp.Config, finalURL))
-				switch resp.StatusCode {
-				case 403:
-					sp.Logger.Printf("Access forbidden: %s", utils.LogURL(sp.Config, finalURL))
-					streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-				case 407:
-					sp.Logger.Printf("Stream requires proxy authentication: %s", utils.LogURL(sp.Config, finalURL))
-					streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-				case 429:
-					sp.Logger.Printf("Rate limited (429) on stream: %s", utils.LogURL(sp.Config, finalURL))
-					streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-				case 520:
-					sp.Logger.Printf("Origin issue (520) on stream: %s", utils.LogURL(sp.Config, finalURL))
-					streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-
-				}
-			}
-
-			if resp != nil {
-				resp.Body.Close()
-			}
-		}
-
-		if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
-			streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-			return false
-		}
-
-		// Check if this might be a master playlist
-		if sp.ShouldCheckForMasterPlaylist(resp) {
-			// Read the entire response body to check for master playlist
-			body, readErr := io.ReadAll(resp.Body)
-			resp.Body.Close()
-
-			if readErr != nil {
-				sp.Logger.Printf("Error reading response body: %v", readErr)
-				streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-				return false
-			}
-
-			content := string(body)
-			channelName := sp.GetChannelNameFromStream(stream)
-
-			// Check if it's a master playlist and get the selected variant URL
-			selectedURL, isMaster, processErr := sp.MasterPlaylistHandler.ProcessMasterPlaylist(content, finalURL, channelName)
-			if processErr != nil {
-				sp.Logger.Printf("Error processing potential master playlist: %v", processErr)
-				streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-				return false
-			}
-
-			if isMaster {
-				// It's a master playlist - use the selected variant URL and retry
-				finalURL = selectedURL
-				sp.Logger.Printf("Redirecting to selected variant: %s", utils.LogURL(sp.Config, selectedURL))
-				continue // Retry with the new URL
-			} else {
-				// Not a master playlist, but we've already read the body
-				return sp.StreamFromBuffer(body, w, r, resp.Header)
-			}
-		} else {
-			// Normal streaming case - continue with the response
-			return sp.StreamResponse(resp, w, r, stream)
-		}
-	}
-
-	sp.Logger.Printf("Too many redirects for stream: %s", utils.LogURL(sp.Config, stream.URL))
-	streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-	return false
-}
-
+// refresh the importer
 func (sp *StreamProxy) StartImportRefresh() {
 	ticker := time.NewTicker(sp.Config.ImportRefreshInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		sp.Logger.Println("Refreshing imports...")
+		if sp.Config.Debug {
+			sp.Logger.Println("Refreshing imports...")
+		}
+
 		sp.ImportStreams()
 	}
 
 }
 
+// clean up the streamer
 func (sp *StreamProxy) RestreamCleanup() {
 	ticker := time.NewTicker(10 * time.Second) // More frequent cleanup
 	defer ticker.Stop()
@@ -424,7 +305,10 @@ func (sp *StreamProxy) RestreamCleanup() {
 						// Force cleanup
 						channel.Restreamer.Cancel()
 						channel.Restreamer = nil
-						sp.Logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
+						if sp.Config.Debug {
+							sp.Logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
+						}
+
 					}
 				} else {
 					// Check for dead clients
@@ -433,7 +317,10 @@ func (sp *StreamProxy) RestreamCleanup() {
 						client := cvalue.(*types.RestreamClient)
 						lastSeen := client.LastSeen.Load()
 						if now-lastSeen > 60 { // 60 seconds without activity
-							sp.Logger.Printf("Removing inactive client: %s", ckey.(string))
+							if sp.Config.Debug {
+								sp.Logger.Printf("Removing inactive client: %s", ckey.(string))
+							}
+
 							channel.Restreamer.Clients.Delete(ckey)
 							select {
 							case <-client.Done:
@@ -449,7 +336,10 @@ func (sp *StreamProxy) RestreamCleanup() {
 
 					// If no active clients, stop the restreamer
 					if clientCount == 0 && channel.Restreamer.Running.Load() {
-						sp.Logger.Printf("No active clients found, stopping restreamer for: %s", channel.Name)
+						if sp.Config.Debug {
+							sp.Logger.Printf("No active clients found, stopping restreamer for: %s", channel.Name)
+						}
+
 						channel.Restreamer.Cancel()
 						channel.Restreamer.Running.Store(false)
 					}
@@ -462,6 +352,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 	}
 }
 
+// find channels by name
 func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 	// First try exact match after simple space replacement
 	simpleName := strings.ReplaceAll(safeName, "_", " ")
@@ -487,15 +378,21 @@ func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 
 }
 
+// handle the clients
 func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Request, channel *types.Channel) {
-	sp.Logger.Printf("[STREAM_REQUEST] Channel %s: URL: %s", channel.Name, channel.Name)
-	sp.Logger.Printf("[FOUND] Channel %s: Streams: %d", channel.Name, len(channel.Streams))
+	if sp.Config.Debug {
+		sp.Logger.Printf("[STREAM_REQUEST] Channel %s: URL: %s", channel.Name, channel.Name)
+		sp.Logger.Printf("[FOUND] Channel %s: Streams: %d", channel.Name, len(channel.Streams))
+	}
 
 	channel.Mu.Lock()
 	var restreamer *restream.Restream
 	if channel.Restreamer == nil {
-		sp.Logger.Printf("[RESTREAM_NEW] Channel %s: Creating new restreamer", channel.Name)
-		restreamer = restream.NewRestreamer(channel, sp.Config.MaxBufferSize, sp.Logger, sp.HttpClient, sp.Config)
+		if sp.Config.Debug {
+			sp.Logger.Printf("[RESTREAM_NEW] Channel %s: Creating new restreamer", channel.Name)
+		}
+
+		restreamer = restream.NewRestreamer(channel, (sp.Config.MaxBufferSize * 1024 * 1024), sp.Logger, sp.HttpClient, sp.Config)
 		channel.Restreamer = restreamer.Restreamer
 	} else {
 		restreamer = &restream.Restream{Restreamer: channel.Restreamer}
@@ -522,7 +419,10 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	}
 
 	if !ok {
-		sp.Logger.Printf("Streaming not supported for client: %s", clientID)
+		if sp.Config.Debug {
+			sp.Logger.Printf("Streaming not supported for client: %s", clientID)
+		}
+
 		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 		return
 	}
@@ -531,7 +431,9 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	sp.Logger.Printf("[RESTREAM_START] Channel %s: Client: %s", channel.Name, clientID)
+	if sp.Config.Debug {
+		sp.Logger.Printf("[RESTREAM_START] Channel %s: Client: %s", channel.Name, clientID)
+	}
 
 	// Add client to restreamer
 	restreamer.AddClient(clientID, w, flusher)
@@ -554,9 +456,15 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	// Wait for client disconnect with timeout
 	select {
 	case <-done:
-		sp.Logger.Printf("Restreaming client disconnected: %s", clientID)
+		if sp.Config.Debug {
+			sp.Logger.Printf("Restreaming client disconnected: %s", clientID)
+		}
+
 	case <-time.After(24 * time.Hour): // Max connection time
-		sp.Logger.Printf("Restreaming client timeout: %s", clientID)
+		if sp.Config.Debug {
+			sp.Logger.Printf("Restreaming client timeout: %s", clientID)
+		}
+
 	}
 }
 
@@ -590,157 +498,4 @@ func (sp *StreamProxy) GetChannelNameFromStream(stream *types.Stream) string {
 		return name
 	}
 	return stream.Name
-}
-
-// Helper method to stream from a pre-read buffer
-func (sp *StreamProxy) StreamFromBuffer(data []byte, w http.ResponseWriter, r *http.Request, headers http.Header) bool {
-	// Copy response headers
-	for key, values := range headers {
-		switch strings.ToLower(key) {
-		case "connection", "transfer-encoding", "upgrade", "proxy-authenticate", "proxy-authorization", "te", "trailers":
-			continue
-		}
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
-	}
-
-	contentType := headers.Get("Content-Type")
-	if contentType == "" || contentType == "application/octet-stream" {
-		w.Header().Set("Content-Type", "video/mp2t")
-	}
-
-	sp.Logger.Printf("Streaming pre-read data: %d bytes", len(data))
-
-	// Write the data
-	_, err := w.Write(data)
-	if err != nil {
-		sp.Logger.Printf("Error writing pre-read data to client: %v", err)
-		return false
-	}
-
-	// Flush if possible
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
-	} else if crw, ok := w.(*client.CustomResponseWriter); ok {
-		crw.Flush()
-	}
-
-	return true
-}
-
-// Extract the main streaming logic into a separate method
-func (sp *StreamProxy) StreamResponse(resp *http.Response, w http.ResponseWriter, r *http.Request, stream *types.Stream) bool {
-	defer resp.Body.Close()
-
-	// Check Content-Length to detect empty responses
-	contentLength := resp.Header.Get("Content-Length")
-	if contentLength == "0" {
-		sp.Logger.Printf("Stream returned Content-Length: 0, skipping: %s", utils.LogURL(sp.Config, stream.URL))
-		streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-		return false
-	}
-
-	// Copy response headers
-	headerWritten := false
-	writeHeaders := func() {
-		if !headerWritten {
-			for key, values := range resp.Header {
-				switch strings.ToLower(key) {
-				case "connection", "transfer-encoding", "upgrade", "proxy-authenticate", "proxy-authorization", "te", "trailers":
-					continue
-				}
-				for _, value := range values {
-					w.Header().Add(key, value)
-				}
-			}
-
-			contentType := resp.Header.Get("Content-Type")
-			if contentType == "" || contentType == "application/octet-stream" {
-				w.Header().Set("Content-Type", "video/mp2t")
-			}
-			headerWritten = true
-		}
-	}
-
-	sp.Logger.Printf("Starting to stream data from: %s", utils.LogURL(sp.Config, stream.URL))
-
-	// Get buffer from pool
-	buffer := sp.BufferPool.Get()
-	defer sp.BufferPool.Put(buffer)
-
-	totalBytes := int64(0)
-	ctx := r.Context()
-	firstData := true
-	dataTimer := time.NewTimer(5 * time.Second)
-	defer dataTimer.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			sp.Logger.Printf("Client disconnected, stopping stream")
-			return true
-		case <-dataTimer.C:
-			if firstData && totalBytes == 0 {
-				sp.Logger.Printf("No data received in 5 seconds from: %s", utils.LogURL(sp.Config, stream.URL))
-				streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-				return false
-			}
-		default:
-		}
-
-		n, err := resp.Body.Read(buffer)
-		if n > 0 {
-			if firstData {
-				writeHeaders()
-				firstData = false
-				dataTimer.Stop()
-			}
-
-			select {
-			case <-ctx.Done():
-				sp.Logger.Printf("Client disconnected during write")
-				return true
-			default:
-			}
-
-			_, writeErr := w.Write(buffer[:n])
-			if writeErr != nil {
-				sp.Logger.Printf("Error writing to client: %v", writeErr)
-				return true
-			}
-			totalBytes += int64(n)
-
-			// Flush if possible
-			if flusher, ok := w.(http.Flusher); ok {
-				flusher.Flush()
-			} else if crw, ok := w.(*client.CustomResponseWriter); ok {
-				crw.Flush()
-			}
-		}
-
-		if err != nil {
-			if err == io.EOF {
-				sp.Logger.Printf("Stream ended, transferred %d bytes", totalBytes)
-				if totalBytes >= sp.Config.MinDataSize {
-					return true
-				}
-				sp.Logger.Printf("Stream ended but only transferred %d bytes (minimum: %d)", totalBytes, sp.Config.MinDataSize)
-			} else if strings.Contains(err.Error(), "context deadline exceeded") {
-				sp.Logger.Printf("Stream timeout: %v", err)
-			} else {
-				sp.Logger.Printf("Error reading stream: %v", err)
-			}
-
-			if totalBytes == 0 {
-				streamAlias.HandleStreamFailure(stream, sp.Config, sp.Logger)
-			}
-			return false
-		}
-
-		if totalBytes >= sp.Config.MaxBufferSize {
-			sp.Logger.Printf("Reached max buffer size (%d bytes)", totalBytes)
-			return true
-		}
-	}
 }

@@ -2,6 +2,7 @@ package config
 
 import (
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -45,8 +46,8 @@ func LoadConfig() *Config {
 	config := &Config{
 		Port:                   getEnv("PORT", "8080"),
 		BaseURL:                getEnv("BASE_URL", "http://localhost:8080"),
-		MaxBufferSize:          getEnvInt64("MAX_BUFFER_SIZE", 16*1024*1024),
-		BufferSizePerStream:    getEnvInt64("BUFFER_SIZE_PER_STREAM", 1*1024*1024),
+		MaxBufferSize:          getEnvInt64("MAX_BUFFER_SIZE", 16),
+		BufferSizePerStream:    getEnvInt64("BUFFER_SIZE_PER_STREAM", 1),
 		CacheEnabled:           getEnvBool("CACHE_ENABLED", true),
 		CacheDuration:          getEnvDuration("CACHE_DURATION", 30*time.Minute),
 		ImportRefreshInterval:  getEnvDuration("IMPORT_REFRESH_INTERVAL", 12*time.Hour),
@@ -54,7 +55,7 @@ func LoadConfig() *Config {
 		MaxFailuresBeforeBlock: getEnvInt("MAX_FAILURES_BEFORE_BLOCK", 5),
 		RetryDelay:             getEnvDuration("RETRY_DELAY", 5*time.Second),
 		WorkerThreads:          getEnvInt("WORKER_THREADS", 8),
-		MinDataSize:            getEnvInt64("MIN_DATA_SIZE", 2048),
+		MinDataSize:            getEnvInt64("MIN_DATA_SIZE", 1),
 		Debug:                  getEnvBool("DEBUG", false),
 		ObfuscateUrls:          getEnvBool("OBFUSCATE_URLS", false),
 		SortField:              getEnv("SORT_FIELD", "tvg-name"),
@@ -87,7 +88,7 @@ func LoadConfig() *Config {
 		log.Printf("  Sources: %d configured", len(config.Sources))
 		for i := range config.Sources {
 			src := &config.Sources[i]
-			urlToLog := src.URL
+			urlToLog := obfuscateURL(src.URL)
 			log.Printf("    Source %d: %s (max connections: %d)", i+1, urlToLog, src.MaxConnections)
 		}
 		log.Printf("  Debug: %v", config.Debug)
@@ -138,4 +139,25 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+func obfuscateURL(urlStr string) string {
+	if urlStr == "" {
+		return ""
+	}
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return "***OBFUSCATED***"
+	}
+	result := u.Scheme + "://" + u.Host
+	if u.Path != "" && u.Path != "/" {
+		result += "/***"
+	}
+	if u.RawQuery != "" {
+		result += "?***"
+	}
+	if u.Fragment != "" {
+		result += "#***"
+	}
+	return result
 }

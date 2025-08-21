@@ -12,17 +12,24 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 
 ### 📺 **Advanced Stream Management**  
 - **Master Playlist Detection**: Automatically detects and processes HLS master playlists
-- **Variant Selection**: Intelligently selects optimal stream variants (lowest bandwidth by default for reliability)
+- **Variant Selection**: Intelligently selects optimal stream variants (highest quality with fallback)
 - **Channel Deduplication**: Groups identical channels from different sources
 - **Smart Failover**: Seamlessly switches between sources when streams fail
+- **Ad-Insertion Handling**: Automatically resolves tracking URLs and beacon redirects
+- **Stream Validation**: Uses ffprobe to validate stream quality before serving
 
-### 🚀 **Dual Operating Modes**
-- **Direct Proxy Mode**: Each client gets independent connections to upstream sources
-- **Restreaming Mode** *(Recommended)*: Single upstream connection shared among multiple clients
-  - Reduces load on upstream providers
-  - Prevents rate limiting and 429 errors  
-  - More efficient bandwidth usage
-  - Automatic cleanup of inactive streams
+### 🚀 **Restreaming Architecture** 
+- **Efficient Resource Usage**: Single upstream connection shared among multiple clients
+- **Provider-Friendly**: Reduces load on upstream providers and prevents rate limiting
+- **Automatic Management**: Intelligent connection pooling and cleanup of inactive streams  
+- **Scalable**: Supports unlimited clients per channel with minimal resource overhead
+
+### 🎯 **Enhanced HLS Support**
+- **Tracking URL Resolution**: Automatically extracts real video URLs from ad-insertion systems
+- **Beacon URL Handling**: Supports complex ad systems like AccuWeather's tracking URLs
+- **Format Error Recovery**: Handles streams with format quirks (like BBC America)
+- **Segment Validation**: Smart validation that skips problematic tracking URLs
+- **Multi-Variant Testing**: Tests all available quality variants automatically
 
 ### ⚡ **Performance & Reliability**
 - Worker pool-based parallel processing
@@ -62,6 +69,8 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                     │  • Channel grouping     │
                     │  • Master playlist      │
                     │    detection            │
+                    │  • Tracking URL         │
+                    │    resolution           │
                     │  • Failover logic       │
                     │  • Connection mgmt      │
                     └────────────┬────────────┘
@@ -79,6 +88,27 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 │   etc.)         │    │    etc.)        │    │    etc.)        │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
+
+## Restreaming Architecture
+
+**How It Works:**
+```
+┌─────────────┐    ┌─────────────────┐    ┌──────────────┐
+│ IPTV Source │───▶│   KPTV Proxy    │───▶│   Client 1   │
+│             │    │ ┌─────────────┐ │    ├──────────────┤
+│ (1 stream   │    │ │ Restreamer  │ │───▶│   Client 2   │  
+│  connection)│    │ │  - Buffer   │ │    ├──────────────┤
+│             │    │ │  - Segments │ │───▶│   Client N   │
+└─────────────┘    │ └─────────────┘ │    └──────────────┘
+                   └─────────────────┘
+```
+
+**Benefits:**
+- ✅ Prevents 429 rate limit errors from providers
+- ✅ Reduces bandwidth costs and server load  
+- ✅ Better for providers with strict connection limits
+- ✅ Automatic stream cleanup when no clients connected
+- ✅ Real-time client connection management
 
 ## How Channel Grouping Works
 
@@ -98,6 +128,53 @@ CNN        → [Source1/CNN, Source3/CNN] (auto-failover)
 ESPN       → [Source1/ESPN, Source2/ESPN, Source3/ESPN] (auto-failover)
 Fox News   → [Source2/Fox_News] (single source)
 Discovery  → [Source3/Discovery] (single source)
+```
+
+## Advanced HLS Stream Handling
+
+The proxy includes sophisticated HLS processing that handles complex streaming scenarios:
+
+### **Tracking URL Resolution**
+Automatically detects and resolves ad-insertion tracking URLs:
+```
+Input:  https://provider.com/beacon/track?redirect_url=https%3A%2F%2Freal-video.ts
+Output: https://real-video.ts (extracted and decoded)
+```
+
+### **Format Error Recovery**  
+Handles streams with format quirks (like BBC America) by:
+- Detecting problematic ffprobe validation patterns
+- Bypassing validation for known problematic formats
+- Attempting direct streaming when validation fails
+
+### **Multi-Variant Testing**
+For master playlists, tests variants from highest to lowest quality:
+```
+Testing variants:
+✅ 1920x1080 (5000 kbps) - Success → Stream this quality
+❌ 1280x720  (3000 kbps) - Failed  → Try next
+❌ 854x480   (1500 kbps) - Failed  → Try next
+```
+
+## Master Playlist Processing
+
+The proxy automatically detects HLS master playlists and intelligently selects the best variant:
+
+```
+Input Master Playlist:
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=720x480
+low.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720  
+med.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
+high.m3u8
+
+Proxy Selection Logic:
+✅ Selects highest quality first (most reliable providers)
+✅ Falls back to lower quality on errors
+✅ Logs all available variants
+✅ Handles tracking URLs automatically
 ```
 
 ## Quick Start
@@ -142,17 +219,11 @@ http://your-server-ip:9500/playlist.m3u8
 | `BASE_URL` | `http://localhost:8080` | Base URL for generated stream links |
 | `SOURCES` | Required | Comma-separated list: `URL\|MaxConns,URL\|MaxConns` |
 
-**Restreaming Mode Benefits:**
+**Why Restreaming?**
 - ✅ Reduces provider load (prevents 429 rate limit errors)
 - ✅ Better for providers with strict connection limits  
 - ✅ More efficient bandwidth usage
 - ✅ Automatic stream cleanup
-
-**Direct Proxy Mode:**
-- ✅ Each client gets independent connection
-- ✅ Better isolation between clients
-- ❌ Higher provider load
-- ❌ More prone to rate limiting
 
 ### Stream Management
 | Variable | Default | Description |
@@ -160,14 +231,16 @@ http://your-server-ip:9500/playlist.m3u8
 | `MAX_RETRIES` | `3` | Retry attempts per stream failure |
 | `MAX_FAILURES_BEFORE_BLOCK` | `5` | Failures before blocking a stream |
 | `RETRY_DELAY` | `5s` | Delay between retry attempts |
+| `MIN_DATA_SIZE` | `1` | Minimum amount of data the stream must contain to be considered valid in KB |
 | `IMPORT_REFRESH_INTERVAL` | `12h` | How often to refresh source playlists |
 
 ### Performance Tuning
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WORKER_THREADS` | `4` | Parallel workers for import processing |
-| `MAX_BUFFER_SIZE` | `268435456` | Total buffer size (256MB) |
-| `BUFFER_SIZE_PER_STREAM` | `16777216` | Per-stream buffer (16MB) |
+| `MAX_BUFFER_SIZE` | `256` | Total buffer size (256MB) |
+| `BUFFER_SIZE_PER_STREAM` | `16` | Per-stream buffer (16MB) |
+| `STREAM_TIMEOUT` | `10s` | Timeout for stream validation and ffprobe |
 
 ### Customization
 | Variable | Default | Description |
@@ -205,8 +278,8 @@ http://your-server-ip:9500/playlist.m3u8
 ```yaml
 # For servers handling many concurrent clients
 WORKER_THREADS: "20"
-MAX_BUFFER_SIZE: "536870912"    # 512MB
-BUFFER_SIZE_PER_STREAM: "33554432"  # 32MB  
+MAX_BUFFER_SIZE: "512"    # 512MB
+BUFFER_SIZE_PER_STREAM: "32"  # 32MB  
 ```
 
 ### Multi-Provider Setup with Priorities
@@ -225,26 +298,6 @@ SORT_DIRECTION: "asc"
 # Custom headers for specific providers
 USER_AGENT: "Mozilla/5.0 (Smart TV; Linux)"
 REQ_ORIGIN: "https://provider.com"
-```
-
-## Master Playlist Handling
-
-The proxy automatically detects HLS master playlists and intelligently selects the best variant:
-
-```
-Input Master Playlist:
-#EXTM3U
-#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=720x480
-low.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720  
-med.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
-high.m3u8
-
-Proxy Selection Logic:
-✅ Selects lowest bandwidth (most reliable)
-✅ Logs all available variants
-✅ Falls back gracefully on errors
 ```
 
 ## Monitoring & Troubleshooting
@@ -283,6 +336,7 @@ docker-compose logs kptv-proxy | grep ERROR
 **Problem**: Rate limiting (429 errors)
 - ✅ Reduce connection limits in `SOURCES`
 - ✅ Increase `RETRY_DELAY`
+- ✅ Use restreaming architecture (automatically enabled)
 
 **Problem**: High memory usage
 - ✅ Reduce `MAX_BUFFER_SIZE` and `BUFFER_SIZE_PER_STREAM`
@@ -321,15 +375,30 @@ Format: M3U8/HLS
 ### For High-Concurrency (100+ clients)
 ```yaml
 WORKER_THREADS: "20"
-MAX_BUFFER_SIZE: "1073741824"  # 1GB
+MAX_BUFFER_SIZE: "1024"  # 1GB
 ```
 
 ### For Low-Resource Systems
 ```yaml
 WORKER_THREADS: "2"
-MAX_BUFFER_SIZE: "67108864"    # 64MB
-BUFFER_SIZE_PER_STREAM: "4194304"  # 4MB
+MAX_BUFFER_SIZE: "64"    # 64MB
+BUFFER_SIZE_PER_STREAM: "4"  # 4MB
 ```
+
+## Third-Party Software
+
+### FFmpeg/FFprobe
+
+This software uses code of [FFmpeg](http://ffmpeg.org) licensed under the [LGPLv2.1](http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html).
+
+**FFmpeg License Information:**
+- KPTV Proxy uses FFprobe (part of the FFmpeg project) for stream validation
+- FFprobe is used as an external binary (not linked/embedded)
+- FFmpeg source code can be downloaded from: [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
+- FFmpeg is licensed under LGPL v2.1 or later
+
+**Patent Considerations:**
+FFmpeg may use patented algorithms for various multimedia codecs. Patent laws vary by jurisdiction. For commercial use, consult legal counsel regarding potential patent licensing requirements in your jurisdiction.
 
 ## Contributing
 
@@ -341,7 +410,13 @@ BUFFER_SIZE_PER_STREAM: "4194304"  # 4MB
 
 ## License
 
-This project is provided as-is for educational and personal use.
+MIT License - see [LICENSE](LICENSE) file for details.
+
+### Third-Party Licenses
+
+This project incorporates or uses the following third-party software:
+
+- **FFmpeg/FFprobe**: Licensed under LGPL v2.1 or later - [https://ffmpeg.org/legal.html](https://ffmpeg.org/legal.html)
 
 ---
 

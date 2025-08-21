@@ -32,14 +32,19 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		value, exists := sp.Channels.Load(channelName)
 		if !exists {
-			sp.Logger.Printf("Channel not found: %s", channelName)
+			if sp.Config.Debug {
+				sp.Logger.Printf("Channel not found: %s", channelName)
+			}
+
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
 
 		channel := value.(*types.Channel)
+		if sp.Config.Debug {
+			sp.Logger.Printf("Using RESTREAMING mode for channel: %s", channelName)
+		}
 
-		sp.Logger.Printf("Using RESTREAMING mode for channel: %s", channelName)
 		sp.HandleRestreamingClient(w, r, channel)
 	}
 }

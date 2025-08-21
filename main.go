@@ -17,24 +17,22 @@ import (
 	"kptv-proxy/work/handlers"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
+	"kptv-proxy/work/utils"
 )
 
 var (
 	Version = "v0.1.0" // default version
 )
 
+// our main app worker
 func main() {
 	cfg := config.LoadConfig()
 
 	// Set up logging
 	logger := log.New(os.Stdout, "[KPTV-PROXY] ", log.LstdFlags)
 
-	// Debug message to confirm logging is working
-	logger.Printf("Starting KPTV Proxy - Debug mode: %v", cfg.Debug)
-	logger.Printf("URL obfuscation: %v", cfg.ObfuscateUrls)
-
 	// Initialize buffer pool
-	bufferPool := buffer.NewBufferPool(cfg.BufferSizePerStream)
+	bufferPool := buffer.NewBufferPool(cfg.BufferSizePerStream * 1024 * 1024)
 
 	// Initialize HTTP client
 	httpClient := client.NewHeaderSettingClient(cfg)
@@ -53,10 +51,9 @@ func main() {
 	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, cacheInstance)
 
 	// Initialize master playlist handler
-	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger)
+	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger, cfg)
 
 	// Start restreamer cleanup routine
-	logger.Printf("Restreaming mode enabled")
 	go proxyInstance.RestreamCleanup()
 
 	// Start import refresh routine
@@ -86,8 +83,25 @@ func main() {
 	logger.Printf("Server configuration:")
 	logger.Printf("  - Port: %s", cfg.Port)
 	logger.Printf("  - Base URL: %s", cfg.BaseURL)
-	logger.Printf("  - Sources: %d", len(cfg.Sources))
 	logger.Printf("  - Worker Threads: %d", cfg.WorkerThreads)
+	logger.Printf("  - Sources: %d", len(cfg.Sources))
+	logger.Printf("  - Max. Buffer Size: %s", utils.FormatBytes(cfg.MaxBufferSize*1024*1024))
+	logger.Printf("  - Pre-Stream Buffer Size: %s", utils.FormatBytes(cfg.BufferSizePerStream*1024*1024))
+	logger.Printf("  - Cache Enabled: %v", cfg.CacheEnabled)
+	logger.Printf("  - Cache Duration: %s", cfg.CacheDuration)
+	logger.Printf("  - Source Refresh Rate: %s", cfg.ImportRefreshInterval)
+	logger.Printf("  - Min. Stream Size: %s", utils.FormatBytes(cfg.MinDataSize*1024))
+	logger.Printf("  - Max. Stream Retries: %d", cfg.MaxRetries)
+	logger.Printf("  - Stream Retry Delay: %s", cfg.RetryDelay)
+	logger.Printf("  - Max. Stream Failures: %d", cfg.MaxFailuresBeforeBlock)
+	logger.Printf("  - Stream Timeout: %s", cfg.StreamTimeout)
+	logger.Printf("  - Stream Sort Attr.: %s", cfg.SortField)
+	logger.Printf("  - Stream Sort Dir.: %s", cfg.SortDirection)
+	logger.Printf("  - User Agent Header: %s", cfg.UserAgent)
+	logger.Printf("  - Origin Header: %s", cfg.ReqOrigin)
+	logger.Printf("  - Referrer Header: %s", cfg.ReqReferrer)
+	logger.Printf("  - Debug Enabled: %v", cfg.Debug)
+	logger.Printf("  - URL Obfuscation: %v", cfg.ObfuscateUrls)
 
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Server failed to start: %v", err)

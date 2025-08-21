@@ -15,17 +15,26 @@ import (
 	"time"
 )
 
+// test the stream with FFProbe
 func (r *Restream) testStreamWithFFprobe(streamURL string) (string, error) {
 	// Check if this looks like a tracking URL that might need special handling
 	if strings.Contains(streamURL, "/beacon/") || strings.Contains(streamURL, "redirect_url") {
-		r.Logger.Printf("[FFPROBE_TEST] Detected tracking URL, attempting to resolve: %s", utils.LogURL(r.Config, streamURL))
+		if r.Config.Debug {
+			r.Logger.Printf("[FFPROBE_TEST] Detected tracking URL, attempting to resolve: %s", utils.LogURL(r.Config, streamURL))
+		}
 
 		// Try to resolve redirect URL first
 		if resolvedURL := r.resolveRedirectURL(streamURL); resolvedURL != "" {
-			r.Logger.Printf("[FFPROBE_TEST] Testing resolved URL: %s", utils.LogURL(r.Config, resolvedURL))
+			if r.Config.Debug {
+				r.Logger.Printf("[FFPROBE_TEST] Testing resolved URL: %s", utils.LogURL(r.Config, resolvedURL))
+			}
+
 			streamURL = resolvedURL
 		} else {
-			r.Logger.Printf("[FFPROBE_TEST] Could not resolve tracking URL, skipping ffprobe validation")
+			if r.Config.Debug {
+				r.Logger.Printf("[FFPROBE_TEST] Could not resolve tracking URL, skipping ffprobe validation")
+			}
+
 			// For tracking URLs we can't resolve, assume they might work with proxying
 			return "error", fmt.Errorf("tracking URL requires proxying")
 		}
@@ -44,39 +53,53 @@ func (r *Restream) testStreamWithFFprobe(streamURL string) (string, error) {
 		"-of", "json",
 		"-i", streamURL)
 
-	r.Logger.Printf("[FFPROBE_TEST] Testing stream with %v timeout: %s", r.Config.StreamTimeout, utils.LogURL(r.Config, streamURL))
+	if r.Config.Debug {
+		r.Logger.Printf("[FFPROBE_TEST] Testing stream with %v timeout: %s", r.Config.StreamTimeout, utils.LogURL(r.Config, streamURL))
+	}
 
 	startTime := time.Now()
 	output, err := cmd.Output()
 	duration := time.Since(startTime)
-
-	r.Logger.Printf("[FFPROBE_TEST] ffprobe completed in %v", duration)
+	if r.Config.Debug {
+		r.Logger.Printf("[FFPROBE_TEST] ffprobe completed in %v", duration)
+	}
 
 	if err != nil {
 		// Check if it was a timeout (context deadline exceeded)
 		if ctx.Err() == context.DeadlineExceeded {
-			r.Logger.Printf("[FFPROBE_TEST] ffprobe timed out - stream likely invalid/hanging")
+			if r.Config.Debug {
+				r.Logger.Printf("[FFPROBE_TEST] ffprobe timed out - stream likely invalid/hanging")
+			}
+
 			return "timeout", err
 		}
 
 		// Check the specific error output to distinguish between types of failures
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			stderr := string(exitErr.Stderr)
-			r.Logger.Printf("[FFPROBE_TEST] ffprobe stderr: %s", stderr)
+			if r.Config.Debug {
+				r.Logger.Printf("[FFPROBE_TEST] ffprobe stderr: %s", stderr)
+			}
 
 			// Check for specific error patterns that indicate fundamentally invalid streams
 			if strings.Contains(stderr, "Invalid data found") ||
 				strings.Contains(stderr, "Unable to find a suitable output format") ||
 				strings.Contains(stderr, "not in allowed_segment_extensions") {
-				r.Logger.Printf("[FFPROBE_TEST] Stream has fundamental format errors")
+				if r.Config.Debug {
+					r.Logger.Printf("[FFPROBE_TEST] Stream has fundamental format errors")
+				}
 				return "invalid_format", err
 			}
+			if r.Config.Debug {
+				r.Logger.Printf("[FFPROBE_TEST] ffprobe failed with exit error: %v", err)
+			}
 
-			r.Logger.Printf("[FFPROBE_TEST] ffprobe failed with exit error: %v", err)
 			return "error", err
 		}
+		if r.Config.Debug {
+			r.Logger.Printf("[FFPROBE_TEST] ffprobe failed with execution error: %v", err)
+		}
 
-		r.Logger.Printf("[FFPROBE_TEST] ffprobe failed with execution error: %v", err)
 		return "error", err
 	}
 
@@ -91,28 +114,40 @@ func (r *Restream) testStreamWithFFprobe(streamURL string) (string, error) {
 	}
 
 	if err := json.Unmarshal(output, &probeResult); err != nil {
-		r.Logger.Printf("[FFPROBE_TEST] Error parsing ffprobe JSON: %v", err)
+		if r.Config.Debug {
+			r.Logger.Printf("[FFPROBE_TEST] Error parsing ffprobe JSON: %v", err)
+		}
+
 		return "no_video", fmt.Errorf("failed to parse ffprobe output")
 	}
 
 	outputStr := string(output)
-	r.Logger.Printf("[FFPROBE_TEST] ffprobe output: %q", outputStr)
+	if r.Config.Debug {
+		r.Logger.Printf("[FFPROBE_TEST] ffprobe output: %q", outputStr)
+	}
 
 	// Check if we found video streams with valid properties
 	if len(probeResult.Streams) > 0 {
 		stream := probeResult.Streams[0]
 		if stream.CodecType == "video" && stream.Width > 0 && stream.Height > 0 {
-			r.Logger.Printf("[FFPROBE_TEST] Stream contains valid video: %s %dx%d", stream.CodecName, stream.Width, stream.Height)
+			if r.Config.Debug {
+				r.Logger.Printf("[FFPROBE_TEST] Stream contains valid video: %s %dx%d", stream.CodecName, stream.Width, stream.Height)
+			}
+
 			return "video", nil
 		}
 	}
+	if r.Config.Debug {
+		r.Logger.Printf("[FFPROBE_TEST] No valid video streams found")
+	}
 
-	r.Logger.Printf("[FFPROBE_TEST] No valid video streams found")
 	return "no_video", fmt.Errorf("no video stream found")
 }
 
 func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
-	r.Logger.Printf("[HLS_STREAM] Starting HLS segment streaming for: %s", utils.LogURL(r.Config, playlistURL))
+	if r.Config.Debug {
+		r.Logger.Printf("[HLS_STREAM] Starting HLS segment streaming for: %s", utils.LogURL(r.Config, playlistURL))
+	}
 
 	totalBytes := int64(0)
 	processedSegments := make(map[string]bool) // Track by URL instead of index
@@ -132,17 +167,24 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		})
 
 		if clientCount == 0 {
-			r.Logger.Printf("[HLS_STREAM] No clients remaining")
+			if r.Config.Debug {
+				r.Logger.Printf("[HLS_STREAM] No clients remaining")
+			}
+
 			return totalBytes > 0, totalBytes
 		}
 
 		segments, err := r.getHLSSegments(playlistURL)
 		if err != nil {
-			r.Logger.Printf("[HLS_STREAM_ERROR] Error getting segments: %v", err)
+			if r.Config.Debug {
+				r.Logger.Printf("[HLS_STREAM_ERROR] Error getting segments: %v", err)
+			}
+
 			return false, totalBytes
 		}
-
-		r.Logger.Printf("[HLS_PLAYLIST_REFRESH] Found %d segments", len(segments))
+		if r.Config.Debug {
+			r.Logger.Printf("[HLS_PLAYLIST_REFRESH] Found %d segments", len(segments))
+		}
 
 		// Stream new segments only
 		newSegmentCount := 0
@@ -150,22 +192,29 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			if processedSegments[segmentURL] {
 				continue // Skip already processed segments
 			}
-
-			r.Logger.Printf("[HLS_SEGMENT_NEW] Processing new segment: %s", utils.LogURL(r.Config, segmentURL))
+			if r.Config.Debug {
+				r.Logger.Printf("[HLS_SEGMENT_NEW] Processing new segment: %s", utils.LogURL(r.Config, segmentURL))
+			}
 
 			segmentBytes, err := r.streamSegment(segmentURL)
 			if err != nil {
-				r.Logger.Printf("[HLS_SEGMENT_ERROR] Error streaming segment: %v", err)
+				if r.Config.Debug {
+					r.Logger.Printf("[HLS_SEGMENT_ERROR] Error streaming segment: %v", err)
+				}
+
 				continue
 			}
 
 			processedSegments[segmentURL] = true
 			totalBytes += segmentBytes
 			newSegmentCount++
-			r.Logger.Printf("[HLS_SEGMENT] Streamed segment: %d bytes", segmentBytes)
+			if r.Config.Debug {
+				r.Logger.Printf("[HLS_SEGMENT] Streamed segment: %d bytes", segmentBytes)
+			}
+
 		}
 
-		if newSegmentCount > 0 {
+		if r.Config.Debug && newSegmentCount > 0 {
 			r.Logger.Printf("[HLS_BATCH] Streamed %d new segments", newSegmentCount)
 		}
 
@@ -179,7 +228,9 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 				recentCount++
 			}
 			processedSegments = newProcessed
-			r.Logger.Printf("[HLS_CLEANUP] Cleaned segment cache, kept %d recent segments", recentCount)
+			if r.Config.Debug {
+				r.Logger.Printf("[HLS_CLEANUP] Cleaned segment cache, kept %d recent segments", recentCount)
+			}
 		}
 
 		// Wait before next playlist refresh (shorter interval)
@@ -237,7 +288,9 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 			// Check if this is a tracking/beacon URL with redirect
 			if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
 				segmentURL = resolvedURL
-				r.Logger.Printf("[HLS_REDIRECT] Resolved tracking URL to: %s", utils.LogURL(r.Config, segmentURL))
+				if r.Config.Debug {
+					r.Logger.Printf("[HLS_REDIRECT] Resolved tracking URL to: %s", utils.LogURL(r.Config, segmentURL))
+				}
 			}
 
 			segments = append(segments, segmentURL)
@@ -279,7 +332,9 @@ func (r *Restream) streamSegment(segmentURL string) (int64, error) {
 	originalURL := segmentURL
 	if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
 		segmentURL = resolvedURL
-		r.Logger.Printf("[HLS_SEGMENT_REDIRECT] Using resolved URL: %s", utils.LogURL(r.Config, segmentURL))
+		if r.Config.Debug {
+			r.Logger.Printf("[HLS_SEGMENT_REDIRECT] Using resolved URL: %s", utils.LogURL(r.Config, segmentURL))
+		}
 	}
 
 	req, err := http.NewRequest("GET", segmentURL, nil)
@@ -306,7 +361,7 @@ func (r *Restream) streamSegment(segmentURL string) (int64, error) {
 		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	buffer := make([]byte, r.Config.BufferSizePerStream)
+	buffer := make([]byte, (r.Config.BufferSizePerStream * 1024 * 1024))
 	totalBytes := int64(0)
 
 	for {

@@ -93,3 +93,11 @@ func (bp *BufferPool) Put(buf []byte) {
 	}
 	bp.pool.Put(&buf)
 }
+
+func (rb *RingBuffer) Reset() {
+	rb.writePos.Store(0)
+	rb.readPos.Range(func(key, value interface{}) bool {
+		rb.readPos.Delete(key)
+		return true
+	})
+}

@@ -4,6 +4,8 @@ package parser
 import (
 	"bufio"
 	"fmt"
+	"kptv-proxy/work/config"
+	"kptv-proxy/work/utils"
 	"log"
 	"net/url"
 	"regexp"
@@ -25,12 +27,14 @@ type StreamVariant struct {
 // MasterPlaylistHandler handles master playlist parsing and variant selection
 type MasterPlaylistHandler struct {
 	logger *log.Logger
+	config *config.Config
 }
 
 // NewMasterPlaylistHandler creates a new master playlist handler
-func NewMasterPlaylistHandler(logger *log.Logger) *MasterPlaylistHandler {
+func NewMasterPlaylistHandler(logger *log.Logger, config *config.Config) *MasterPlaylistHandler {
 	return &MasterPlaylistHandler{
 		logger: logger,
+		config: config,
 	}
 }
 
@@ -58,7 +62,10 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 			// Parse stream info line
 			variant, err := mph.parseStreamInf(line)
 			if err != nil {
-				mph.logger.Printf("Error parsing stream info: %v", err)
+				if mph.config.Debug {
+					mph.logger.Printf("Error parsing stream info: %v", err)
+				}
+
 				continue
 			}
 			currentVariant = &variant
@@ -66,8 +73,11 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 		} else if currentVariant != nil && line != "" && !strings.HasPrefix(line, "#") {
 			// This should be the URL for the previous #EXT-X-STREAM-INF
 			resolvedURL := mph.resolveURL(line, baseURL)
-			mph.logger.Printf("Original variant URL: %s", line)
-			mph.logger.Printf("Resolved variant URL: %s", resolvedURL)
+			if mph.config.Debug {
+				mph.logger.Printf("Original variant URL: %s", line)
+				mph.logger.Printf("Resolved variant URL: %s", utils.LogURL(mph.config, resolvedURL))
+			}
+
 			currentVariant.URL = resolvedURL
 			variants = append(variants, *currentVariant)
 			currentVariant = nil
@@ -94,37 +104,50 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 func (mph *MasterPlaylistHandler) ProcessMasterPlaylist(content string, originalURL string, channelName string) (string, bool, error) {
 	// Check what type of playlist this is
 	if mph.IsMasterPlaylist(content) {
-		mph.logger.Printf("Master playlist detected for channel %s", channelName)
+		if mph.config.Debug {
+			mph.logger.Printf("Master playlist detected for channel %s", channelName)
+		}
 
 		// Parse master playlist
 		variants, err := mph.ParseMasterPlaylist(content, originalURL)
 		if err != nil {
 			return "", false, fmt.Errorf("failed to parse master playlist: %v", err)
 		}
+		if mph.config.Debug {
+			mph.logger.Printf("Found %d variants for channel %s", len(variants), channelName)
 
-		mph.logger.Printf("Found %d variants for channel %s", len(variants), channelName)
-		for i, variant := range variants {
-			mph.logger.Printf("Variant %d: %s (%d kbps)",
-				i, variant.Resolution, variant.Bandwidth/1000)
+			for i, variant := range variants {
+				mph.logger.Printf("Variant %d: %s (%d kbps)",
+					i, variant.Resolution, variant.Bandwidth/1000)
+			}
 		}
 
 		if len(variants) > 0 {
 			// Select highest quality variant (first in sorted array since we sort highest first)
 			selectedVariant := variants[0]
-			mph.logger.Printf("Selected variant for channel %s: %s (%d kbps)",
-				channelName, selectedVariant.Resolution, selectedVariant.Bandwidth/1000)
+			if mph.config.Debug {
+				mph.logger.Printf("Selected variant for channel %s: %s (%d kbps)",
+					channelName, selectedVariant.Resolution, selectedVariant.Bandwidth/1000)
+			}
+
 			return selectedVariant.URL, true, nil
 		}
 
 		return "", false, fmt.Errorf("no working variants found")
 
 	} else if mph.IsMediaPlaylist(content) {
-		mph.logger.Printf("Media playlist detected for channel %s (no variant selection needed)", channelName)
+		if mph.config.Debug {
+			mph.logger.Printf("Media playlist detected for channel %s (no variant selection needed)", channelName)
+		}
+
 		return originalURL, false, nil
 
 	} else {
 		// Not an M3U8 playlist at all
-		mph.logger.Printf("Content is not an M3U8 playlist for channel %s", channelName)
+		if mph.config.Debug {
+			mph.logger.Printf("Content is not an M3U8 playlist for channel %s", channelName)
+		}
+
 		return originalURL, false, nil
 	}
 }
@@ -188,29 +211,42 @@ func (mph *MasterPlaylistHandler) parseAttributes(params string) map[string]stri
 func (mph *MasterPlaylistHandler) resolveURL(streamURL, baseURL string) string {
 	// If it's already an absolute URL, return as-is
 	if strings.HasPrefix(streamURL, "http://") || strings.HasPrefix(streamURL, "https://") {
-		mph.logger.Printf("URL is already absolute: %s", streamURL)
+		if mph.config.Debug {
+			mph.logger.Printf("URL is already absolute: %s", utils.LogURL(mph.config, streamURL))
+		}
+
 		return streamURL
 	}
-
-	mph.logger.Printf("Resolving relative URL: %s against base: %s", streamURL, baseURL)
+	if mph.config.Debug {
+		mph.logger.Printf("Resolving relative URL: %s against base: %s", utils.LogURL(mph.config, streamURL), utils.LogURL(mph.config, baseURL))
+	}
 
 	// Parse base URL
 	base, err := url.Parse(baseURL)
 	if err != nil {
-		mph.logger.Printf("Error parsing base URL %s: %v", baseURL, err)
+		if mph.config.Debug {
+			mph.logger.Printf("Error parsing base URL %s: %v", utils.LogURL(mph.config, baseURL), err)
+		}
+
 		return streamURL
 	}
 
 	// Parse relative URL
 	rel, err := url.Parse(streamURL)
 	if err != nil {
-		mph.logger.Printf("Error parsing relative URL %s: %v", streamURL, err)
+		if mph.config.Debug {
+			mph.logger.Printf("Error parsing relative URL %s: %v", utils.LogURL(mph.config, streamURL), err)
+		}
+
 		return streamURL
 	}
 
 	// Resolve relative URL against base
 	resolved := base.ResolveReference(rel)
-	mph.logger.Printf("Final resolved URL: %s", resolved.String())
+	if mph.config.Debug {
+		mph.logger.Printf("Final resolved URL: %s", resolved.String())
+	}
+
 	return resolved.String()
 }
 
