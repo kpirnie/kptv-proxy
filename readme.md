@@ -55,6 +55,16 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - Health check endpoints
 - Detailed logging with configurable verbosity
 
+### 🌐 **Web Admin Interface**
+- **Dark Mobile-Friendly Design**: Responsive web interface optimized for all devices
+- **Real-Time Dashboard**: Live statistics, active channels, and system monitoring
+- **Configuration Management**: Edit global settings and per-source configurations through web UI
+- **Source Management**: Add, edit, delete, and reorder IPTV sources with full validation
+- **Channel Monitoring**: View all channels with real-time status and client information
+- **Live Logs**: Real-time log viewing with filtering by level (error, warning, info, debug)
+- **Graceful Restart**: Apply configuration changes with zero-downtime restarts
+- **Auto-Refresh**: Dashboard updates every 5 seconds for real-time monitoring
+
 ## Architecture Overview
 
 ```
@@ -76,6 +86,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                     │  • Per-source config    │
                     │  • Failover logic       │
                     │  • Connection mgmt      │
+                    │  • Web Admin Interface  │
                     └────────────┬────────────┘
                                  │
                     ┌────────────▼────────────┐
@@ -105,7 +116,6 @@ wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.
 2. **Create your configuration file** - Create `settings/config.json`:
 ```json
 {
-  "port": "8080",
   "baseURL": "http://your-server-ip:9500",
   "maxBufferSize": 256,
   "bufferSizePerStream": 16,
@@ -161,21 +171,82 @@ docker compose up -d
 podman-compose up -d
 ```
 
-4. **Access your unified playlist:**
+4. **Access your services:**
 ```
-http://your-server-ip:9500/playlist
+Unified Playlist: http://your-server-ip:9500/playlist
+Group Filtered Playlist: http://your-server-ip:9500/{group}/playlist
+Admin Interface:  http://your-server-ip:9500/admin
 ```
 
-**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover and per-source configuration.
+**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover, per-source configuration, and a powerful web-based admin interface.
+
+## Web Admin Interface
+
+Access the admin interface at `http://your-server:port/admin` for comprehensive management:
+
+### Dashboard
+- **Real-Time Statistics**: Total channels, active streams, connected clients, memory usage
+- **System Status**: Server uptime, cache status, worker thread count
+- **Traffic Metrics**: Connection counts, bytes transferred, stream errors
+- **Active Channels**: Live view of currently streaming channels with client counts
+- **Auto-Refresh**: Updates every 5 seconds for real-time monitoring
+
+### Global Settings
+- Edit all configuration parameters through intuitive web forms
+- Validation and error handling for all settings
+- Save changes and trigger graceful restart to apply new configuration
+- Support for duration formats (30m, 1h, etc.) and all data types
+
+### Source Management
+- **Add/Edit Sources**: Full configuration interface for IPTV sources
+- **Per-Source Settings**: Custom timeouts, retry logic, connection limits
+- **Custom Headers**: Configure User-Agent, Origin, Referrer per source
+- **Priority Management**: Reorder sources by priority for failover
+- **Real-Time Status**: Live indicators showing source health
+
+### Channel Monitoring
+- **All Channels View**: Complete list of available channels with status
+- **Real-Time Status**: Active/inactive indicators with client counts
+- **Search & Filter**: Find channels by name or group
+- **Group Organization**: Channels organized by group/category
+- **Auto-Refresh**: Live updates of channel status
+
+### Live Logs
+- **Real-Time Viewing**: Live log stream with auto-scrolling
+- **Level Filtering**: Filter by error, warning, info, debug levels
+- **Search Functionality**: Find specific log entries
+- **Clear Logs**: Remove old entries to maintain performance
+
+### Mobile-Friendly Design
+- **Responsive Layout**: Optimized for phones, tablets, and desktop
+- **Dark Theme**: Professional dark interface optimized for IPTV environments
+- **Touch Controls**: Finger-friendly buttons and controls
+- **Collapsible Navigation**: Adaptive interface for small screens
+
+## API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /playlist` | Unified playlist (all channels) |
+| `GET /{group}/playlist` | Group-filtered playlist |
+| `GET /stream/{channel}` | Stream proxy with automatic failover |
+| `GET /metrics` | Prometheus metrics |
+| `GET /admin` | Web admin interface |
+| `GET /api/config` | Get current configuration |
+| `POST /api/config` | Update configuration |
+| `GET /api/stats` | System statistics |
+| `GET /api/channels` | All channels |
+| `GET /api/channels/active` | Active channels only |
+| `GET /api/logs` | Application logs |
+| `POST /api/restart` | Graceful restart |
 
 ## Configuration Reference
 
 ### Global Settings
-All configuration is done via a JSON file mounted at `/settings/config.json`.
+All configuration is done via a JSON file mounted at `/settings/config.json` or through the web admin interface.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `port` | `"8080"` | Server port |
 | `baseURL` | `"http://localhost:8080"` | Base URL for generated stream links |
 | `maxBufferSize` | `256` | Total buffer size in MB |
 | `bufferSizePerStream` | `16` | Per-stream buffer size in MB |
@@ -219,32 +290,22 @@ services:
     ports:
       - 9500:8080
     volumes:
-      - ./settings:/settings:ro  # Mount configuration directory
+      - ./settings:/settings  # Mount configuration directory
     
     # Health check
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9500/playlist"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/playlist"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 ```
 
-## API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /playlist` | Unified playlist (all channels) |
-| `GET /{group}/playlist` | Group-filtered playlist |
-| `GET /stream/{channel}` | Stream proxy with automatic failover |
-| `GET /metrics` | Prometheus metrics |
-
 ## Advanced Configuration Examples
 
 ### High-Performance Multi-Provider Setup
 ```json
 {
-  "port": "8080",
   "baseURL": "http://your-server:9500",
   "maxBufferSize": 512,
   "bufferSizePerStream": 32,
@@ -365,40 +426,41 @@ docker-compose logs kptv-proxy | grep "Configuration loaded"
 ### Common Issues & Solutions
 
 **Problem**: Configuration not loading
-- ✅ Ensure `settings/config.json` exists and is properly mounted
+- ✅ Use the web admin interface to edit configuration
 - ✅ Check JSON syntax: `cat settings/config.json | jq .`
 - ✅ Verify file permissions: `ls -la settings/`
-- ✅ Check logs for parsing errors: `docker logs kptv_proxy | grep "Configuration"`
+- ✅ Check logs in admin interface or container logs
 
 **Problem**: No channels in playlist
-- ✅ Verify source URLs are accessible: `curl -I http://source.com/playlist.m3u8`
-- ✅ Check source-specific debug logs: `"debug": true`
-- ✅ Ensure M3U8 format is valid
+- ✅ Add sources through the web admin interface
+- ✅ Check source URLs are accessible in admin interface
+- ✅ Enable debug mode through admin interface
+- ✅ Verify M3U8 format is valid
 - ✅ Check connection limits aren't too restrictive
 
 **Problem**: Streams failing to play  
-- ✅ Enable debug mode to see detailed connection attempts
-- ✅ Check per-source retry settings: `maxRetries`, `retryDelay`
-- ✅ Verify source-specific connection limits: `maxConnections`
-- ✅ Test custom headers: `userAgent`, `reqOrigin`, `reqReferrer`
+- ✅ Monitor channel status in admin interface
+- ✅ Check per-source retry settings in source management
+- ✅ Verify source-specific connection limits
+- ✅ Test custom headers through admin interface
 - ✅ Verify `baseURL` is accessible from clients
 
 **Problem**: Rate limiting (429 errors)
-- ✅ Reduce `maxConnections` for affected sources
+- ✅ Reduce `maxConnections` for affected sources in admin interface
 - ✅ Increase `retryDelay` for affected sources
-- ✅ Use restreaming architecture (automatically enabled)
-- ✅ Check `maxConnectionsToApp` limit
+- ✅ Monitor active connections in dashboard
+- ✅ Check `maxConnectionsToApp` limit in global settings
 
 **Problem**: High memory usage
-- ✅ Reduce `maxBufferSize` and `bufferSizePerStream`
-- ✅ Decrease `workerThreads`
-- ✅ Enable cache expiration: `cacheDuration: "5m"`
+- ✅ Reduce `maxBufferSize` and `bufferSizePerStream` in admin interface
+- ✅ Decrease `workerThreads` in global settings
+- ✅ Monitor memory usage in admin dashboard
 - ✅ Lower `maxConnections` per source
 
 **Problem**: Provider-specific authentication issues
-- ✅ Configure proper headers: `userAgent`, `reqOrigin`, `reqReferrer`
-- ✅ Check provider documentation for required headers
-- ✅ Test headers manually: `curl -H "User-Agent: xyz" URL`
+- ✅ Configure proper headers through source management interface
+- ✅ Test different User-Agent strings
+- ✅ Use custom Origin and Referrer headers
 
 ## Client Configuration Examples
 
@@ -422,7 +484,8 @@ Format: M3U8/HLS
 ## Security Considerations
 
 - **Network Security**: Run behind reverse proxy (nginx/Cloudflare) for production
-- **Access Control**: Consider adding authentication for private deployments  
+- **Admin Interface Security**: Consider adding authentication for admin interface in production
+- **Access Control**: Restrict admin interface access to trusted networks
 - **Source Privacy**: Enable `obfuscateUrls` to hide provider URLs in logs
 - **Container Security**: Runs as non-root user (UID 1000)
 - **HTTPS**: Use HTTPS sources when available
@@ -511,6 +574,8 @@ environment:
 }
 ```
 
+**Alternatively, use the web admin interface to migrate configuration visually.**
+
 ## Third-Party Software
 
 ### FFmpeg/FFprobe
@@ -546,4 +611,4 @@ This project incorporates or uses the following third-party software:
 
 ---
 
-**Need Help?** Enable debug mode (`"debug": true` in config.json) and check the logs for detailed information about stream processing, connection attempts, and error details.
+**Need Help?** Use the web admin interface at `http://your-server:port/admin` for easy configuration management, or enable debug mode and check the logs for detailed information about stream processing, connection attempts, and error details.

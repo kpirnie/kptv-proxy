@@ -126,7 +126,6 @@ class KPTVAdmin {
         } catch (error) {
             // Fallback to default values if API fails
             this.populateGlobalSettingsForm({
-                port: "8080",
                 baseURL: "http://localhost:8080",
                 maxBufferSize: 256,
                 bufferSizePerStream: 16,
