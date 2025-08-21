@@ -267,8 +267,8 @@ http://your-server-ip:9500/playlist.m3u8
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /playlist.m3u8` | Unified playlist (all channels) |
-| `GET /{group}/playlist.m3u8` | Group-filtered playlist |
+| `GET /playlist` | Unified playlist (all channels) |
+| `GET /{group}/playlist` | Group-filtered playlist |
 | `GET /stream/{channel}` | Stream proxy with automatic failover |
 | `GET /metrics` | Prometheus metrics |
 
@@ -347,18 +347,18 @@ docker-compose logs kptv-proxy | grep ERROR
 
 ### VLC Media Player
 ```
-Network → Open Network Stream → http://your-server:9500/playlist.m3u8
+Network → Open Network Stream → http://your-server:9500/playlist
 ```
 
 ### Kodi/LibreELEC
 ```
 Add-ons → PVR IPTV Simple Client
-M3U Play List URL: http://your-server:9500/playlist.m3u8
+M3U Play List URL: http://your-server:9500/playlist
 ```
 
 ### Android/iOS IPTV Apps
 ```
-Playlist URL: http://your-server:9500/playlist.m3u8
+Playlist URL: http://your-server:9500/playlist
 Format: M3U8/HLS
 ```
 
