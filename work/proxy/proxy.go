@@ -109,8 +109,9 @@ func (sp *StreamProxy) ImportStreams() {
 			for _, stream := range streams {
 				channelName := stream.Name
 				actual, _ := newChannels.LoadOrStore(channelName, &types.Channel{
-					Name:    channelName,
-					Streams: []*types.Stream{},
+					Name:                 channelName,
+					Streams:              []*types.Stream{},
+					PreferredStreamIndex: 0, // Initialize preferred stream index
 				})
 				channel := actual.(*types.Channel)
 				channel.Mu.Lock()
@@ -141,8 +142,17 @@ func (sp *StreamProxy) ImportStreams() {
 	// Sort streams in each channel and migrate to main map
 	count := 0
 	newChannels.Range(func(key, value interface{}) bool {
+		channelName := key.(string)
 		channel := value.(*types.Channel)
-		parser.SortStreams(channel.Streams, sp.Config)
+		parser.SortStreams(channel.Streams, sp.Config, channelName)
+
+		// Preserve existing preferred stream index if channel already exists
+		if existing, exists := sp.Channels.Load(channelName); exists {
+			existingChannel := existing.(*types.Channel)
+			existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
+			atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
+		}
+
 		sp.Channels.Store(key, channel)
 		count++
 		return true
@@ -321,19 +331,41 @@ func (sp *StreamProxy) RestreamCleanup() {
 				if !channel.Restreamer.Running.Load() {
 					lastActivity := channel.Restreamer.LastActivity.Load()
 					if now-lastActivity > 30 {
-						if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
-							if sp.Config.Debug {
-								sp.Logger.Printf("[CLEANUP_BUFFER_DESTROY] Channel %s: Safely destroying buffer", channel.Name)
+						// Check if context is cancelled
+						select {
+						case <-channel.Restreamer.Ctx.Done():
+							// Context cancelled - force cleanup after 60 seconds regardless
+							if now-lastActivity > 60 {
+								if sp.Config.Debug {
+									sp.Logger.Printf("[CLEANUP_FORCE] Channel %s: Force cleaning cancelled context after 60s", channel.Name)
+								}
+								if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
+									channel.Restreamer.Buffer.Destroy()
+								}
+								channel.Restreamer.Cancel()
+								channel.Restreamer = nil
+							} else {
+								if sp.Config.Debug {
+									sp.Logger.Printf("[CLEANUP_SKIP] Channel %s: Skipping cleanup for cancelled context (stream switch)", channel.Name)
+								}
 							}
-							channel.Restreamer.Buffer.Destroy()
-						}
-						channel.Restreamer.Cancel()
-						channel.Restreamer = nil
+						default:
+							// Normal cleanup for inactive restreamer
+							if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
+								if sp.Config.Debug {
+									sp.Logger.Printf("[CLEANUP_BUFFER_DESTROY] Channel %s: Safely destroying buffer", channel.Name)
+								}
+								channel.Restreamer.Buffer.Destroy()
+							}
+							channel.Restreamer.Cancel()
+							channel.Restreamer = nil
 
-						if sp.Config.Debug {
-							sp.Logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
+							if sp.Config.Debug {
+								sp.Logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
+							}
 						}
 					}
+
 				} else {
 					// Check for dead clients - increased timeout for HLS buffering
 					clientCount := 0

@@ -561,6 +561,9 @@ class KPTVAdmin {
                     <div class="uk-text-right uk-text-small">
                         <div class="uk-text-muted">Bytes: ${this.formatBytes(channel.bytesTransferred || 0)}</div>
                         <div class="uk-text-muted">Source: ${channel.currentSource || 'Unknown'}</div>
+                        <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-top" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name)}')">
+                            <span uk-icon="settings"></span> Streams
+                        </button>
                     </div>
                 </div>
             </div>
@@ -603,6 +606,9 @@ class KPTVAdmin {
                     </div>
                     <div class="uk-text-right">
                         <span class="status-indicator ${channel.active ? 'status-active' : 'status-error'}"></span>
+                        <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-left" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name)}')">
+                            <span uk-icon="settings"></span> Streams
+                        </button>
                     </div>
                 </div>
             </div>
@@ -763,6 +769,87 @@ class KPTVAdmin {
         
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
+
+    async showStreamSelector(channelName) {
+        try {
+            // Properly encode the channel name for the URL
+            const encodedChannelName = encodeURIComponent(channelName);
+            const data = await this.apiCall(`/api/channels/${encodedChannelName}/streams`);
+            this.renderStreamSelector(data);
+            UIkit.modal('#stream-selector-modal').show();
+        } catch (error) {
+            this.showNotification('Failed to load streams for channel', 'danger');
+        }
+    }
+
+    renderStreamSelector(data) {
+        document.getElementById('stream-selector-title').textContent = `Select Stream - ${data.channelName}`;
+        
+        const container = document.getElementById('stream-selector-content');
+        
+        if (data.streams.length === 0) {
+            container.innerHTML = '<div class="uk-alert uk-alert-warning">No streams found</div>';
+            return;
+        }
+        
+        container.innerHTML = data.streams.map((stream, index) => `
+            <div class="uk-card uk-card-default uk-margin-small ${index === data.currentStreamIndex ? 'uk-card-primary' : ''}" style="cursor: pointer;" onclick="kptvAdmin.selectStream('${data.channelName}', ${index})">
+                <div class="uk-card-body uk-padding-small">
+                    <div class="uk-flex uk-flex-between uk-flex-middle">
+                        <div class="uk-flex-1">
+                            <div class="uk-text-bold">
+                                Stream ${index + 1} 
+                                ${index === data.preferredStreamIndex ? '<span class="uk-label uk-label-success uk-margin-small-left">Preferred</span>' : ''}
+                                ${index === data.currentStreamIndex ? '<span class="uk-label uk-label-primary uk-margin-small-left">Current</span>' : ''}
+                            </div>
+                            <div class="uk-text-small uk-text-muted">
+                                Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
+                            </div>
+                            <div class="uk-text-small uk-text-muted text-truncate">
+                                ${stream.url}
+                            </div>
+                            ${stream.attributes['tvg-name'] ? `
+                                <div class="uk-text-small">
+                                    Name: ${this.escapeHtml(stream.attributes['tvg-name'])}
+                                </div>
+                            ` : ''}
+                            ${stream.attributes['group-title'] ? `
+                                <div class="uk-text-small">
+                                    Group: ${this.escapeHtml(stream.attributes['group-title'])}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="uk-text-right">
+                            ${index === data.currentStreamIndex ? '<span uk-icon="play" class="uk-text-primary"></span>' : ''}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async selectStream(channelName, streamIndex) {
+        try {
+            const encodedChannelName = encodeURIComponent(channelName);
+            await this.apiCall(`/api/channels/${encodedChannelName}/stream`, {
+                method: 'POST',
+                body: JSON.stringify({ streamIndex: streamIndex })
+            });
+            
+            this.showNotification(`Stream changed to index ${streamIndex} for ${channelName}`, 'success');
+            
+            // Wait a moment then refresh the stream selector
+            setTimeout(() => {
+                this.showStreamSelector(channelName);
+            }, 1000);
+            
+            // Refresh active channels to show updated status
+            this.loadActiveChannels();
+        } catch (error) {
+            this.showNotification('Failed to change stream', 'danger');
+        }
+    }
+
 }
 
 // Initialize the admin interface when the page loads

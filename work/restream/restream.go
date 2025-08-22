@@ -141,24 +141,59 @@ func (r *Restream) stopStream() {
 // stream it!
 func (r *Restream) Stream() {
 	defer func() {
+		if rec := recover(); rec != nil {
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_PANIC] Channel %s: Recovered from panic: %v", r.Channel.Name, rec)
+			}
+		}
 		r.Running.Store(false)
 		metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(0)
 	}()
 
 	r.Channel.Mu.RLock()
 	streamCount := len(r.Channel.Streams)
+	preferredIndex := int(atomic.LoadInt32(&r.Channel.PreferredStreamIndex))
 	r.Channel.Mu.RUnlock()
 
 	if streamCount == 0 {
 		return
 	}
 
+	// Start with preferred stream index
+	if preferredIndex >= 0 && preferredIndex < streamCount {
+		atomic.StoreInt32(&r.CurrentIndex, int32(preferredIndex))
+		if r.Config.Debug {
+			r.Logger.Printf("[STREAM_START] Channel %s: Starting with preferred stream index %d", r.Channel.Name, preferredIndex)
+		}
+	} else {
+		atomic.StoreInt32(&r.CurrentIndex, 0)
+		if r.Config.Debug {
+			r.Logger.Printf("[STREAM_START] Channel %s: Starting with default stream index 0", r.Channel.Name)
+		}
+	}
+
 	maxTotalAttempts := streamCount * 2
 	totalAttempts := 0
+	triedPreferred := false
 
 	for totalAttempts < maxTotalAttempts {
 		select {
 		case <-r.Ctx.Done():
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_CONTEXT_CANCELLED] Channel %s: Context cancelled, checking for restart", r.Channel.Name)
+			}
+			// Check if we still have clients and should restart
+			clientCount := 0
+			r.Clients.Range(func(_, _ interface{}) bool {
+				clientCount++
+				return true
+			})
+			if clientCount > 0 {
+				if r.Config.Debug {
+					r.Logger.Printf("[STREAM_RESTART_NEEDED] Channel %s: %d clients still connected, allowing restart", r.Channel.Name, clientCount)
+				}
+				r.Running.Store(false) // Allow restart
+			}
 			return
 		default:
 		}
@@ -170,6 +205,9 @@ func (r *Restream) Stream() {
 		})
 
 		if clientCount == 0 {
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_NO_CLIENTS] Channel %s: No clients remaining", r.Channel.Name)
+			}
 			return
 		}
 
@@ -189,6 +227,14 @@ func (r *Restream) Stream() {
 			return
 		}
 
+		// If preferred stream failed and we haven't tried fallbacks yet
+		if currentIdx == preferredIndex && !triedPreferred {
+			triedPreferred = true
+			if r.Config.Debug {
+				r.Logger.Printf("[FALLBACK] Channel %s: Preferred stream %d failed, trying fallback streams", r.Channel.Name, preferredIndex)
+			}
+		}
+
 		if streamCount > 1 {
 			newIdx := (currentIdx + 1) % streamCount
 			atomic.StoreInt32(&r.CurrentIndex, int32(newIdx))
@@ -196,9 +242,16 @@ func (r *Restream) Stream() {
 
 		select {
 		case <-r.Ctx.Done():
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_CONTEXT_CANCELLED_LOOP] Channel %s: Context cancelled during retry", r.Channel.Name)
+			}
 			return
 		case <-time.After(2 * time.Second):
 		}
+	}
+
+	if r.Config.Debug {
+		r.Logger.Printf("[STREAM_EXHAUSTED] Channel %s: All streams failed after %d attempts", r.Channel.Name, totalAttempts)
 	}
 }
 
@@ -210,18 +263,24 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		if r.Config.Debug {
 			r.Logger.Printf("Invalid stream index %d for channel: %s", index, r.Channel.Name)
 		}
-
 		return false, 0
 	}
 	stream := r.Channel.Streams[index]
 	r.Channel.Mu.RUnlock()
+
+	// ADD DEBUG LOGGING TO SHOW STREAM SELECTION
+	if r.Config.Debug {
+		r.Logger.Printf("[STREAM_SELECT] Channel %s: Attempting stream %d/%d - Source order=%d, %s=%s, URL=%s",
+			r.Channel.Name, index+1, len(r.Channel.Streams),
+			stream.Source.Order, r.Config.SortField, stream.Attributes[r.Config.SortField],
+			utils.LogURL(r.Config, stream.URL))
+	}
 
 	// Check if stream is blocked
 	if atomic.LoadInt32(&stream.Blocked) == 1 {
 		if r.Config.Debug {
 			r.Logger.Printf("Stream blocked for channel %s: %s", r.Channel.Name, utils.LogURL(r.Config, stream.URL))
 		}
-
 		return false, 0
 	}
 
@@ -234,7 +293,6 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 			r.Logger.Printf("[CONNECTION_LIMIT] Channel %s: Source at limit (%d/%d): %s",
 				r.Channel.Name, currentConns, maxConns, utils.LogURL(r.Config, stream.URL))
 		}
-
 		return false, 0
 	}
 
@@ -705,6 +763,13 @@ func (r *Restream) DistributeToClients(data []byte) int {
 }
 
 func (r *Restream) SafeBufferWrite(data []byte) bool {
+	// Don't check buffer if context is cancelled
+	select {
+	case <-r.Ctx.Done():
+		return false
+	default:
+	}
+
 	if r.Buffer == nil || r.Buffer.IsDestroyed() {
 		if r.Config.Debug {
 			r.Logger.Printf("[BUFFER_INVALID] Channel %s: Cannot write to invalid buffer", r.Channel.Name)

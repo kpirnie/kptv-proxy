@@ -270,14 +270,42 @@ func ParseEXTINF(line string) map[string]string {
 	return attrs
 }
 
-func SortStreams(streams []*types.Stream, cfg *config.Config) {
+func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string) {
+	if cfg.Debug && len(streams) > 1 {
+		log.Printf("[SORT_BEFORE] Channel %s: Sorting %d streams by source order, then by %s (%s)",
+			channelName, len(streams), cfg.SortField, cfg.SortDirection)
+		for i, stream := range streams {
+			log.Printf("[SORT_BEFORE] Channel %s: Stream %d: Source order=%d, %s=%s, URL=%s",
+				channelName, i, stream.Source.Order, cfg.SortField, stream.Attributes[cfg.SortField],
+				utils.LogURL(cfg, stream.URL))
+		}
+	}
+
 	sort.SliceStable(streams, func(i, j int) bool {
-		val1 := streams[i].Attributes[cfg.SortField]
-		val2 := streams[j].Attributes[cfg.SortField]
+		stream1 := streams[i]
+		stream2 := streams[j]
+
+		// Primary sort: by source order (lower order = higher priority)
+		if stream1.Source.Order != stream2.Source.Order {
+			return stream1.Source.Order < stream2.Source.Order
+		}
+
+		// Secondary sort: by configured field and direction
+		val1 := stream1.Attributes[cfg.SortField]
+		val2 := stream2.Attributes[cfg.SortField]
 
 		if cfg.SortDirection == "desc" {
 			return val1 > val2
 		}
 		return val1 < val2
 	})
+
+	if cfg.Debug && len(streams) > 1 {
+		log.Printf("[SORT_AFTER] Channel %s: Streams sorted:", channelName)
+		for i, stream := range streams {
+			log.Printf("[SORT_AFTER] Channel %s: Stream %d: Source order=%d, %s=%s, URL=%s",
+				channelName, i, stream.Source.Order, cfg.SortField, stream.Attributes[cfg.SortField],
+				utils.LogURL(cfg, stream.URL))
+		}
+	}
 }

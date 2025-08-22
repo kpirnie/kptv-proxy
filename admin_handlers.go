@@ -2,18 +2,22 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/proxy"
+	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 
@@ -54,6 +58,21 @@ type LogEntry struct {
 	Message   string `json:"message"`
 }
 
+type StreamInfo struct {
+	Index       int               `json:"index"`
+	URL         string            `json:"url"`
+	SourceName  string            `json:"sourceName"`
+	SourceOrder int               `json:"sourceOrder"`
+	Attributes  map[string]string `json:"attributes"`
+}
+
+type ChannelStreamsResponse struct {
+	ChannelName          string       `json:"channelName"`
+	CurrentStreamIndex   int          `json:"currentStreamIndex"`
+	PreferredStreamIndex int          `json:"preferredStreamIndex"`
+	Streams              []StreamInfo `json:"streams"`
+}
+
 // Global variables for admin interface
 var (
 	adminStartTime = time.Now()
@@ -75,6 +94,8 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 	router.HandleFunc("/api/stats", corsMiddleware(handleGetStats(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels", corsMiddleware(handleGetAllChannels(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/active", corsMiddleware(handleGetActiveChannels(proxyInstance))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/streams", corsMiddleware(handleGetChannelStreams(proxyInstance))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/stream", corsMiddleware(handleSetChannelStream(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/logs", corsMiddleware(handleGetLogs)).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/logs", corsMiddleware(handleClearLogs)).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/api/restart", corsMiddleware(handleRestart)).Methods("POST", "OPTIONS")
@@ -92,11 +113,154 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == "OPTIONS" {
+			addLogEntry("debug", fmt.Sprintf("OPTIONS request for: %s", r.URL.Path))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
 		next(w, r)
+	}
+}
+func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		vars := mux.Vars(r)
+		channelName, err := url.QueryUnescape(vars["channel"])
+		if err != nil {
+			http.Error(w, "Invalid channel name", http.StatusBadRequest)
+			return
+		}
+
+		value, exists := sp.Channels.Load(channelName)
+		if !exists {
+			http.Error(w, "Channel not found", http.StatusNotFound)
+			return
+		}
+
+		channel := value.(*types.Channel)
+		channel.Mu.RLock()
+
+		streams := make([]StreamInfo, len(channel.Streams))
+		for i, stream := range channel.Streams {
+			streams[i] = StreamInfo{
+				Index:       i,
+				URL:         utils.LogURL(sp.Config, stream.URL),
+				SourceName:  stream.Source.Name,
+				SourceOrder: stream.Source.Order,
+				Attributes:  stream.Attributes,
+			}
+		}
+
+		currentIndex := 0
+		preferredIndex := int(atomic.LoadInt32(&channel.PreferredStreamIndex))
+		if channel.Restreamer != nil {
+			currentIndex = int(atomic.LoadInt32(&channel.Restreamer.CurrentIndex))
+		}
+
+		response := ChannelStreamsResponse{
+			ChannelName:          channelName,
+			CurrentStreamIndex:   currentIndex,
+			PreferredStreamIndex: preferredIndex,
+			Streams:              streams,
+		}
+
+		channel.Mu.RUnlock()
+
+		json.NewEncoder(w).Encode(response)
+	}
+}
+
+func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		addLogEntry("debug", fmt.Sprintf("Stream switch request: %s %s", r.Method, r.URL.Path))
+		w.Header().Set("Content-Type", "application/json")
+
+		vars := mux.Vars(r)
+		channelName, err := url.QueryUnescape(vars["channel"])
+		if err != nil {
+			http.Error(w, "Invalid channel name", http.StatusBadRequest)
+			return
+		}
+
+		var request struct {
+			StreamIndex int `json:"streamIndex"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		value, exists := sp.Channels.Load(channelName)
+		if !exists {
+			http.Error(w, "Channel not found", http.StatusNotFound)
+			return
+		}
+
+		channel := value.(*types.Channel)
+		channel.Mu.Lock()
+
+		if request.StreamIndex < 0 || request.StreamIndex >= len(channel.Streams) {
+			channel.Mu.Unlock()
+			http.Error(w, "Invalid stream index", http.StatusBadRequest)
+			return
+		}
+
+		addLogEntry("info", fmt.Sprintf("Stream change request for channel %s to index %d", channelName, request.StreamIndex))
+
+		// Set preferred stream index
+		atomic.StoreInt32(&channel.PreferredStreamIndex, int32(request.StreamIndex))
+
+		// If restreamer is active, update current index and restart
+		if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
+			addLogEntry("info", fmt.Sprintf("Forcing stream restart for channel %s to index %d", channelName, request.StreamIndex))
+
+			// Set new current index
+			atomic.StoreInt32(&channel.Restreamer.CurrentIndex, int32(request.StreamIndex))
+
+			// Cancel current stream
+			channel.Restreamer.Cancel()
+
+			// Wait briefly for cancellation
+			time.Sleep(100 * time.Millisecond)
+
+			// Create new context
+			ctx, cancel := context.WithCancel(context.Background())
+			channel.Restreamer.Ctx = ctx
+			channel.Restreamer.Cancel = cancel
+
+			// Restart if clients still exist
+			clientCount := 0
+			channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
+				clientCount++
+				return true
+			})
+
+			if clientCount > 0 {
+				if channel.Restreamer.Running.CompareAndSwap(false, true) {
+					go func() {
+						// Use the existing restreamer's Stream method
+						defer func() {
+							channel.Restreamer.Running.Store(false)
+						}()
+						// Call the stream method directly
+						r := &restream.Restream{Restreamer: channel.Restreamer}
+						r.Stream()
+					}()
+					addLogEntry("info", fmt.Sprintf("Restarted streaming for channel %s with %d clients", channelName, clientCount))
+				}
+			}
+		}
+
+		channel.Mu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":      "success",
+			"message":     fmt.Sprintf("Stream changed to index %d", request.StreamIndex),
+			"streamIndex": request.StreamIndex,
+		})
 	}
 }
 

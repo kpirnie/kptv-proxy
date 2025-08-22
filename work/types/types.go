@@ -39,10 +39,11 @@ type Stream struct {
 
 // Channel represents a group of streams
 type Channel struct {
-	Name       string
-	Streams    []*Stream
-	Mu         sync.RWMutex
-	Restreamer *Restreamer
+	Name                 string
+	Streams              []*Stream
+	Mu                   sync.RWMutex
+	Restreamer           *Restreamer
+	PreferredStreamIndex int32
 }
 
 // Restreamer handles single connection to upstream and multiple clients

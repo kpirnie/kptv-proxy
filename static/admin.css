@@ -697,3 +697,39 @@ body, .uk-text-primary {
     background: var(--uk-primary) !important;
     color: #ffffff !important;
 }
+/* Stream Selector Modal */
+#stream-selector-modal .uk-card {
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+}
+
+#stream-selector-modal .uk-card:hover {
+    border-color: var(--uk-primary);
+    transform: translateY(-1px);
+}
+
+#stream-selector-modal .uk-card-primary {
+    border-color: var(--uk-primary);
+    background: rgba(33, 150, 243, 0.1);
+}
+
+#stream-selector-modal .uk-card-primary:hover {
+    background: rgba(33, 150, 243, 0.2);
+}
+
+.stream-selector-current {
+    background: var(--uk-primary) !important;
+    color: white !important;
+}
+
+.stream-selector-preferred {
+    border-left: 4px solid var(--uk-success);
+}
+/* Fix for stream selector clicks */
+#stream-selector-modal .uk-card > * {
+    pointer-events: none;
+}
+
+#stream-selector-modal .uk-card {
+    pointer-events: auto;
+}
