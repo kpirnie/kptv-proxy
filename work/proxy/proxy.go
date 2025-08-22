@@ -307,7 +307,7 @@ func (sp *StreamProxy) StopImportRefresh() {
 
 // clean up the streamer
 func (sp *StreamProxy) RestreamCleanup() {
-	ticker := time.NewTicker(10 * time.Second) // More frequent cleanup
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -318,12 +318,13 @@ func (sp *StreamProxy) RestreamCleanup() {
 			channel.Mu.Lock()
 
 			if channel.Restreamer != nil {
-				// Check if restreamer is inactive
 				if !channel.Restreamer.Running.Load() {
 					lastActivity := channel.Restreamer.LastActivity.Load()
-					if now-lastActivity > 30 { // 30 second grace period
-						// CRITICAL: Properly destroy the restreamer and free memory
-						if channel.Restreamer.Buffer != nil {
+					if now-lastActivity > 30 {
+						if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
+							if sp.Config.Debug {
+								sp.Logger.Printf("[CLEANUP_BUFFER_DESTROY] Channel %s: Safely destroying buffer", channel.Name)
+							}
 							channel.Restreamer.Buffer.Destroy()
 						}
 						channel.Restreamer.Cancel()
@@ -334,19 +335,19 @@ func (sp *StreamProxy) RestreamCleanup() {
 						}
 					}
 				} else {
-					// Check for dead clients
+					// Check for dead clients - increased timeout for HLS buffering
 					clientCount := 0
 					channel.Restreamer.Clients.Range(func(ckey, cvalue interface{}) bool {
 						client := cvalue.(*types.RestreamClient)
 						lastSeen := client.LastSeen.Load()
-						if now-lastSeen > 60 { // 60 seconds without activity
+						// Increased from 60 to 300 seconds for HLS client buffering
+						if now-lastSeen > 300 {
 							if sp.Config.Debug {
-								sp.Logger.Printf("Removing inactive client: %s", ckey.(string))
+								sp.Logger.Printf("Removing inactive client: %s (last seen %d seconds ago)", ckey.(string), now-lastSeen)
 							}
 							channel.Restreamer.Clients.Delete(ckey)
 							select {
 							case <-client.Done:
-								// Already closed
 							default:
 								close(client.Done)
 							}
@@ -356,17 +357,23 @@ func (sp *StreamProxy) RestreamCleanup() {
 						return true
 					})
 
-					// If no active clients, stop the restreamer
+					// Only stop if no clients AND no activity for extended period
 					if clientCount == 0 && channel.Restreamer.Running.Load() {
-						if sp.Config.Debug {
-							sp.Logger.Printf("No active clients found, stopping restreamer for: %s", channel.Name)
-						}
-						channel.Restreamer.Cancel()
-						channel.Restreamer.Running.Store(false)
+						lastActivity := channel.Restreamer.LastActivity.Load()
+						// Wait 60 seconds after last client before stopping (gives time for reconnect)
+						if now-lastActivity > 60 {
+							if sp.Config.Debug {
+								sp.Logger.Printf("No active clients found, stopping restreamer for: %s", channel.Name)
+							}
+							channel.Restreamer.Cancel()
+							channel.Restreamer.Running.Store(false)
 
-						// CRITICAL: Destroy buffer when no clients
-						if channel.Restreamer.Buffer != nil {
-							channel.Restreamer.Buffer.Destroy()
+							if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
+								if sp.Config.Debug {
+									sp.Logger.Printf("[CLEANUP_NO_CLIENTS] Channel %s: Safely destroying buffer", channel.Name)
+								}
+								channel.Restreamer.Buffer.Destroy()
+							}
 						}
 					}
 				}
@@ -376,7 +383,6 @@ func (sp *StreamProxy) RestreamCleanup() {
 			return true
 		})
 
-		// CRITICAL: Force garbage collection during cleanup
 		runtime.GC()
 	}
 }

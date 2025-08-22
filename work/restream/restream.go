@@ -680,15 +680,17 @@ func (r *Restream) DistributeToClients(data []byte) int {
 
 		select {
 		case <-client.Done:
-			// Client disconnected, will be cleaned up
 			return true
 		default:
 			_, writeErr := client.Writer.Write(data)
 			if writeErr != nil {
 				if r.Config.Debug {
-					r.Logger.Printf("Error writing to client %s: %v", id, writeErr)
+					r.Logger.Printf("Write error to client %s: %v (keeping client active for HLS buffering)", id, writeErr)
 				}
-				// Don't remove here, let the main handler remove it
+				// Don't fail immediately on write errors for HLS - client might be buffering
+				// Update last seen anyway to prevent premature cleanup
+				client.LastSeen.Store(time.Now().Unix())
+				activeClients++
 			} else {
 				client.Flusher.Flush()
 				client.LastSeen.Store(time.Now().Unix())
