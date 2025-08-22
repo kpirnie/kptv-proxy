@@ -209,28 +209,29 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		addLogEntry("info", fmt.Sprintf("Stream change request for channel %s to index %d", channelName, request.StreamIndex))
 
-		// Set preferred stream index
+		// Set preferred stream index FIRST
 		atomic.StoreInt32(&channel.PreferredStreamIndex, int32(request.StreamIndex))
 
-		// If restreamer is active, update current index and restart
+		// If restreamer is active, force restart with new index
 		if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
 			addLogEntry("info", fmt.Sprintf("Forcing stream restart for channel %s to index %d", channelName, request.StreamIndex))
 
-			// Set new current index
-			atomic.StoreInt32(&channel.Restreamer.CurrentIndex, int32(request.StreamIndex))
-
-			// Cancel current stream
+			// Stop current streaming
+			channel.Restreamer.Running.Store(false)
 			channel.Restreamer.Cancel()
 
-			// Wait briefly for cancellation
-			time.Sleep(100 * time.Millisecond)
+			// Wait for stream to stop
+			time.Sleep(200 * time.Millisecond)
 
-			// Create new context
+			// Create new context and restreamer
 			ctx, cancel := context.WithCancel(context.Background())
 			channel.Restreamer.Ctx = ctx
 			channel.Restreamer.Cancel = cancel
 
-			// Restart if clients still exist
+			// Set the current index to the requested index
+			atomic.StoreInt32(&channel.Restreamer.CurrentIndex, int32(request.StreamIndex))
+
+			// Check if we still have clients
 			clientCount := 0
 			channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
 				clientCount++
@@ -238,18 +239,16 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			})
 
 			if clientCount > 0 {
-				if channel.Restreamer.Running.CompareAndSwap(false, true) {
-					go func() {
-						// Use the existing restreamer's Stream method
-						defer func() {
-							channel.Restreamer.Running.Store(false)
-						}()
-						// Call the stream method directly
-						r := &restream.Restream{Restreamer: channel.Restreamer}
-						r.Stream()
+				// Start new streaming with correct index
+				channel.Restreamer.Running.Store(true)
+				go func() {
+					defer func() {
+						channel.Restreamer.Running.Store(false)
 					}()
-					addLogEntry("info", fmt.Sprintf("Restarted streaming for channel %s with %d clients", channelName, clientCount))
-				}
+					r := &restream.Restream{Restreamer: channel.Restreamer}
+					r.Stream()
+				}()
+				addLogEntry("info", fmt.Sprintf("Restarted streaming for channel %s at index %d with %d clients", channelName, request.StreamIndex, clientCount))
 			}
 		}
 

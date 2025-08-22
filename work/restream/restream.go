@@ -152,23 +152,33 @@ func (r *Restream) Stream() {
 
 	r.Channel.Mu.RLock()
 	streamCount := len(r.Channel.Streams)
-	preferredIndex := int(atomic.LoadInt32(&r.Channel.PreferredStreamIndex))
 	r.Channel.Mu.RUnlock()
 
 	if streamCount == 0 {
 		return
 	}
 
-	// Start with preferred stream index
-	if preferredIndex >= 0 && preferredIndex < streamCount {
-		atomic.StoreInt32(&r.CurrentIndex, int32(preferredIndex))
+	// Check if current index is already set (from manual stream change)
+	currentIndex := int(atomic.LoadInt32(&r.CurrentIndex))
+	preferredIndex := int(atomic.LoadInt32(&r.Channel.PreferredStreamIndex))
+
+	// If current index is valid and matches preferred, use it
+	if currentIndex >= 0 && currentIndex < streamCount && currentIndex == preferredIndex {
 		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_START] Channel %s: Starting with preferred stream index %d", r.Channel.Name, preferredIndex)
+			r.Logger.Printf("[STREAM_START] Channel %s: Using manually set stream index %d", r.Channel.Name, currentIndex)
 		}
 	} else {
-		atomic.StoreInt32(&r.CurrentIndex, 0)
-		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_START] Channel %s: Starting with default stream index 0", r.Channel.Name)
+		// Otherwise, start with preferred stream index
+		if preferredIndex >= 0 && preferredIndex < streamCount {
+			atomic.StoreInt32(&r.CurrentIndex, int32(preferredIndex))
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_START] Channel %s: Starting with preferred stream index %d", r.Channel.Name, preferredIndex)
+			}
+		} else {
+			atomic.StoreInt32(&r.CurrentIndex, 0)
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_START] Channel %s: Starting with default stream index 0", r.Channel.Name)
+			}
 		}
 	}
 

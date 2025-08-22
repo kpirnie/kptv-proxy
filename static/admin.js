@@ -841,7 +841,7 @@ class KPTVAdmin {
             // Wait a moment then refresh the stream selector
             setTimeout(() => {
                 this.showStreamSelector(channelName);
-            }, 1000);
+            }, 2000);
             
             // Refresh active channels to show updated status
             this.loadActiveChannels();
