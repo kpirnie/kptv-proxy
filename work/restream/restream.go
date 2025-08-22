@@ -703,12 +703,6 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 				return totalBytes >= minDataSize, totalBytes
 			}
 
-			if totalBytes >= (r.Config.MaxBufferSize * 1024 * 1024) {
-				if r.Config.Debug {
-					r.Logger.Printf("[STREAM_MAX_BUFFER] Channel %s: Reached max buffer size (%d bytes)", r.Channel.Name, totalBytes)
-				}
-				return totalBytes >= minDataSize, totalBytes
-			}
 		}
 
 		if err != nil {
