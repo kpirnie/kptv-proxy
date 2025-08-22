@@ -423,7 +423,9 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 			data := buffer[:n]
 			totalBytes += int64(n)
 
-			r.Buffer.Write(data)
+			if !r.SafeBufferWrite(data) {
+				return totalBytes, fmt.Errorf("buffer write failed")
+			}
 			activeClients := r.DistributeToClients(data)
 			if activeClients == 0 {
 				return totalBytes, fmt.Errorf("no active clients")

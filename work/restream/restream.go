@@ -124,19 +124,16 @@ func (r *Restream) RemoveClient(id string) {
 // force the stream to stop
 func (r *Restream) stopStream() {
 	if r.Running.CompareAndSwap(true, false) {
-		r.Cancel() // Cancel current context
+		r.Cancel()
 
-		// CRITICAL: Destroy the buffer to free memory
-		if r.Buffer != nil {
+		if r.Buffer != nil && !r.Buffer.IsDestroyed() {
 			r.Buffer.Destroy()
-			r.Buffer = nil
 		}
+		r.Buffer = nil
 
-		// Create new context for next time (but don't start until new client)
 		r.Ctx, r.Cancel = context.WithCancel(context.Background())
-		atomic.StoreInt32(&r.CurrentIndex, 0) // Reset to first stream
+		atomic.StoreInt32(&r.CurrentIndex, 0)
 
-		// Force garbage collection
 		runtime.GC()
 	}
 }
@@ -147,41 +144,25 @@ func (r *Restream) Stream() {
 		r.Running.Store(false)
 		metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(0)
 	}()
-	if r.Config.Debug {
-		r.Logger.Printf("[RESTREAM_CONFIG] Channel %s: Using per-source MinDataSize", r.Channel.Name)
-	}
 
 	r.Channel.Mu.RLock()
 	streamCount := len(r.Channel.Streams)
 	r.Channel.Mu.RUnlock()
 
 	if streamCount == 0 {
-		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_ERROR] Channel %s: No streams available", r.Channel.Name)
-		}
-
 		return
 	}
-	if r.Config.Debug {
-		r.Logger.Printf("[STREAM_INFO] Channel %s: Has %d streams available", r.Channel.Name, streamCount)
-	}
 
-	maxTotalAttempts := streamCount * 2 // Try each stream twice max
+	maxTotalAttempts := streamCount * 2
 	totalAttempts := 0
 
 	for totalAttempts < maxTotalAttempts {
-		// Check if we should stop immediately
 		select {
 		case <-r.Ctx.Done():
-			if r.Config.Debug {
-				r.Logger.Printf("[RESTREAM_STOP] Channel %s: Context cancelled", r.Channel.Name)
-			}
-
 			return
 		default:
 		}
 
-		// Check if we still have clients
 		clientCount := 0
 		r.Clients.Range(func(_, _ interface{}) bool {
 			clientCount++
@@ -189,75 +170,36 @@ func (r *Restream) Stream() {
 		})
 
 		if clientCount == 0 {
-			if r.Config.Debug {
-				r.Logger.Printf("[RESTREAM_STOP] Channel %s: No clients remain", r.Channel.Name)
-			}
-
 			return
 		}
 
-		// Get current stream index
 		currentIdx := int(atomic.LoadInt32(&r.CurrentIndex))
 		totalAttempts++
-		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_TRY] Channel %s: Attempting index %d (total attempt %d/%d)",
-				r.Channel.Name, currentIdx, totalAttempts, maxTotalAttempts)
-		}
 
-		// Clear buffer before trying new stream to prevent mixed data
-		r.Buffer.Reset()
-
-		// start up the stream
-		streamStart := time.Now()
-		success, bytesReceived := r.StreamFromSource(currentIdx)
-		streamDuration := time.Since(streamStart)
-		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_RESULT] Channel %s: Index %d - Success: %v, Bytes: %d, Duration: %v",
-				r.Channel.Name, currentIdx, success, bytesReceived, streamDuration)
-		}
-
-		// For master playlists, success means we found a working variant and started streaming
-		// For media streams, success means we got sufficient data
-		if success {
-			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_SUCCESS] Channel %s: Stream successful with %d bytes",
-					r.Channel.Name, bytesReceived)
-			}
-			// If we have a successful stream, we should already be streaming to clients
-			// The stream will continue until context is cancelled or clients disconnect
-			return
+		if r.Buffer != nil && !r.Buffer.IsDestroyed() {
+			r.Buffer.Reset()
 		} else {
-			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_FAIL] Channel %s: Stream failed", r.Channel.Name)
-			}
+			bufferSize := r.Config.MaxBufferSize * 1024 * 1024
+			r.Buffer = buffer.NewRingBuffer(bufferSize)
 		}
 
-		// Move to next stream only if current one failed
+		success, _ := r.StreamFromSource(currentIdx)
+
+		if success {
+			return
+		}
+
 		if streamCount > 1 {
 			newIdx := (currentIdx + 1) % streamCount
 			atomic.StoreInt32(&r.CurrentIndex, int32(newIdx))
-			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_SWITCH] Channel %s: Moving from index %d to %d",
-					r.Channel.Name, currentIdx, newIdx)
-			}
-		} else {
-			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_SINGLE] Channel %s: Only 1 stream available, will retry after delay", r.Channel.Name)
-			}
 		}
 
-		// Brief pause before retry
 		select {
 		case <-r.Ctx.Done():
 			return
 		case <-time.After(2 * time.Second):
-			// Continue
 		}
 	}
-	if r.Config.Debug {
-		r.Logger.Printf("[STREAM_EXHAUSTED] Channel %s: All streams tried %d times, stopping", r.Channel.Name, maxTotalAttempts)
-	}
-
 }
 
 // stream direct
@@ -678,7 +620,9 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 
 			lastDataTime = time.Now()
 			data := buffer[:n]
-			r.Buffer.Write(data)
+			if !r.SafeBufferWrite(data) {
+				return false, totalBytes
+			}
 			totalBytes += int64(n)
 			metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
 
@@ -756,4 +700,16 @@ func (r *Restream) DistributeToClients(data []byte) int {
 	})
 
 	return activeClients
+}
+
+func (r *Restream) SafeBufferWrite(data []byte) bool {
+	if r.Buffer == nil || r.Buffer.IsDestroyed() {
+		if r.Config.Debug {
+			r.Logger.Printf("[BUFFER_INVALID] Channel %s: Cannot write to invalid buffer", r.Channel.Name)
+		}
+		return false
+	}
+
+	r.Buffer.Write(data)
+	return true
 }

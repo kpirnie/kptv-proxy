@@ -340,9 +340,6 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 			if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
 				activeCount++
 
-				// Force log this regardless of debug setting
-				fmt.Printf("ACTIVE CHANNEL FOUND: %s\n", channelName)
-
 				// Count clients
 				clients := 0
 				channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {

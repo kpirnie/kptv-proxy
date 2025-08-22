@@ -84,7 +84,17 @@ class KPTVAdmin {
         this.refreshInterval = setInterval(() => {
             this.loadStats();
             this.loadActiveChannels();
-            this.loadAllChannels();
+            
+            // Always refresh all channels but preserve search
+            const searchInput = document.getElementById('channel-search');
+            const currentSearch = searchInput ? searchInput.value.trim() : '';
+            
+            this.loadAllChannels().then(() => {
+                if (currentSearch) {
+                    // Reapply the search filter after loading
+                    this.filterChannels(currentSearch);
+                }
+            });
         }, 5000);
     }
 
@@ -135,7 +145,7 @@ class KPTVAdmin {
                 workerThreads: 4,
                 debug: false,
                 obfuscateUrls: true,
-                sortField: "tvg-name",
+                sortField: "tvg-type",
                 sortDirection: "asc",
                 streamTimeout: "30s",
                 maxConnectionsToApp: 100
@@ -160,30 +170,44 @@ class KPTVAdmin {
     async saveGlobalSettings() {
         const form = document.getElementById('global-settings-form');
         const formData = new FormData(form);
-        const config = {};
+        const newConfig = {};
 
         for (let [key, value] of formData.entries()) {
             const input = form.querySelector(`[name="${key}"]`);
             if (input.type === 'checkbox') {
-                config[key] = input.checked;
+                newConfig[key] = input.checked;
             } else if (input.type === 'number') {
-                config[key] = parseInt(value) || 0;
+                newConfig[key] = parseInt(value) || 0;
             } else {
-                config[key] = value;
+                newConfig[key] = value;
             }
         }
 
         // Add unchecked checkboxes
         form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
             if (!formData.has(checkbox.name)) {
-                config[checkbox.name] = false;
+                newConfig[checkbox.name] = false;
             }
         });
 
         try {
+            // CRITICAL FIX: Get the current config first to preserve sources
+            const currentConfig = await this.apiCall('/api/config');
+            
+            // Merge the new global settings with existing config (preserving sources)
+            const mergedConfig = {
+                ...currentConfig,  // Start with existing config
+                ...newConfig       // Override with new global settings
+            };
+            
+            // Ensure sources array is preserved
+            if (currentConfig.sources) {
+                mergedConfig.sources = currentConfig.sources;
+            }
+
             await this.apiCall('/api/config', {
                 method: 'POST',
-                body: JSON.stringify(config)
+                body: JSON.stringify(mergedConfig)
             });
 
             this.showNotification('Global settings saved successfully!', 'success');
@@ -193,10 +217,10 @@ class KPTVAdmin {
                 this.restartService();
             }, 1000);
         } catch (error) {
-            this.showNotification('Failed to save global settings', 'danger');
+            this.showNotification('Failed to save global settings: ' + error.message, 'danger');
         }
     }
-
+    
     // Sources Management
     async loadSources() {
         try {
@@ -548,9 +572,11 @@ class KPTVAdmin {
             const channels = await this.apiCall('/api/channels');
             this.allChannels = channels;
             this.renderAllChannels(channels);
+            return channels;
         } catch (error) {
             document.getElementById('all-channels-list').innerHTML = 
                 '<div class="uk-alert uk-alert-danger">Failed to load channels</div>';
+            throw error;
         }
     }
 

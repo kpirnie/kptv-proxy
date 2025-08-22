@@ -6,7 +6,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v0.4.39" -o kptv-proxy .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v0.5.17" -o kptv-proxy .
 
 # Final stage - your working ffmpeg setup + Go app + Admin interface
 FROM docker.io/alpine:latest
