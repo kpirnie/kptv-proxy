@@ -65,6 +65,14 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - **Graceful Restart**: Apply configuration changes with zero-downtime restarts
 - **Auto-Refresh**: Dashboard updates every 5 seconds for real-time monitoring
 
+### 🔒 **Dead Stream Management**
+- **Stream Health Tracking**: Mark problematic streams as "dead" to prevent automatic selection
+- **Manual Stream Control**: Activate specific streams or mark them as unplayable through the admin interface
+- **Stream Revival**: Restore previously dead streams when they become functional again
+- **Persistent Dead Stream Storage**: Dead stream information stored in `/settings/dead-streams.json`
+- **Intelligent Stream Selection**: Proxy automatically skips dead streams during failover
+- **Visual Dead Stream Indicators**: Clear visual markers for dead streams in the admin interface
+
 ## Architecture Overview
 
 ```
@@ -87,6 +95,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                     │  • Failover logic       │
                     │  • Connection mgmt      │
                     │  • Web Admin Interface  │
+                    │  • Dead Stream Mgmt     │
                     └────────────┬────────────┘
                                  │
                     ┌────────────▼────────────┐
@@ -176,6 +185,7 @@ podman-compose up -d
 Unified Playlist: http://your-server-ip:9500/playlist
 Group Filtered Playlist: http://your-server-ip:9500/{group}/playlist
 Admin Interface:  http://your-server-ip:9500/admin
+Stream Management: Use admin interface to activate/kill streams per channel
 ```
 
 **That's it!** Your IPTV sources are now unified into a single playlist with automatic failover, per-source configuration, and a powerful web-based admin interface.
@@ -206,6 +216,8 @@ Access the admin interface at `http://your-server:port/admin` for comprehensive 
 
 ### Channel Monitoring
 - **All Channels View**: Complete list of available channels with status
+- **Stream Selection**: Choose specific streams for each channel with activate/kill controls
+- **Dead Stream Management**: Mark streams as dead or revive them with visual indicators
 - **Real-Time Status**: Active/inactive indicators with client counts
 - **Search & Filter**: Find channels by name or group
 - **Group Organization**: Channels organized by group/category
@@ -237,8 +249,68 @@ Access the admin interface at `http://your-server:port/admin` for comprehensive 
 | `GET /api/stats` | System statistics |
 | `GET /api/channels` | All channels |
 | `GET /api/channels/active` | Active channels only |
+| `GET /api/channels/{channel}/streams` | Get available streams for channel |
+| `POST /api/channels/{channel}/stream` | Set active stream for channel |
+| `POST /api/channels/{channel}/kill-stream` | Mark stream as dead |
+| `POST /api/channels/{channel}/revive-stream` | Revive dead stream |
 | `GET /api/logs` | Application logs |
+| `DELETE /api/logs` | Clear logs |
 | `POST /api/restart` | Graceful restart |
+
+## Dead Stream Management
+
+The KPTV Proxy includes a sophisticated dead stream management system that allows you to mark problematic streams as "dead" and manage them through the web interface.
+
+### Features
+- **Manual Stream Control**: Use the admin interface to activate specific streams or mark them as dead
+- **Persistent Storage**: Dead stream information is stored in `/settings/dead-streams.json`
+- **Automatic Skipping**: The proxy automatically skips dead streams during failover
+- **Stream Revival**: Dead streams can be restored when they become functional again
+
+### How It Works
+
+1. **Marking Streams as Dead**: In the admin interface, navigate to any channel and click the stream selection button. Each stream shows:
+   - **Activate Button** (▶️): Switch to this specific stream
+   - **Kill Button** (🚫): Mark this stream as dead
+
+2. **Dead Stream Storage**: When a stream is marked as dead, its information is stored in `/settings/dead-streams.json`:
+   ```json
+   {
+     "deadStreams": [
+       {
+         "channel": "ESPN",
+         "streamIndex": 2,
+         "url": "http://provider.com/espn/stream3.m3u8",
+         "sourceName": "Backup Provider",
+         "timestamp": "2025-08-24T12:00:10Z"
+       }
+     ]
+   }
+   ```
+
+3. **Automatic Stream Selection**: During playback, the proxy will:
+   - Skip dead streams during automatic failover
+   - Try the next available live stream
+   - Continue to show dead streams in the admin interface for potential revival
+
+4. **Stream Revival**: Dead streams can be restored by:
+   - Navigating to the channel in the admin interface
+   - Clicking the **Live Button** (🔄) next to the dead stream
+   - The stream is removed from the dead streams list and becomes available again
+
+### Benefits
+- **Improved Reliability**: Eliminates time wasted on known bad streams
+- **Manual Override**: Allows administrators to control exactly which streams are used
+- **Flexible Management**: Dead streams can be easily revived when providers fix issues
+- **Historical Tracking**: Maintains a record of problematic streams with timestamps
+
+### File Location
+The dead streams configuration is stored at:
+```
+/settings/dead-streams.json
+```
+
+This file is automatically created and maintained by the admin interface.
 
 ## Configuration Reference
 
@@ -378,6 +450,32 @@ services:
 }
 ```
 
+### Dead Stream Management Configuration
+The dead streams are automatically managed through the admin interface, but you can also manually edit the file:
+
+```json
+{
+  "deadStreams": [
+    {
+      "channel": "CNN",
+      "streamIndex": 1,
+      "url": "http://provider1.com/cnn/backup.m3u8",
+      "sourceName": "Backup Provider",
+      "timestamp": "2025-08-24T10:30:00Z"
+    },
+    {
+      "channel": "ESPN",
+      "streamIndex": 3,
+      "url": "http://provider2.com/espn/stream4.m3u8", 
+      "sourceName": "Premium Provider",
+      "timestamp": "2025-08-24T11:45:00Z"
+    }
+  ]
+}
+```
+
+**Note**: It's recommended to use the web admin interface for dead stream management rather than manually editing the JSON file.
+
 ### Low-Resource Configuration
 ```json
 {
@@ -444,6 +542,7 @@ docker-compose logs kptv-proxy | grep "Configuration loaded"
 - ✅ Verify source-specific connection limits
 - ✅ Test custom headers through admin interface
 - ✅ Verify `baseURL` is accessible from clients
+- ✅ Use dead stream management to mark problematic streams
 
 **Problem**: Rate limiting (429 errors)
 - ✅ Reduce `maxConnections` for affected sources in admin interface
@@ -461,6 +560,11 @@ docker-compose logs kptv-proxy | grep "Configuration loaded"
 - ✅ Configure proper headers through source management interface
 - ✅ Test different User-Agent strings
 - ✅ Use custom Origin and Referrer headers
+
+**Problem**: Dead streams keep being selected
+- ✅ Use the admin interface to mark problematic streams as dead
+- ✅ Check `/settings/dead-streams.json` for proper entries
+- ✅ Verify dead streams show as "DEAD" in the stream selector
 
 ## Client Configuration Examples
 
@@ -489,7 +593,7 @@ Format: M3U8/HLS
 - **Source Privacy**: Enable `obfuscateUrls` to hide provider URLs in logs
 - **Container Security**: Runs as non-root user (UID 1000)
 - **HTTPS**: Use HTTPS sources when available
-- **Configuration Security**: Protect `/settings/config.json` with appropriate file permissions
+- **Configuration Security**: Protect `/settings/config.json` and `/settings/dead-streams.json` with appropriate file permissions
 
 ## Performance Optimization
 
