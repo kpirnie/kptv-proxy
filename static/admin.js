@@ -792,41 +792,55 @@ class KPTVAdmin {
             return;
         }
         
-        container.innerHTML = data.streams.map((stream, index) => `
-            <div class="uk-card uk-card-default uk-margin-small ${index === data.currentStreamIndex ? 'uk-card-primary' : ''}" style="cursor: pointer;" onclick="kptvAdmin.selectStream('${data.channelName}', ${index})">
-                <div class="uk-card-body uk-padding-small">
-                    <div class="uk-flex uk-flex-between uk-flex-middle">
-                        <div class="uk-flex-1">
-                            <div class="uk-text-bold">
-                                Stream ${index + 1} 
-                                ${index === data.preferredStreamIndex ? '<span class="uk-label uk-label-success uk-margin-small-left">Preferred</span>' : ''}
-                                ${index === data.currentStreamIndex ? '<span class="uk-label uk-label-primary uk-margin-small-left">Current</span>' : ''}
-                            </div>
-                            <div class="uk-text-small uk-text-muted">
-                                Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
-                            </div>
-                            <div class="uk-text-small uk-text-muted text-truncate">
-                                ${stream.url}
-                            </div>
-                            ${stream.attributes['tvg-name'] ? `
-                                <div class="uk-text-small">
-                                    Name: ${this.escapeHtml(stream.attributes['tvg-name'])}
+        container.innerHTML = data.streams.map((stream, index) => {
+            const isDead = stream.attributes['dead'] === 'true';
+            const cardClass = index === data.currentStreamIndex ? 'uk-card-primary' : 
+                            isDead ? 'uk-card-secondary' : 'uk-card-default';
+            
+            return `
+                <div class="uk-card ${cardClass} uk-margin-small ${isDead ? 'dead-stream' : ''}">
+                    <div class="uk-card-body uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle">
+                            <div class="uk-flex-1">
+                                <div class="uk-text-bold">
+                                    Stream ${index + 1} 
+                                    ${index === data.preferredStreamIndex ? '<span class="uk-label uk-label-success uk-margin-small-left">Preferred</span>' : ''}
+                                    ${index === data.currentStreamIndex ? '<span class="uk-label uk-label-primary uk-margin-small-left">Current</span>' : ''}
+                                    ${isDead ? '<span class="uk-label uk-label-danger uk-margin-small-left">DEAD</span>' : ''}
                                 </div>
-                            ` : ''}
-                            ${stream.attributes['group-title'] ? `
-                                <div class="uk-text-small">
-                                    Group: ${this.escapeHtml(stream.attributes['group-title'])}
+                                <div class="uk-text-small uk-text-muted">
+                                    Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
                                 </div>
-                            ` : ''}
-                        </div>
-                        <div class="uk-text-right">
-                            ${index === data.currentStreamIndex ? '<span uk-icon="play" class="uk-text-primary"></span>' : ''}
+                                <div class="uk-text-small uk-text-muted text-truncate">
+                                    ${stream.url}
+                                </div>
+                                ${stream.attributes['tvg-name'] ? `
+                                    <div class="uk-text-small">
+                                        Name: ${this.escapeHtml(stream.attributes['tvg-name'])}
+                                    </div>
+                                ` : ''}
+                                ${stream.attributes['group-title'] ? `
+                                    <div class="uk-text-small">
+                                        Group: ${this.escapeHtml(stream.attributes['group-title'])}
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <div class="uk-text-right uk-flex uk-flex-middle">
+                                <div class="uk-flex uk-flex-middle">
+                                    ${isDead ? 
+                                        `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live" onclick="kptvAdmin.reviveStream('${data.channelName}', ${index}); return false;"></a>` :
+                                        `<a href="#" class="uk-icon-link uk-text-primary uk-margin-small-right" uk-icon="play" uk-tooltip="Activate Stream" onclick="kptvAdmin.selectStream('${data.channelName}', ${index}); return false;"></a>
+                                        <a href="#" class="uk-icon-link uk-text-danger" uk-icon="ban" uk-tooltip="Mark as Dead" onclick="kptvAdmin.killStream('${data.channelName}', ${index}); return false;"></a>`
+                                    }
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
     }
+    
 
     async selectStream(channelName, streamIndex) {
         try {
@@ -847,6 +861,50 @@ class KPTVAdmin {
             this.loadActiveChannels();
         } catch (error) {
             this.showNotification('Failed to change stream', 'danger');
+        }
+    }
+
+    async killStream(channelName, streamIndex) {
+        if (!confirm('Are you sure you want to mark this stream as dead? It will not be used for playback.')) {
+            return;
+        }
+
+        try {
+            const encodedChannelName = encodeURIComponent(channelName);
+            await this.apiCall(`/api/channels/${encodedChannelName}/kill-stream`, {
+                method: 'POST',
+                body: JSON.stringify({ streamIndex: streamIndex })
+            });
+            
+            this.showNotification(`Stream ${streamIndex + 1} marked as dead for ${channelName}`, 'warning');
+            
+            // Refresh the stream selector
+            setTimeout(() => {
+                this.showStreamSelector(channelName);
+            }, 1000);
+            
+        } catch (error) {
+            this.showNotification('Failed to mark stream as dead', 'danger');
+        }
+    }
+
+    async reviveStream(channelName, streamIndex) {
+        try {
+            const encodedChannelName = encodeURIComponent(channelName);
+            await this.apiCall(`/api/channels/${encodedChannelName}/revive-stream`, {
+                method: 'POST',
+                body: JSON.stringify({ streamIndex: streamIndex })
+            });
+            
+            this.showNotification(`Stream ${streamIndex + 1} revived for ${channelName}`, 'success');
+            
+            // Refresh the stream selector
+            setTimeout(() => {
+                this.showStreamSelector(channelName);
+            }, 1000);
+            
+        } catch (error) {
+            this.showNotification('Failed to revive stream', 'danger');
         }
     }
 

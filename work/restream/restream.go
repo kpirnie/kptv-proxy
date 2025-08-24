@@ -3,6 +3,7 @@ package restream
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"kptv-proxy/work/buffer"
@@ -14,6 +15,7 @@ import (
 	"kptv-proxy/work/utils"
 	"log"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -277,6 +279,14 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 	}
 	stream := r.Channel.Streams[index]
 	r.Channel.Mu.RUnlock()
+
+	// Check if stream is dead
+	if isStreamDead(r.Channel.Name, index) {
+		if r.Config.Debug {
+			r.Logger.Printf("[STREAM_DEAD] Channel %s: Stream %d is marked as dead, skipping", r.Channel.Name, index)
+		}
+		return false, 0
+	}
 
 	// ADD DEBUG LOGGING TO SHOW STREAM SELECTION
 	if r.Config.Debug {
@@ -783,4 +793,35 @@ func (r *Restream) SafeBufferWrite(data []byte) bool {
 
 	r.Buffer.Write(data)
 	return true
+}
+
+// Add this function to work/restream/restream.go
+func isStreamDead(channelName string, streamIndex int) bool {
+	deadStreamsPath := "/settings/dead-streams.json"
+
+	data, err := os.ReadFile(deadStreamsPath)
+	if err != nil {
+		return false
+	}
+
+	type DeadStreamEntry struct {
+		Channel     string `json:"channel"`
+		StreamIndex int    `json:"streamIndex"`
+	}
+
+	type DeadStreamsFile struct {
+		DeadStreams []DeadStreamEntry `json:"deadStreams"`
+	}
+
+	var deadStreams DeadStreamsFile
+	if err := json.Unmarshal(data, &deadStreams); err != nil {
+		return false
+	}
+
+	for _, entry := range deadStreams.DeadStreams {
+		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
+			return true
+		}
+	}
+	return false
 }

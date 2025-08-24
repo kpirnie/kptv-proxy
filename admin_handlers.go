@@ -73,6 +73,19 @@ type ChannelStreamsResponse struct {
 	Streams              []StreamInfo `json:"streams"`
 }
 
+// Dead stream management
+type DeadStreamEntry struct {
+	Channel     string `json:"channel"`
+	StreamIndex int    `json:"streamIndex"`
+	URL         string `json:"url"`
+	SourceName  string `json:"sourceName"`
+	Timestamp   string `json:"timestamp"`
+}
+
+type DeadStreamsFile struct {
+	DeadStreams []DeadStreamEntry `json:"deadStreams"`
+}
+
 // Global variables for admin interface
 var (
 	adminStartTime = time.Now()
@@ -96,6 +109,8 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 	router.HandleFunc("/api/channels/active", corsMiddleware(handleGetActiveChannels(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/streams", corsMiddleware(handleGetChannelStreams(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/stream", corsMiddleware(handleSetChannelStream(proxyInstance))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/kill-stream", corsMiddleware(handleKillStream(proxyInstance))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/revive-stream", corsMiddleware(handleReviveStream(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/logs", corsMiddleware(handleGetLogs)).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/logs", corsMiddleware(handleClearLogs)).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/api/restart", corsMiddleware(handleRestart)).Methods("POST", "OPTIONS")
@@ -148,7 +163,17 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 				URL:         utils.LogURL(sp.Config, stream.URL),
 				SourceName:  stream.Source.Name,
 				SourceOrder: stream.Source.Order,
-				Attributes:  stream.Attributes,
+				Attributes:  make(map[string]string),
+			}
+
+			// Copy existing attributes
+			for k, v := range stream.Attributes {
+				streams[i].Attributes[k] = v
+			}
+
+			// Add dead status
+			if isStreamDead(channelName, i) {
+				streams[i].Attributes["dead"] = "true"
 			}
 		}
 
@@ -633,4 +658,189 @@ func LogWithAdmin(logger *log.Logger, level, format string, args ...interface{})
 // Alternative logging function that works with your existing logger pattern
 func AdminLog(level, message string) {
 	addLogEntry(level, message)
+}
+
+func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		vars := mux.Vars(r)
+		channelName, err := url.QueryUnescape(vars["channel"])
+		if err != nil {
+			http.Error(w, "Invalid channel name", http.StatusBadRequest)
+			return
+		}
+
+		var request struct {
+			StreamIndex int `json:"streamIndex"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if err := killStream(sp, channelName, request.StreamIndex); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to kill stream: %v", err))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		addLogEntry("info", fmt.Sprintf("Stream %d marked as dead for channel %s", request.StreamIndex, channelName))
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "success",
+			"message": fmt.Sprintf("Stream %d marked as dead", request.StreamIndex),
+		})
+	}
+}
+
+func handleReviveStream(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		vars := mux.Vars(r)
+		channelName, err := url.QueryUnescape(vars["channel"])
+		if err != nil {
+			http.Error(w, "Invalid channel name", http.StatusBadRequest)
+			return
+		}
+
+		var request struct {
+			StreamIndex int `json:"streamIndex"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if err := reviveStream(sp, channelName, request.StreamIndex); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to revive stream: %v", err))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		addLogEntry("info", fmt.Sprintf("Stream %d revived for channel %s", request.StreamIndex, channelName))
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "success",
+			"message": fmt.Sprintf("Stream %d revived", request.StreamIndex),
+		})
+	}
+}
+
+func loadDeadStreams() (*DeadStreamsFile, error) {
+	deadStreamsPath := "/settings/dead-streams.json"
+
+	// Check if file exists
+	if _, err := os.Stat(deadStreamsPath); os.IsNotExist(err) {
+		return &DeadStreamsFile{DeadStreams: []DeadStreamEntry{}}, nil
+	}
+
+	data, err := os.ReadFile(deadStreamsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dead streams file: %w", err)
+	}
+
+	var deadStreams DeadStreamsFile
+	if err := json.Unmarshal(data, &deadStreams); err != nil {
+		return nil, fmt.Errorf("failed to parse dead streams JSON: %w", err)
+	}
+
+	return &deadStreams, nil
+}
+
+func saveDeadStreams(deadStreams *DeadStreamsFile) error {
+	deadStreamsPath := "/settings/dead-streams.json"
+
+	data, err := json.MarshalIndent(deadStreams, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal dead streams: %w", err)
+	}
+
+	return os.WriteFile(deadStreamsPath, data, 0644)
+}
+
+func killStream(sp *proxy.StreamProxy, channelName string, streamIndex int) error {
+	deadStreams, err := loadDeadStreams()
+	if err != nil {
+		return err
+	}
+
+	// Check if already exists
+	for _, entry := range deadStreams.DeadStreams {
+		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
+			return nil // Already dead
+		}
+	}
+
+	// Get stream details from the proxy
+	value, exists := sp.Channels.Load(channelName)
+	if !exists {
+		return fmt.Errorf("channel not found: %s", channelName)
+	}
+
+	channel := value.(*types.Channel)
+	channel.Mu.RLock()
+	defer channel.Mu.RUnlock()
+
+	if streamIndex >= len(channel.Streams) {
+		return fmt.Errorf("invalid stream index: %d", streamIndex)
+	}
+
+	stream := channel.Streams[streamIndex]
+
+	// Add new dead stream entry with complete data
+	newEntry := DeadStreamEntry{
+		Channel:     channelName,
+		StreamIndex: streamIndex,
+		URL:         stream.URL,
+		SourceName:  stream.Source.Name,
+		Timestamp:   time.Now().Format(time.RFC3339),
+	}
+
+	deadStreams.DeadStreams = append(deadStreams.DeadStreams, newEntry)
+	return saveDeadStreams(deadStreams)
+}
+
+func reviveStream(sp *proxy.StreamProxy, channelName string, streamIndex int) error {
+	deadStreams, err := loadDeadStreams()
+	if err != nil {
+		return err
+	}
+
+	// Remove from dead streams
+	var newDeadStreams []DeadStreamEntry
+	found := false
+	for _, entry := range deadStreams.DeadStreams {
+		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
+			found = true
+			continue // Skip this entry (remove it)
+		}
+		newDeadStreams = append(newDeadStreams, entry)
+	}
+
+	if !found {
+		return fmt.Errorf("stream not found in dead streams list")
+	}
+
+	deadStreams.DeadStreams = newDeadStreams
+	return saveDeadStreams(deadStreams)
+}
+
+func isStreamDead(channelName string, streamIndex int) bool {
+	deadStreams, err := loadDeadStreams()
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range deadStreams.DeadStreams {
+		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
+			return true
+		}
+	}
+	return false
 }

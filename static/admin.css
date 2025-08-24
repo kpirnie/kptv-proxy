@@ -725,11 +725,25 @@ body, .uk-text-primary {
 .stream-selector-preferred {
     border-left: 4px solid var(--uk-success);
 }
-/* Fix for stream selector clicks */
-#stream-selector-modal .uk-card > * {
-    pointer-events: none;
+
+.dead-stream {
+    opacity: 0.6;
+    background: linear-gradient(45deg, transparent 40%, rgba(244, 67, 54, 0.1) 50%, transparent 60%) !important;
 }
 
-#stream-selector-modal .uk-card {
-    pointer-events: auto;
+.dead-stream .uk-card-body {
+    position: relative;
+}
+
+.dead-stream .uk-card-body::before {
+    content: "DEAD";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-45deg);
+    font-size: 2rem;
+    font-weight: bold;
+    color: rgba(244, 67, 54, 0.2);
+    pointer-events: none;
+    z-index: 1;
 }
