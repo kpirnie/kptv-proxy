@@ -3,19 +3,19 @@ package restream
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"kptv-proxy/work/buffer"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/metrics"
 	"kptv-proxy/work/parser"
+	"kptv-proxy/work/stream"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"log"
 	"net/http"
-	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -141,6 +141,7 @@ func (r *Restream) stopStream() {
 }
 
 // stream it!
+// stream it!
 func (r *Restream) Stream() {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -187,6 +188,7 @@ func (r *Restream) Stream() {
 	maxTotalAttempts := streamCount * 2
 	totalAttempts := 0
 	triedPreferred := false
+	consecutiveFailures := make(map[int]int) // Track consecutive failures per stream index
 
 	for totalAttempts < maxTotalAttempts {
 		select {
@@ -236,7 +238,39 @@ func (r *Restream) Stream() {
 		success, _ := r.StreamFromSource(currentIdx)
 
 		if success {
+			// Reset failure count for this stream on success
+			consecutiveFailures[currentIdx] = 0
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_SUCCESS] Channel %s: Stream %d succeeded, resetting failure count", r.Channel.Name, currentIdx)
+			}
 			return
+		}
+
+		// Track consecutive failures and call HandleStreamFailure after multiple failures
+		consecutiveFailures[currentIdx]++
+
+		if r.Config.Debug {
+			r.Logger.Printf("[STREAM_FAILURE] Channel %s: Stream %d failed (consecutive failures: %d)",
+				r.Channel.Name, currentIdx, consecutiveFailures[currentIdx])
+		}
+
+		// Only call HandleStreamFailure after 2-3 consecutive failures to avoid false positives
+		if consecutiveFailures[currentIdx] >= 2 {
+			r.Channel.Mu.RLock()
+			if currentIdx < len(r.Channel.Streams) {
+				currentStream := r.Channel.Streams[currentIdx]
+				r.Channel.Mu.RUnlock()
+
+				// Track the stream failure
+				stream.HandleStreamFailure(currentStream, r.Config, r.Logger, r.Channel.Name, currentIdx)
+
+				if r.Config.Debug {
+					r.Logger.Printf("[STREAM_FAILURE_TRACKED] Channel %s: Stream %d failed %d consecutive times, tracked for potential auto-blocking",
+						r.Channel.Name, currentIdx, consecutiveFailures[currentIdx])
+				}
+			} else {
+				r.Channel.Mu.RUnlock()
+			}
 		}
 
 		// If preferred stream failed and we haven't tried fallbacks yet
@@ -250,6 +284,9 @@ func (r *Restream) Stream() {
 		if streamCount > 1 {
 			newIdx := (currentIdx + 1) % streamCount
 			atomic.StoreInt32(&r.CurrentIndex, int32(newIdx))
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_SWITCH] Channel %s: Switching from stream %d to stream %d", r.Channel.Name, currentIdx, newIdx)
+			}
 		}
 
 		select {
@@ -264,6 +301,13 @@ func (r *Restream) Stream() {
 
 	if r.Config.Debug {
 		r.Logger.Printf("[STREAM_EXHAUSTED] Channel %s: All streams failed after %d attempts", r.Channel.Name, totalAttempts)
+		// Log final failure counts
+		for streamIdx, failures := range consecutiveFailures {
+			if failures > 0 {
+				r.Logger.Printf("[STREAM_FINAL_FAILURES] Channel %s: Stream %d had %d consecutive failures",
+					r.Channel.Name, streamIdx, failures)
+			}
+		}
 	}
 }
 
@@ -281,9 +325,10 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 	r.Channel.Mu.RUnlock()
 
 	// Check if stream is dead
-	if isStreamDead(r.Channel.Name, index) {
+	if deadstreams.IsStreamDead(r.Channel.Name, index) {
 		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_DEAD] Channel %s: Stream %d is marked as dead, skipping", r.Channel.Name, index)
+			r.Logger.Printf("[STREAM_DEAD] Channel %s: Stream %d is marked as dead (reason: %s), skipping",
+				r.Channel.Name, index, deadstreams.GetDeadStreamReason(r.Channel.Name, index))
 		}
 		return false, 0
 	}
@@ -793,35 +838,4 @@ func (r *Restream) SafeBufferWrite(data []byte) bool {
 
 	r.Buffer.Write(data)
 	return true
-}
-
-// Add this function to work/restream/restream.go
-func isStreamDead(channelName string, streamIndex int) bool {
-	deadStreamsPath := "/settings/dead-streams.json"
-
-	data, err := os.ReadFile(deadStreamsPath)
-	if err != nil {
-		return false
-	}
-
-	type DeadStreamEntry struct {
-		Channel     string `json:"channel"`
-		StreamIndex int    `json:"streamIndex"`
-	}
-
-	type DeadStreamsFile struct {
-		DeadStreams []DeadStreamEntry `json:"deadStreams"`
-	}
-
-	var deadStreams DeadStreamsFile
-	if err := json.Unmarshal(data, &deadStreams); err != nil {
-		return false
-	}
-
-	for _, entry := range deadStreams.DeadStreams {
-		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
-			return true
-		}
-	}
-	return false
 }

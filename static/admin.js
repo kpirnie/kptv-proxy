@@ -794,6 +794,10 @@ class KPTVAdmin {
         
         container.innerHTML = data.streams.map((stream, index) => {
             const isDead = stream.attributes['dead'] === 'true';
+            const deadReason = stream.attributes['dead_reason'] || 'unknown';
+            const reasonText = deadReason === 'manual' ? 'Manually Killed' : 
+                            deadReason === 'auto_blocked' ? 'Auto-Blocked (Too Many Failures)' : 
+                            'Dead';
             const cardClass = index === data.currentStreamIndex ? 'uk-card-primary' : 
                             isDead ? 'uk-card-secondary' : 'uk-card-default';
             
@@ -806,7 +810,7 @@ class KPTVAdmin {
                                     Stream ${index + 1} 
                                     ${index === data.preferredStreamIndex ? '<span class="uk-label uk-label-success uk-margin-small-left">Preferred</span>' : ''}
                                     ${index === data.currentStreamIndex ? '<span class="uk-label uk-label-primary uk-margin-small-left">Current</span>' : ''}
-                                    ${isDead ? '<span class="uk-label uk-label-danger uk-margin-small-left">DEAD</span>' : ''}
+                                    ${isDead ? `<span class="uk-label uk-label-danger uk-margin-small-left" uk-tooltip="${reasonText}">DEAD</span>` : ''}
                                 </div>
                                 <div class="uk-text-small uk-text-muted">
                                     Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
@@ -828,7 +832,7 @@ class KPTVAdmin {
                             <div class="uk-text-right uk-flex uk-flex-middle">
                                 <div class="uk-flex uk-flex-middle">
                                     ${isDead ? 
-                                        `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live" onclick="kptvAdmin.reviveStream('${data.channelName}', ${index}); return false;"></a>` :
+                                        `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${data.channelName}', ${index}); return false;"></a>` :
                                         `<a href="#" class="uk-icon-link uk-text-primary uk-margin-small-right" uk-icon="play" uk-tooltip="Activate Stream" onclick="kptvAdmin.selectStream('${data.channelName}', ${index}); return false;"></a>
                                         <a href="#" class="uk-icon-link uk-text-danger" uk-icon="ban" uk-tooltip="Mark as Dead" onclick="kptvAdmin.killStream('${data.channelName}', ${index}); return false;"></a>`
                                     }
@@ -840,7 +844,6 @@ class KPTVAdmin {
             `;
         }).join('');
     }
-    
 
     async selectStream(channelName, streamIndex) {
         try {
