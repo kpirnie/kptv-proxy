@@ -313,7 +313,7 @@ The KPTV Proxy includes an intelligent stream monitoring system that automatical
 
 ### How It Works
 
-The Stream Watcher runs as a background service that monitors active streams every 30 seconds (configurable) without making additional network requests. It analyzes the existing stream state to detect problems:
+The Stream Watcher runs as a background service that monitors active streams every 10 seconds without making additional network requests. It analyzes the existing stream state to detect problems:
 
 **Monitored Conditions:**
 - **Buffer Health**: Detects destroyed or stale buffers
@@ -339,7 +339,7 @@ The Stream Watcher runs as a background service that monitors active streams eve
 ### Monitoring Logic
 
 ```
-Stream Health Check (every 30s)
+Stream Health Check (every 10s)
 ├── Check Buffer Status
 ├── Verify Recent Activity (<60s)  
 ├── Validate Context State
@@ -348,7 +348,7 @@ Stream Health Check (every 30s)
 If Issues Detected:
 ├── Increment Failure Counter
 ├── Log Issue Details (debug mode)
-└── After 3 Consecutive Failures:
+└── After 5 Consecutive Failures:
     ├── Find Next Available Stream
     ├── Switch to Backup Stream
     ├── Reset Failure Counter
