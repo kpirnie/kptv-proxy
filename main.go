@@ -26,6 +26,8 @@ var (
 
 // our main app worker
 func main() {
+
+	// load our config
 	cfg := config.LoadConfig()
 
 	// Set up logging
@@ -52,6 +54,9 @@ func main() {
 
 	// Initialize master playlist handler
 	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger, cfg)
+
+	// start the watcher
+	proxyInstance.WatcherManager.Start()
 
 	// Start restreamer cleanup routine
 	go proxyInstance.RestreamCleanup()
@@ -82,7 +87,7 @@ func main() {
 
 	addr := fmt.Sprintf(":%d", 8080)
 
-	// show into
+	// show info
 	logger.Printf("Starting KPTV Proxy %s", Version)
 	logger.Printf("Server configuration:")
 	logger.Printf("  - Base URL: %s", cfg.BaseURL)
@@ -100,11 +105,19 @@ func main() {
 
 	// gracefully restart if it's requested to do.
 	go func() {
+
+		// start a loop
 		for {
 			<-restartChan
+
+			// debug logging
 			if cfg.Debug {
 				logger.Printf("Graceful restart requested...")
 			}
+
+			// Stop stream watcher
+			proxyInstance.WatcherManager.Stop()
+
 			// Stop import refresh
 			proxyInstance.StopImportRefresh()
 
@@ -124,14 +137,22 @@ func main() {
 			// Restart import process
 			proxyInstance.ImportStreams()
 			go proxyInstance.StartImportRefresh()
+
+			// Restart stream watcher
+			proxyInstance.WatcherManager.Start()
+
+			// debug logging
 			if cfg.Debug {
 				logger.Printf("Graceful restart completed - loaded %d sources", len(newConfig.Sources))
 			}
+
 		}
+
 	}()
 
 	// fire us up
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
+
 }

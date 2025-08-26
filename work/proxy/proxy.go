@@ -10,6 +10,7 @@ import (
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
+	"kptv-proxy/work/watcher"
 	"runtime"
 	"strconv"
 
@@ -36,6 +37,7 @@ type StreamProxy struct {
 	RateLimiter           ratelimit.Limiter
 	MasterPlaylistHandler *parser.MasterPlaylistHandler
 	importStopChan        chan bool
+	WatcherManager        *watcher.WatcherManager
 }
 
 // ensure we fire up the struct
@@ -50,6 +52,7 @@ func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, 
 		WorkerPool:            workerPool,
 		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(logger, cfg),
 		importStopChan:        make(chan bool, 1),
+		WatcherManager:        watcher.NewWatcherManager(logger),
 	}
 }
 
@@ -504,6 +507,11 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 
 	// Add client to restreamer
 	restreamer.AddClient(clientID, w, flusher)
+
+	// load the watcher
+	if restreamer.Restreamer.Running.Load() {
+		sp.WatcherManager.StartWatching(channel.Name, restreamer.Restreamer)
+	}
 
 	// Create a cleanup function
 	cleanup := func() {

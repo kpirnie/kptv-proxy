@@ -73,6 +73,16 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - **Intelligent Stream Selection**: Proxy automatically skips dead streams during failover
 - **Visual Dead Stream Indicators**: Clear visual markers for dead streams in the admin interface
 
+### 🔍 **Automatic Stream Monitoring**
+- **Real-Time Health Monitoring**: Continuously monitors active streams for playback issues
+- **Intelligent Failover**: Automatically switches to backup streams when problems are detected
+- **State-Based Detection**: Monitors buffer health, activity timestamps, and connection status
+- **No Additional Network Load**: Uses existing connection state without extra requests
+- **Provider-Friendly**: Respects existing connection limits and reuses established connections
+- **Configurable Timing**: Adjustable monitoring intervals (default: 30 seconds, 3 consecutive failures)
+- **Seamless Switching**: Automatic failover maintains client connections during stream transitions
+- **Integration with Existing Logic**: Leverages all existing stream management and failover mechanisms
+
 ## Architecture Overview
 
 ```
@@ -96,6 +106,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                     │  • Connection mgmt      │
                     │  • Web Admin Interface  │
                     │  • Dead Stream Mgmt     │
+                    │  • Stream Watcher       │
                     └────────────┬────────────┘
                                  │
                     ┌────────────▼────────────┐
@@ -188,7 +199,13 @@ Admin Interface:  http://your-server-ip:9500/admin
 Stream Management: Use admin interface to activate/kill streams per channel
 ```
 
-**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover, per-source configuration, and a powerful web-based admin interface.
+5. **Monitor stream health:**
+```
+Stream Watcher: Automatic monitoring and failover (no configuration needed)
+Health Monitoring: Runs every 30 seconds, switches after 3 consecutive failures
+```
+
+**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover, per-source configuration, intelligent stream monitoring, and a powerful web-based admin interface.
 
 ## Web Admin Interface
 
@@ -234,28 +251,6 @@ Access the admin interface at `http://your-server:port/admin` for comprehensive 
 - **Dark Theme**: Professional dark interface optimized for IPTV environments
 - **Touch Controls**: Finger-friendly buttons and controls
 - **Collapsible Navigation**: Adaptive interface for small screens
-
-## API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /playlist` | Unified playlist (all channels) |
-| `GET /{group}/playlist` | Group-filtered playlist |
-| `GET /stream/{channel}` | Stream proxy with automatic failover |
-| `GET /metrics` | Prometheus metrics |
-| `GET /admin` | Web admin interface |
-| `GET /api/config` | Get current configuration |
-| `POST /api/config` | Update configuration |
-| `GET /api/stats` | System statistics |
-| `GET /api/channels` | All channels |
-| `GET /api/channels/active` | Active channels only |
-| `GET /api/channels/{channel}/streams` | Get available streams for channel |
-| `POST /api/channels/{channel}/stream` | Set active stream for channel |
-| `POST /api/channels/{channel}/kill-stream` | Mark stream as dead |
-| `POST /api/channels/{channel}/revive-stream` | Revive dead stream |
-| `GET /api/logs` | Application logs |
-| `DELETE /api/logs` | Clear logs |
-| `POST /api/restart` | Graceful restart |
 
 ## Dead Stream Management
 
@@ -311,6 +306,78 @@ The dead streams configuration is stored at:
 ```
 
 This file is automatically created and maintained by the admin interface.
+
+## Stream Watcher - Automatic Monitoring
+
+The KPTV Proxy includes an intelligent stream monitoring system that automatically detects playback issues and switches to backup streams without interrupting client connections.
+
+### How It Works
+
+The Stream Watcher runs as a background service that monitors active streams every 30 seconds (configurable) without making additional network requests. It analyzes the existing stream state to detect problems:
+
+**Monitored Conditions:**
+- **Buffer Health**: Detects destroyed or stale buffers
+- **Stream Activity**: Monitors data flow and timestamps  
+- **Context Status**: Detects cancelled or problematic connections
+- **Client Connections**: Tracks active client count
+
+**Automatic Actions:**
+- **Health Assessment**: Evaluates stream conditions using existing state
+- **Consecutive Failure Tracking**: Requires 3 consecutive failures before switching (prevents false positives)
+- **Intelligent Failover**: Automatically switches to next available healthy stream
+- **Seamless Transition**: Maintains client connections during stream changes
+- **Resource Respect**: Uses existing connection limits and stream management
+
+### Benefits
+
+- **Zero Configuration**: Works automatically with existing setup
+- **No Network Overhead**: Uses existing connection state only
+- **Provider Friendly**: Respects connection limits and doesn't create additional load
+- **Transparent Operation**: Clients experience seamless stream switching
+- **Integration**: Works with all existing features (dead streams, manual switching, admin interface)
+
+### Monitoring Logic
+
+```
+Stream Health Check (every 30s)
+├── Check Buffer Status
+├── Verify Recent Activity (<60s)  
+├── Validate Context State
+└── Assess Client Connections
+
+If Issues Detected:
+├── Increment Failure Counter
+├── Log Issue Details (debug mode)
+└── After 3 Consecutive Failures:
+    ├── Find Next Available Stream
+    ├── Switch to Backup Stream
+    ├── Reset Failure Counter
+    └── Continue Monitoring
+```
+
+The watcher intelligently skips blocked streams, respects source connection limits, and maintains all existing stream management functionality while providing automatic reliability improvements.
+
+## API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /playlist` | Unified playlist (all channels) |
+| `GET /{group}/playlist` | Group-filtered playlist |
+| `GET /stream/{channel}` | Stream proxy with automatic failover |
+| `GET /metrics` | Prometheus metrics |
+| `GET /admin` | Web admin interface |
+| `GET /api/config` | Get current configuration |
+| `POST /api/config` | Update configuration |
+| `GET /api/stats` | System statistics |
+| `GET /api/channels` | All channels |
+| `GET /api/channels/active` | Active channels only |
+| `GET /api/channels/{channel}/streams` | Get available streams for channel |
+| `POST /api/channels/{channel}/stream` | Set active stream for channel |
+| `POST /api/channels/{channel}/kill-stream` | Mark stream as dead |
+| `POST /api/channels/{channel}/revive-stream` | Revive dead stream |
+| `GET /api/logs` | Application logs |
+| `DELETE /api/logs` | Clear logs |
+| `POST /api/restart` | Graceful restart |
 
 ## Configuration Reference
 
@@ -374,6 +441,8 @@ services:
 ```
 
 ## Advanced Configuration Examples
+
+**Note**: The Stream Watcher automatically monitors all active streams and provides failover without requiring additional configuration. It works seamlessly with all existing features including dead stream management, manual stream switching, and source-specific settings.
 
 ### High-Performance Multi-Provider Setup
 ```json
@@ -515,6 +584,24 @@ docker-compose logs kptv-proxy | grep ERROR
 docker-compose logs kptv-proxy | grep "Configuration loaded"
 ```
 
+### Stream Watcher Monitoring
+```bash
+# Monitor watcher activity in logs
+docker-compose logs kptv-proxy | grep WATCHER
+
+# Check for automatic stream switches
+docker-compose logs kptv-proxy | grep "Switching channel"
+
+# View health check results (debug mode only)
+docker-compose logs kptv-proxy | grep "health check took"
+```
+
+**Watcher Log Examples:**
+- `[WATCHER] Started watching channel ESPN` - Monitoring started
+- `[WATCHER] Channel ESPN: Health issue detected (consecutive failures: 2)` - Problem detected
+- `[WATCHER] Switching channel ESPN from stream 1 to stream 2` - Automatic failover
+- `[WATCHER] Stopped watching channel ESPN` - Monitoring stopped
+
 ### Key Metrics (Prometheus)
 - `iptv_proxy_active_connections` - Active connections per channel
 - `iptv_proxy_bytes_transferred` - Data transfer metrics
@@ -565,6 +652,12 @@ docker-compose logs kptv-proxy | grep "Configuration loaded"
 - ✅ Use the admin interface to mark problematic streams as dead
 - ✅ Check `/settings/dead-streams.json` for proper entries
 - ✅ Verify dead streams show as "DEAD" in the stream selector
+
+**Problem**: Automatic stream switching too frequent
+- ✅ Monitor watcher logs to see what's triggering switches
+- ✅ Check buffer health and stream activity in debug logs
+- ✅ Adjust monitoring interval in watcher.go if needed (default: 30s)
+- ✅ Verify streams are actually stable before marking issues as false positives
 
 ## Client Configuration Examples
 
@@ -715,4 +808,4 @@ This project incorporates or uses the following third-party software:
 
 ---
 
-**Need Help?** Use the web admin interface at `http://your-server:port/admin` for easy configuration management, or enable debug mode and check the logs for detailed information about stream processing, connection attempts, and error details.
+**Need Help?** Use the web admin interface at `http://your-server:port/admin` for easy configuration management, or enable debug mode and check the logs for detailed information about stream processing, connection attempts, and error details. The automatic Stream Watcher will help maintain stream reliability in the background.

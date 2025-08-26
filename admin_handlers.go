@@ -25,7 +25,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// API response structures
+// stat response structure
 type StatsResponse struct {
 	TotalChannels     int    `json:"totalChannels"`
 	ActiveStreams     int    `json:"activeStreams"`
@@ -42,6 +42,7 @@ type StatsResponse struct {
 	ResponseTime      string `json:"responseTime"`
 }
 
+// channel response structure
 type ChannelResponse struct {
 	Name             string `json:"name"`
 	Active           bool   `json:"active"`
@@ -53,12 +54,14 @@ type ChannelResponse struct {
 	URL              string `json:"url"`
 }
 
+// log entry structure
 type LogEntry struct {
 	Timestamp string `json:"timestamp"`
 	Level     string `json:"level"`
 	Message   string `json:"message"`
 }
 
+// stream info structure
 type StreamInfo struct {
 	Index       int               `json:"index"`
 	URL         string            `json:"url"`
@@ -67,6 +70,7 @@ type StreamInfo struct {
 	Attributes  map[string]string `json:"attributes"`
 }
 
+// channel stream response structure
 type ChannelStreamsResponse struct {
 	ChannelName          string       `json:"channelName"`
 	CurrentStreamIndex   int          `json:"currentStreamIndex"`
@@ -82,6 +86,7 @@ var (
 
 // Setup admin routes - call this from main.go after setting up your existing routes
 func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
+
 	// Serve static files
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("/static/"))))
 
@@ -105,29 +110,43 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 
 	// Add initial log entry
 	addLogEntry("info", "Admin interface initialized")
+
 }
 
 // CORS middleware
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+
+	// return the handler
 	return func(w http.ResponseWriter, r *http.Request) {
 		addLogEntry("info", fmt.Sprintf("Request: %s %s", r.Method, r.URL.Path))
+
+		// set headers
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
+		// uf its an options request, just write the OK
 		if r.Method == "OPTIONS" {
 			addLogEntry("debug", fmt.Sprintf("OPTIONS request for: %s", r.URL.Path))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
+		// advance
 		next(w, r)
 	}
 }
+
+// handle getting the channel streams
 func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
+
+	// return the handler
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		// force json
 		w.Header().Set("Content-Type", "application/json")
 
+		// make sure we've got a good channel name
 		vars := mux.Vars(r)
 		channelName, err := url.QueryUnescape(vars["channel"])
 		if err != nil {

@@ -839,3 +839,13 @@ func (r *Restream) SafeBufferWrite(data []byte) bool {
 	r.Buffer.Write(data)
 	return true
 }
+
+// WatcherStreamFromSource allows the watcher to use existing streaming logic
+func (r *Restream) WatcherStreamFromSource(index int) (bool, int64) {
+	return r.StreamFromSource(index)
+}
+
+// WatcherStream allows the watcher to use the existing Stream method
+func (r *Restream) WatcherStream() {
+	r.Stream()
+}
