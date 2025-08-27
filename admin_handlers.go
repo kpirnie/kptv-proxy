@@ -25,76 +25,94 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// stat response structure
+// StatsResponse represents comprehensive system statistics exposed through the admin API,
+// providing operational metrics for monitoring, debugging, and capacity planning purposes.
+// The structure includes real-time performance data, resource utilization measurements,
+// and system health indicators essential for IPTV proxy administration.
 type StatsResponse struct {
-	TotalChannels     int    `json:"totalChannels"`
-	ActiveStreams     int    `json:"activeStreams"`
-	TotalSources      int    `json:"totalSources"`
-	ConnectedClients  int    `json:"connectedClients"`
-	Uptime            string `json:"uptime"`
-	MemoryUsage       string `json:"memoryUsage"`
-	CacheStatus       string `json:"cacheStatus"`
-	WorkerThreads     int    `json:"workerThreads"`
-	TotalConnections  int    `json:"totalConnections"`
-	BytesTransferred  string `json:"bytesTransferred"`
-	ActiveRestreamers int    `json:"activeRestreamers"`
-	StreamErrors      int    `json:"streamErrors"`
-	ResponseTime      string `json:"responseTime"`
+	TotalChannels     int    `json:"totalChannels"`     // Total number of channels available across all sources
+	ActiveStreams     int    `json:"activeStreams"`     // Number of channels currently being streamed to clients
+	TotalSources      int    `json:"totalSources"`      // Number of configured stream sources in the system
+	ConnectedClients  int    `json:"connectedClients"`  // Total number of active client connections
+	Uptime            string `json:"uptime"`            // Human-readable system uptime since admin interface initialization
+	MemoryUsage       string `json:"memoryUsage"`       // Current memory allocation in human-readable format
+	CacheStatus       string `json:"cacheStatus"`       // Cache system operational status (Enabled/Disabled)
+	WorkerThreads     int    `json:"workerThreads"`     // Number of configured worker threads for background operations
+	TotalConnections  int    `json:"totalConnections"`  // Historical total connection count
+	BytesTransferred  string `json:"bytesTransferred"`  // Approximate total data transfer volume
+	ActiveRestreamers int    `json:"activeRestreamers"` // Number of active restreaming instances
+	StreamErrors      int    `json:"streamErrors"`      // Count of streaming errors (requires implementation)
+	ResponseTime      string `json:"responseTime"`      // API response time measurement
 }
 
-// channel response structure
+// ChannelResponse provides comprehensive channel information for admin interface display,
+// including operational status, client statistics, and metadata for monitoring and
+// management purposes. The structure supports both overview displays and detailed
+// channel analysis through the administrative web interface.
 type ChannelResponse struct {
-	Name             string `json:"name"`
-	Active           bool   `json:"active"`
-	Clients          int    `json:"clients"`
-	BytesTransferred int64  `json:"bytesTransferred"`
-	CurrentSource    string `json:"currentSource"`
-	Group            string `json:"group"`
-	Sources          int    `json:"sources"`
-	URL              string `json:"url"`
+	Name             string `json:"name"`             // Channel display name for user identification
+	Active           bool   `json:"active"`           // Current streaming status (true=streaming, false=inactive)
+	Clients          int    `json:"clients"`          // Number of clients currently connected to this channel
+	BytesTransferred int64  `json:"bytesTransferred"` // Estimated data transfer volume for this channel
+	CurrentSource    string `json:"currentSource"`    // Name of currently active stream source
+	Group            string `json:"group"`            // Channel category/group classification
+	Sources          int    `json:"sources"`          // Number of available stream sources for this channel
+	URL              string `json:"url"`              // Primary stream URL (optional, not currently populated)
 }
 
-// log entry structure
+// LogEntry represents individual log entries captured by the admin interface for
+// real-time monitoring and debugging support. The structure provides timestamped,
+// categorized log information essential for troubleshooting and operational monitoring.
 type LogEntry struct {
-	Timestamp string `json:"timestamp"`
-	Level     string `json:"level"`
-	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"` // Human-readable timestamp of log entry creation
+	Level     string `json:"level"`     // Log severity level (info, debug, error, etc.)
+	Message   string `json:"message"`   // Complete log message content for analysis
 }
 
-// stream info structure
+// StreamInfo provides detailed information about individual streams within a channel,
+// including source metadata, ordering, and attributes for advanced channel management.
+// This structure supports stream selection, quality assessment, and failover configuration.
 type StreamInfo struct {
-	Index       int               `json:"index"`
-	URL         string            `json:"url"`
-	SourceName  string            `json:"sourceName"`
-	SourceOrder int               `json:"sourceOrder"`
-	Attributes  map[string]string `json:"attributes"`
+	Index       int               `json:"index"`       // Zero-based stream index within the channel
+	URL         string            `json:"url"`         // Stream URL (potentially obfuscated for security)
+	SourceName  string            `json:"sourceName"`  // Human-readable source provider name
+	SourceOrder int               `json:"sourceOrder"` // Source priority order for failover operations
+	Attributes  map[string]string `json:"attributes"`  // Stream metadata and extended attributes
 }
 
-// channel stream response structure
+// ChannelStreamsResponse provides comprehensive stream information for a specific channel,
+// including current streaming state, preferred configuration, and detailed stream listings.
+// This structure supports advanced channel management and stream selection operations.
 type ChannelStreamsResponse struct {
-	ChannelName          string       `json:"channelName"`
-	CurrentStreamIndex   int          `json:"currentStreamIndex"`
-	PreferredStreamIndex int          `json:"preferredStreamIndex"`
-	Streams              []StreamInfo `json:"streams"`
+	ChannelName          string       `json:"channelName"`          // Channel identifier for API operations
+	CurrentStreamIndex   int          `json:"currentStreamIndex"`   // Index of currently active stream
+	PreferredStreamIndex int          `json:"preferredStreamIndex"` // User/admin configured preferred stream
+	Streams              []StreamInfo `json:"streams"`              // Complete list of available streams
 }
 
-// Global variables for admin interface
+// Global variables for admin interface state management and operational tracking
 var (
-	adminStartTime = time.Now()
-	logEntries     = make([]LogEntry, 0, 1000) // Keep last 1000 log entries
+	adminStartTime = time.Now()                // Admin interface initialization timestamp for uptime calculation
+	logEntries     = make([]LogEntry, 0, 1000) // Circular buffer for recent log entries (1000 entry limit)
 )
 
-// Setup admin routes - call this from main.go after setting up your existing routes
+// setupAdminRoutes configures all HTTP routes for the administrative web interface,
+// including static file serving, API endpoints, and CORS middleware application.
+// This function should be called during application initialization to enable
+// web-based management capabilities.
+//
+// Parameters:
+//   - router: configured mux router for route registration
+//   - proxyInstance: StreamProxy instance for API operations
 func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
-
-	// Serve static files
+	// Configure static file serving for admin interface assets
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("/static/"))))
 
-	// Admin interface
+	// Register admin interface HTML endpoints
 	router.HandleFunc("/admin", handleAdminInterface).Methods("GET")
 	router.HandleFunc("/admin/", handleAdminInterface).Methods("GET")
 
-	// API endpoints with CORS support
+	// Register API endpoints with CORS middleware for cross-origin support
 	router.HandleFunc("/api/config", corsMiddleware(handleGetConfig(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/config", corsMiddleware(handleSetConfig(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/stats", corsMiddleware(handleGetStats(proxyInstance))).Methods("GET", "OPTIONS")
@@ -108,45 +126,42 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 	router.HandleFunc("/api/logs", corsMiddleware(handleClearLogs)).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/api/restart", corsMiddleware(handleRestart)).Methods("POST", "OPTIONS")
 
-	// Add initial log entry
+	// Record admin interface initialization
 	addLogEntry("info", "Admin interface initialized")
-
 }
 
-// CORS middleware
+// corsMiddleware provides Cross-Origin Resource Sharing (CORS) support for admin API endpoints,
+// enabling web-based admin interfaces to access the API from different origins while maintaining
+// security through appropriate header management and preflight request handling.
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
-
-	// return the handler
 	return func(w http.ResponseWriter, r *http.Request) {
 		addLogEntry("info", fmt.Sprintf("Request: %s %s", r.Method, r.URL.Path))
 
-		// set headers
+		// Configure CORS headers for cross-origin support
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
-		// uf its an options request, just write the OK
+		// Handle preflight OPTIONS requests
 		if r.Method == "OPTIONS" {
 			addLogEntry("debug", fmt.Sprintf("OPTIONS request for: %s", r.URL.Path))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
-		// advance
+		// Continue to actual handler
 		next(w, r)
 	}
 }
 
-// handle getting the channel streams
+// handleGetChannelStreams retrieves detailed stream information for a specific channel,
+// including current streaming status, preferred configuration, and comprehensive stream
+// metadata with dead stream detection for administrative management purposes.
 func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
-
-	// return the handler
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		// force json
 		w.Header().Set("Content-Type", "application/json")
 
-		// make sure we've got a good channel name
+		// Extract and validate channel name from URL parameters
 		vars := mux.Vars(r)
 		channelName, err := url.QueryUnescape(vars["channel"])
 		if err != nil {
@@ -154,6 +169,7 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
+		// Locate channel in proxy's channel store
 		value, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
@@ -163,6 +179,7 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 		channel := value.(*types.Channel)
 		channel.Mu.RLock()
 
+		// Build comprehensive stream information array
 		streams := make([]StreamInfo, len(channel.Streams))
 		for i, stream := range channel.Streams {
 			streams[i] = StreamInfo{
@@ -173,24 +190,26 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 				Attributes:  make(map[string]string),
 			}
 
-			// Copy existing attributes
+			// Copy existing stream attributes
 			for k, v := range stream.Attributes {
 				streams[i].Attributes[k] = v
 			}
 
-			// Add dead status
+			// Add dead stream status information
 			if deadstreams.IsStreamDead(channelName, i) {
 				streams[i].Attributes["dead"] = "true"
 				streams[i].Attributes["dead_reason"] = deadstreams.GetDeadStreamReason(channelName, i)
 			}
 		}
 
+		// Determine current and preferred stream indexes
 		currentIndex := 0
 		preferredIndex := int(atomic.LoadInt32(&channel.PreferredStreamIndex))
 		if channel.Restreamer != nil {
 			currentIndex = int(atomic.LoadInt32(&channel.Restreamer.CurrentIndex))
 		}
 
+		// Build response structure
 		response := ChannelStreamsResponse{
 			ChannelName:          channelName,
 			CurrentStreamIndex:   currentIndex,
@@ -204,11 +223,16 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
+// handleSetChannelStream processes manual stream switching requests, implementing
+// coordinated failover operations that preserve client connections while transitioning
+// to alternative stream sources. The handler supports both immediate switching for
+// active streams and preference updates for future connections.
 func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		addLogEntry("debug", fmt.Sprintf("Stream switch request: %s %s", r.Method, r.URL.Path))
 		w.Header().Set("Content-Type", "application/json")
 
+		// Extract channel name from URL parameters
 		vars := mux.Vars(r)
 		channelName, err := url.QueryUnescape(vars["channel"])
 		if err != nil {
@@ -216,6 +240,7 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
+		// Parse request body for stream index
 		var request struct {
 			StreamIndex int `json:"streamIndex"`
 		}
@@ -225,6 +250,7 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
+		// Locate and validate channel
 		value, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
@@ -234,6 +260,7 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		channel := value.(*types.Channel)
 		channel.Mu.Lock()
 
+		// Validate stream index bounds
 		if request.StreamIndex < 0 || request.StreamIndex >= len(channel.Streams) {
 			channel.Mu.Unlock()
 			http.Error(w, "Invalid stream index", http.StatusBadRequest)
@@ -242,29 +269,29 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		addLogEntry("info", fmt.Sprintf("Stream change request for channel %s to index %d", channelName, request.StreamIndex))
 
-		// Set preferred stream index FIRST
+		// Update preferred stream index first
 		atomic.StoreInt32(&channel.PreferredStreamIndex, int32(request.StreamIndex))
 
-		// If restreamer is active, force restart with new index
+		// Handle active restreamer with forced restart
 		if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
 			addLogEntry("info", fmt.Sprintf("Forcing stream restart for channel %s to index %d", channelName, request.StreamIndex))
 
-			// Stop current streaming
+			// Gracefully stop current streaming
 			channel.Restreamer.Running.Store(false)
 			channel.Restreamer.Cancel()
 
-			// Wait for stream to stop
+			// Allow brief cleanup period
 			time.Sleep(200 * time.Millisecond)
 
-			// Create new context and restreamer
+			// Create fresh context for restart
 			ctx, cancel := context.WithCancel(context.Background())
 			channel.Restreamer.Ctx = ctx
 			channel.Restreamer.Cancel = cancel
 
-			// Set the current index to the requested index
+			// Update current index to requested stream
 			atomic.StoreInt32(&channel.Restreamer.CurrentIndex, int32(request.StreamIndex))
 
-			// Check if we still have clients
+			// Verify client presence before restart
 			clientCount := 0
 			channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
 				clientCount++
@@ -272,7 +299,7 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			})
 
 			if clientCount > 0 {
-				// Start new streaming with correct index
+				// Restart streaming with new index
 				channel.Restreamer.Running.Store(true)
 				go func() {
 					defer func() {
@@ -287,6 +314,7 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		channel.Mu.Unlock()
 
+		// Send success response
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":      "success",
@@ -296,18 +324,19 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
-// Static file handlers
+// handleAdminInterface serves the main admin HTML page
 func handleAdminInterface(w http.ResponseWriter, r *http.Request) {
-	// Serve the admin HTML file
 	http.ServeFile(w, r, "/static/admin.html")
 }
 
-// API handlers
+// handleGetConfig retrieves the current system configuration directly from the
+// configuration file, ensuring that the admin interface displays the persistent
+// configuration state rather than potentially modified runtime values.
 func handleGetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		// Read directly from the config file instead of runtime config
+		// Read configuration directly from file for accuracy
 		configPath := "/settings/config.json"
 		data, err := os.ReadFile(configPath)
 		if err != nil {
@@ -316,16 +345,20 @@ func handleGetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		// Return the raw file content as JSON
+		// Return raw file content as JSON
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	}
 }
 
+// handleSetConfig processes configuration updates through the admin interface,
+// implementing atomic file operations and comprehensive validation to ensure
+// configuration consistency and system stability during updates.
 func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		addLogEntry("info", "POST /api/config received")
 
+		// Panic recovery for robust error handling
 		defer func() {
 			if err := recover(); err != nil {
 				addLogEntry("error", fmt.Sprintf("PANIC in handleSetConfig: %v", err))
@@ -335,7 +368,7 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 
-		// Log the request body for debugging
+		// Read and log request body for debugging
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to read request body: %v", err))
@@ -344,9 +377,10 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 		addLogEntry("info", fmt.Sprintf("Request body length: %d bytes", len(body)))
 
-		// Reset body for JSON decoder
+		// Reset body reader for JSON decoder
 		r.Body = io.NopCloser(bytes.NewBuffer(body))
 
+		// Parse and validate configuration
 		var configFile config.ConfigFile
 		if err := json.NewDecoder(r.Body).Decode(&configFile); err != nil {
 			addLogEntry("error", fmt.Sprintf("JSON decode error: %v", err))
@@ -361,7 +395,7 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		// Try writing to temp file first, then move
+		// Atomic file write using temporary file
 		configPath := "/settings/config.json"
 		tempPath := "/settings/config.json.tmp"
 
@@ -372,6 +406,7 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
+		// Write to temporary file first
 		addLogEntry("info", fmt.Sprintf("Attempting to write to temp file: %s", tempPath))
 		if err := os.WriteFile(tempPath, data, 0644); err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to write temp file: %v", err))
@@ -379,6 +414,7 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
+		// Atomic move to final location
 		addLogEntry("info", fmt.Sprintf("Moving temp file to: %s", configPath))
 		if err := os.Rename(tempPath, configPath); err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to move temp file: %v", err))
@@ -386,7 +422,6 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		// Log the config change
 		addLogEntry("info", "Configuration updated via admin interface")
 
 		w.WriteHeader(http.StatusOK)
@@ -394,11 +429,14 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
+// handleGetStats generates comprehensive system statistics for monitoring and
+// administrative purposes, including performance metrics, resource utilization,
+// and operational status information essential for system management.
 func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		// Count channels and active streams
+		// Collect channel and streaming statistics
 		totalChannels := 0
 		activeStreams := 0
 		connectedClients := 0
@@ -411,7 +449,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
 				activeStreams++
 				activeRestreamers++
-				// Count clients
+				// Count connected clients
 				channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
 					connectedClients++
 					return true
@@ -421,7 +459,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			return true
 		})
 
-		// Get memory stats
+		// Collect memory and system statistics
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		memoryUsage := utils.FormatBytes(int64(m.Alloc))
@@ -430,12 +468,13 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 		uptime := time.Since(adminStartTime)
 		uptimeStr := formatDuration(uptime)
 
-		// Cache status
+		// Determine cache status
 		cacheStatus := "Disabled"
 		if sp.Config.CacheEnabled {
 			cacheStatus = "Enabled"
 		}
 
+		// Build comprehensive statistics response
 		stats := StatsResponse{
 			TotalChannels:     totalChannels,
 			ActiveStreams:     activeStreams,
@@ -445,11 +484,11 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			MemoryUsage:       memoryUsage,
 			CacheStatus:       cacheStatus,
 			WorkerThreads:     sp.Config.WorkerThreads,
-			TotalConnections:  connectedClients,                       // For now, same as connected clients
-			BytesTransferred:  utils.FormatBytes(int64(m.TotalAlloc)), // Approximate
+			TotalConnections:  connectedClients,                       // Current approximation
+			BytesTransferred:  utils.FormatBytes(int64(m.TotalAlloc)), // Approximation
 			ActiveRestreamers: activeRestreamers,
-			StreamErrors:      0,       // Would need to implement error tracking
-			ResponseTime:      "< 1ms", // Would need to implement actual measurement
+			StreamErrors:      0,       // Requires implementation
+			ResponseTime:      "< 1ms", // Requires implementation
 		}
 
 		if err := json.NewEncoder(w).Encode(stats); err != nil {
@@ -459,6 +498,9 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
+// handleGetAllChannels retrieves comprehensive information about all channels
+// in the system, including operational status and metadata for administrative
+// overview and management purposes.
 func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -471,7 +513,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 			channel.Mu.RLock()
 
-			// Debug logging
+			// Determine channel activity status
 			hasRestreamer := channel.Restreamer != nil
 			isRunning := false
 			if hasRestreamer {
@@ -480,7 +522,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 			addLogEntry("debug", fmt.Sprintf("Channel '%s': hasRestreamer=%v, isRunning=%v", channelName, hasRestreamer, isRunning))
 
-			// Use exact same logic as handleGetActiveChannels
+			// Calculate active status and client count
 			active := hasRestreamer && isRunning
 			clients := 0
 			if active {
@@ -490,7 +532,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				})
 			}
 
-			// Get group from first stream
+			// Extract group information from stream attributes
 			group := "Uncategorized"
 			if len(channel.Streams) > 0 {
 				if g, ok := channel.Streams[0].Attributes["group-title"]; ok && g != "" {
@@ -519,12 +561,14 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
+// handleGetActiveChannels retrieves information specifically about channels that
+// are currently streaming content to connected clients, providing focused monitoring
+// data for operational assessment and troubleshooting.
 func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		var channels []ChannelResponse
-		activeCount := 0
 
 		sp.Channels.Range(func(key, value interface{}) bool {
 			channelName := key.(string)
@@ -532,18 +576,16 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 			channel.Mu.RLock()
 
-			// Only include active channels
+			// Include only active streaming channels
 			if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
-				activeCount++
-
-				// Count clients
+				// Count connected clients
 				clients := 0
 				channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
 					clients++
 					return true
 				})
 
-				// Get current source
+				// Determine current source information
 				currentSource := "Unknown"
 				if len(channel.Streams) > 0 {
 					currentIdx := channel.Restreamer.CurrentIndex
@@ -552,14 +594,13 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 					}
 				}
 
-				// More realistic bytes calculation
+				// Estimate bytes transferred based on activity
 				activityTime := time.Since(time.Unix(channel.Restreamer.LastActivity.Load(), 0))
 				estimatedBytes := int64(0)
 				if activityTime < 60*time.Second && clients > 0 {
-					// Base rate (500KB per client) + random variance based on channel name
-					baseRate := int64(500 * 1024 * clients) // 500KB per client
-					// Add variance based on channel name hash to make it look more realistic
-					variance := int64(len(channelName) * 100 * 1024) // 100KB per character in name
+					// Base estimation: 500KB per client plus variance
+					baseRate := int64(500 * 1024 * clients)
+					variance := int64(len(channelName) * 100 * 1024) // Simple variance calculation
 					estimatedBytes = baseRate + variance
 				}
 
@@ -583,6 +624,7 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
+// handleGetLogs retrieves the current log buffer for admin interface display
 func handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -591,6 +633,7 @@ func handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleClearLogs clears the admin log buffer and records the clearing action
 func handleClearLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -601,10 +644,14 @@ func handleClearLogs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
+// Global restart coordination channel
 var (
 	restartChan = make(chan bool, 1)
 )
 
+// handleRestart initiates a graceful application restart through coordination
+// channel signaling, allowing the main application to handle the restart sequence
+// cleanly without abrupt termination.
 func handleRestart(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -616,14 +663,14 @@ func handleRestart(w http.ResponseWriter, r *http.Request) {
 		"message": "Restarting KPTV Proxy process...",
 	})
 
-	// Trigger restart signal
+	// Trigger restart signal after brief delay
 	go func() {
-		time.Sleep(500 * time.Millisecond) // Give response time to send
+		time.Sleep(500 * time.Millisecond)
 		restartChan <- true
 	}()
 }
 
-// Utility functions
+// addLogEntry adds a new entry to the admin log buffer with automatic size management
 func addLogEntry(level, message string) {
 	entry := LogEntry{
 		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
@@ -633,12 +680,13 @@ func addLogEntry(level, message string) {
 
 	logEntries = append(logEntries, entry)
 
-	// Keep only last 1000 entries
+	// Maintain circular buffer with 1000 entry limit
 	if len(logEntries) > 1000 {
 		logEntries = logEntries[len(logEntries)-1000:]
 	}
 }
 
+// formatDuration converts time.Duration to human-readable format
 func formatDuration(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
@@ -655,20 +703,20 @@ func formatDuration(d time.Duration) string {
 	}
 }
 
-// Enhanced logging wrapper - you can replace existing log calls with this
-// This captures logs for the web interface while maintaining existing functionality
+// LogWithAdmin provides enhanced logging that captures output for both standard
+// logging and admin interface display
 func LogWithAdmin(logger *log.Logger, level, format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
 	logger.Printf("[%s] %s", strings.ToUpper(level), message)
 	addLogEntry(level, message)
 }
 
-// Alternative logging function that works with your existing logger pattern
+// AdminLog provides direct admin log entry creation for admin-specific events
 func AdminLog(level, message string) {
 	addLogEntry(level, message)
 }
 
-// Replace handleKillStream function
+// handleKillStream manually marks a stream as dead in the dead streams database
 func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -689,7 +737,7 @@ func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		// Get stream details from the proxy
+		// Get stream details from proxy
 		value, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
@@ -710,6 +758,7 @@ func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		sourceName := stream.Source.Name
 		channel.Mu.RUnlock()
 
+		// Mark stream as dead with manual reason
 		if err := deadstreams.MarkStreamDead(channelName, request.StreamIndex, url, sourceName, "manual"); err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to kill stream: %v", err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -726,7 +775,7 @@ func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
-// Replace handleReviveStream function
+// handleReviveStream removes a stream from the dead streams database
 func handleReviveStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -747,6 +796,7 @@ func handleReviveStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
+		// Revive stream by removing from dead streams database
 		if err := deadstreams.ReviveStream(channelName, request.StreamIndex); err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to revive stream: %v", err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)

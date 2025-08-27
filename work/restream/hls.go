@@ -1,163 +1,47 @@
-// Create work/restream/hls.go
-
 package restream
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"kptv-proxy/work/utils"
 	"net/http"
 	"net/url"
-	"os/exec"
 	"strings"
 	"time"
 )
 
-// testStreamWithFFprobe tests a stream URL using FFprobe to validate stream viability.
-// Returns a result string ("video", "timeout", "invalid_format", "no_video", "error") and error.
-// Handles tracking URLs by attempting to resolve redirects before testing.
-func (r *Restream) testStreamWithFFprobe(streamURL string) (string, error) {
-	// Check if this looks like a tracking URL that might need special handling
-	if strings.Contains(streamURL, "/beacon/") || strings.Contains(streamURL, "redirect_url") {
-		if r.Config.Debug {
-			r.Logger.Printf("[FFPROBE_TEST] Detected tracking URL, attempting to resolve: %s", utils.LogURL(r.Config, streamURL))
-		}
-
-		// Try to resolve redirect URL first
-		if resolvedURL := r.resolveRedirectURL(streamURL); resolvedURL != "" {
-			if r.Config.Debug {
-				r.Logger.Printf("[FFPROBE_TEST] Testing resolved URL: %s", utils.LogURL(r.Config, resolvedURL))
-			}
-
-			streamURL = resolvedURL
-		} else {
-			if r.Config.Debug {
-				r.Logger.Printf("[FFPROBE_TEST] Could not resolve tracking URL, skipping ffprobe validation")
-			}
-
-			// For tracking URLs we can't resolve, assume they might work with proxying
-			return "error", fmt.Errorf("tracking URL requires proxying")
-		}
-	}
-
-	// Test with ffprobe using configured timeout
-	ctx, cancel := context.WithTimeout(context.Background(), r.Config.StreamTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "ffprobe",
-		"-v", "error",
-		"-select_streams", "v:0",
-		"-show_entries", "stream=codec_type,codec_name,width,height",
-		"-analyzeduration", "5M",
-		"-probesize", "5M",
-		"-of", "json",
-		"-i", streamURL)
-
-	if r.Config.Debug {
-		r.Logger.Printf("[FFPROBE_TEST] Testing stream with %v timeout: %s", r.Config.StreamTimeout, utils.LogURL(r.Config, streamURL))
-	}
-
-	startTime := time.Now()
-	output, err := cmd.Output()
-	duration := time.Since(startTime)
-	if r.Config.Debug {
-		r.Logger.Printf("[FFPROBE_TEST] ffprobe completed in %v", duration)
-	}
-
-	if err != nil {
-		// Check if it was a timeout (context deadline exceeded)
-		if ctx.Err() == context.DeadlineExceeded {
-			if r.Config.Debug {
-				r.Logger.Printf("[FFPROBE_TEST] ffprobe timed out - stream likely invalid/hanging")
-			}
-
-			return "timeout", err
-		}
-
-		// Check the specific error output to distinguish between types of failures
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			stderr := string(exitErr.Stderr)
-			if r.Config.Debug {
-				r.Logger.Printf("[FFPROBE_TEST] ffprobe stderr: %s", stderr)
-			}
-
-			// Check for specific error patterns that indicate fundamentally invalid streams
-			if strings.Contains(stderr, "Invalid data found") ||
-				strings.Contains(stderr, "Unable to find a suitable output format") ||
-				strings.Contains(stderr, "not in allowed_segment_extensions") {
-				if r.Config.Debug {
-					r.Logger.Printf("[FFPROBE_TEST] Stream has fundamental format errors")
-				}
-				return "invalid_format", err
-			}
-			if r.Config.Debug {
-				r.Logger.Printf("[FFPROBE_TEST] ffprobe failed with exit error: %v", err)
-			}
-
-			return "error", err
-		}
-		if r.Config.Debug {
-			r.Logger.Printf("[FFPROBE_TEST] ffprobe failed with execution error: %v", err)
-		}
-
-		return "error", err
-	}
-
-	// Parse JSON output to get more detailed information
-	var probeResult struct {
-		Streams []struct {
-			CodecType string `json:"codec_type"`
-			CodecName string `json:"codec_name"`
-			Width     int    `json:"width"`
-			Height    int    `json:"height"`
-		} `json:"streams"`
-	}
-
-	if err := json.Unmarshal(output, &probeResult); err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[FFPROBE_TEST] Error parsing ffprobe JSON: %v", err)
-		}
-
-		return "no_video", fmt.Errorf("failed to parse ffprobe output")
-	}
-
-	outputStr := string(output)
-	if r.Config.Debug {
-		r.Logger.Printf("[FFPROBE_TEST] ffprobe output: %q", outputStr)
-	}
-
-	// Check if we found video streams with valid properties
-	if len(probeResult.Streams) > 0 {
-		stream := probeResult.Streams[0]
-		if stream.CodecType == "video" && stream.Width > 0 && stream.Height > 0 {
-			if r.Config.Debug {
-				r.Logger.Printf("[FFPROBE_TEST] Stream contains valid video: %s %dx%d", stream.CodecName, stream.Width, stream.Height)
-			}
-
-			return "video", nil
-		}
-	}
-	if r.Config.Debug {
-		r.Logger.Printf("[FFPROBE_TEST] No valid video streams found")
-	}
-
-	return "no_video", fmt.Errorf("no video stream found")
-}
-
-// streamHLSSegments continuously streams HLS segments from a playlist URL.
-// Returns true if any bytes were streamed successfully, and the total bytes streamed.
-// Implements memory management by cleaning up old segments to prevent memory growth.
+// streamHLSSegments implements continuous HLS segment streaming from a master or media playlist URL,
+// managing the complete lifecycle of segment discovery, fetching, and distribution to connected clients.
+// The function implements adaptive playlist refreshing, memory-efficient segment tracking, and
+// aggressive cleanup to prevent memory growth during long-running streaming sessions.
+//
+// The streaming process continuously polls the HLS playlist for new segments, maintaining a
+// processed segment cache to avoid duplicate streaming while implementing memory limits to
+// prevent unbounded growth. The function handles both live streams (where new segments
+// appear periodically) and static playlists (where segments are processed once).
+//
+// Memory management is critical for long-running streams, so the function implements:
+//   - Maximum segment cache size limits
+//   - Periodic cache cleanup to remove old segment references
+//   - Efficient segment URL tracking to minimize memory overhead
+//
+// Parameters:
+//   - playlistURL: URL of the HLS playlist containing segment references
+//
+// Returns:
+//   - bool: true if any data was successfully streamed to clients
+//   - int64: total number of bytes streamed during the session
 func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	if r.Config.Debug {
 		r.Logger.Printf("[HLS_STREAM] Starting HLS segment streaming for: %s", utils.LogURL(r.Config, playlistURL))
 	}
 
 	totalBytes := int64(0)
-	processedSegments := make(map[string]bool) // Track by URL instead of index
-	maxSegmentsInMemory := 10                  // LIMIT: Only keep 10 recent segments in memory
+	processedSegments := make(map[string]bool) // Track processed segments by URL to avoid duplicates
+	maxSegmentsInMemory := 10                  // Memory limit: retain only recent segments in cache
 
+	// Main streaming loop continues until context cancellation or client disconnection
 	for {
 		select {
 		case <-r.Ctx.Done():
@@ -165,7 +49,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		default:
 		}
 
-		// Check if we still have clients
+		// Verify active clients remain connected before continuing
 		clientCount := 0
 		r.Clients.Range(func(_, _ interface{}) bool {
 			clientCount++
@@ -179,6 +63,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			return totalBytes > 0, totalBytes
 		}
 
+		// Fetch updated playlist and extract segment URLs
 		segments, err := r.getHLSSegments(playlistURL)
 		if err != nil {
 			if r.Config.Debug {
@@ -190,16 +75,17 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			r.Logger.Printf("[HLS_PLAYLIST_REFRESH] Found %d segments", len(segments))
 		}
 
-		// Stream new segments only
+		// Process only new segments that haven't been streamed previously
 		newSegmentCount := 0
 		for _, segmentURL := range segments {
 			if processedSegments[segmentURL] {
-				continue // Skip already processed segments
+				continue // Skip segments already processed
 			}
 			if r.Config.Debug {
 				r.Logger.Printf("[HLS_SEGMENT_NEW] Processing new segment: %s", utils.LogURL(r.Config, segmentURL))
 			}
 
+			// Stream individual segment and accumulate byte count
 			segmentBytes, err := r.streamSegment(segmentURL, playlistURL)
 			if err != nil {
 				if r.Config.Debug {
@@ -208,6 +94,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 				continue
 			}
 
+			// Mark segment as processed and update statistics
 			processedSegments[segmentURL] = true
 			totalBytes += segmentBytes
 			newSegmentCount++
@@ -220,13 +107,14 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			r.Logger.Printf("[HLS_BATCH] Streamed %d new segments", newSegmentCount)
 		}
 
-		// CRITICAL: Aggressively clean up old processed segments to prevent memory growth
+		// Implement aggressive segment cache cleanup to prevent memory growth
 		if len(processedSegments) > maxSegmentsInMemory {
-			// Keep only the most recent segments
-			newProcessed := make(map[string]bool)
-			keepCount := maxSegmentsInMemory / 2 // Keep half
 
-			// Keep only the last few segments
+			// Create new cache containing only recent segments
+			newProcessed := make(map[string]bool)
+			keepCount := maxSegmentsInMemory / 2 // Retain half of limit for efficiency
+
+			// Keep only the most recent segments from current playlist
 			startIdx := len(segments) - keepCount
 			if startIdx < 0 {
 				startIdx = 0
@@ -238,7 +126,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 				}
 			}
 
-			// Replace the map completely to free memory
+			// Replace entire map to free memory from old segment references
 			processedSegments = newProcessed
 
 			if r.Config.Debug {
@@ -246,7 +134,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			}
 		}
 
-		// Wait before next playlist refresh (shorter interval)
+		// Wait before next playlist refresh with reasonable interval for live streams
 		select {
 		case <-r.Ctx.Done():
 			return totalBytes > 0, totalBytes
@@ -256,14 +144,39 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	}
 }
 
-// getHLSSegments fetches and parses an HLS playlist to extract segment URLs.
-// Handles both absolute and relative URLs, and resolves tracking/redirect URLs.
-// Returns a slice of segment URLs or an error if the playlist cannot be fetched/parsed.
+// getHLSSegments fetches and parses an HLS playlist to extract individual segment URLs,
+// implementing comprehensive URL resolution for both relative and absolute segment paths.
+// The function handles authentication through source-specific headers and resolves
+// tracking/redirect URLs that may be embedded in segment references.
+//
+// The parsing process identifies segment lines (non-comment lines containing URLs) and
+// performs intelligent URL resolution to convert relative paths to absolute URLs using
+// the playlist's base URL as the resolution context. Special handling is provided for
+// tracking URLs that contain redirect parameters requiring extraction and decoding.
+//
+// Authentication and request handling uses source-specific configuration when available,
+// falling back to basic HTTP requests for playlists not associated with configured sources.
+// This ensures compatibility with diverse IPTV providers while maintaining security
+// through appropriate header handling.
+//
+// Parameters:
+//   - playlistURL: complete URL of the HLS playlist to fetch and parse
+//
+// Returns:
+//   - []string: slice of absolute segment URLs ready for streaming
+//   - error: non-nil if playlist cannot be fetched, parsed, or contains no valid segments
 func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
-	// Get source config for headers
+
+	// Apply rate limiting before HLS playlist request
+	if r.RateLimiter != nil {
+		r.RateLimiter.Take()
+	}
+
+	// Locate source configuration for authentication headers
 	source := r.Config.GetSourceByURL(playlistURL)
 	if source == nil {
-		// Try to find source by matching any stream URL in the channel
+
+		// Attempt to find source by matching stream URLs in channel configuration
 		r.Channel.Mu.RLock()
 		for _, stream := range r.Channel.Streams {
 			if strings.Contains(playlistURL, stream.Source.URL) || strings.Contains(stream.URL, playlistURL) {
@@ -274,6 +187,7 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 		r.Channel.Mu.RUnlock()
 	}
 
+	// Build HTTP request with appropriate timeout for playlist fetching
 	req, err := http.NewRequest("GET", playlistURL, nil)
 	if err != nil {
 		return nil, err
@@ -283,12 +197,15 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	defer cancel()
 	req = req.WithContext(ctx)
 
+	// Execute request with source-specific headers if available
 	var resp *http.Response
 	if source != nil {
-		// Use source-specific headers
+
+		// Use source-specific authentication and headers
 		resp, err = r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	} else {
-		// Fallback to basic request
+
+		// Fallback to basic HTTP request without custom headers
 		resp, err = r.HttpClient.Do(req)
 	}
 
@@ -297,10 +214,12 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	}
 	defer resp.Body.Close()
 
+	// Verify successful HTTP response before processing content
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
+	// Read complete playlist content for parsing
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -309,20 +228,26 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	var segments []string
 	lines := strings.Split(string(body), "\n")
 
+	// Parse playlist content line by line to extract segment URLs
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
+
+		// Identify segment lines (non-comment lines containing URLs)
 		if line != "" && !strings.HasPrefix(line, "#") {
 			var segmentURL string
 
 			if strings.HasPrefix(line, "http") {
+
+				// Absolute URL - use directly
 				segmentURL = line
 			} else {
-				// Relative URL - resolve against playlist URL
+
+				// Relative URL - resolve against playlist base URL
 				baseURL := playlistURL[:strings.LastIndex(playlistURL, "/")]
 				segmentURL = baseURL + "/" + line
 			}
 
-			// Check if this is a tracking/beacon URL with redirect
+			// Check for tracking/beacon URLs requiring redirect resolution
 			if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
 				segmentURL = resolvedURL
 				if r.Config.Debug {
@@ -337,10 +262,29 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	return segments, nil
 }
 
-// resolveRedirectURL attempts to extract and decode a redirect URL from tracking/beacon URLs.
-// Returns the resolved URL if found, or empty string if no redirect URL can be extracted.
+// resolveRedirectURL extracts and decodes actual stream URLs from tracking/beacon URLs
+// commonly used in IPTV sources for analytics and access control. The function handles
+// multiple URL encoding patterns and parameter structures used by different providers
+// to embed actual stream URLs within tracking mechanisms.
+//
+// The resolution process examines URL parameters for redirect_url specifications and
+// performs URL decoding to extract the actual streamable URL. This handling is essential
+// for IPTV sources that use intermediary tracking services before redirecting to actual
+// content servers.
+//
+// Common patterns handled include:
+//   - redirect_url parameter containing URL-encoded destination
+//   - beacon URLs with embedded redirect parameters
+//   - Multiple levels of URL encoding requiring iterative decoding
+//
+// Parameters:
+//   - segmentURL: potentially tracking URL containing embedded redirect information
+//
+// Returns:
+//   - string: resolved actual stream URL if extraction successful, empty string otherwise
 func (r *Restream) resolveRedirectURL(segmentURL string) string {
-	// Parse the URL to extract redirect_url parameter
+
+	// Handle standard redirect_url parameter pattern
 	if strings.Contains(segmentURL, "redirect_url=") {
 		if parsedURL, err := url.Parse(segmentURL); err == nil {
 			if redirectURL := parsedURL.Query().Get("redirect_url"); redirectURL != "" {
@@ -351,7 +295,7 @@ func (r *Restream) resolveRedirectURL(segmentURL string) string {
 		}
 	}
 
-	// Check for other redirect patterns (beacon URLs, etc.)
+	// Handle beacon URLs with embedded redirect parameters
 	if strings.Contains(segmentURL, "/beacon/") && strings.Contains(segmentURL, "redirect_url") {
 		if parsedURL, err := url.Parse(segmentURL); err == nil {
 			if redirectURL := parsedURL.Query().Get("redirect_url"); redirectURL != "" {
@@ -362,17 +306,44 @@ func (r *Restream) resolveRedirectURL(segmentURL string) string {
 		}
 	}
 
+	// Return empty string if no redirect pattern found or resolution failed
 	return ""
 }
 
-// streamSegment fetches and streams a single HLS segment to connected clients.
-// Handles tracking URLs by resolving redirects and applies appropriate headers.
-// Returns the number of bytes streamed or an error if the segment cannot be fetched/streamed.
+// streamSegment fetches and distributes a single HLS segment to all connected clients,
+// implementing efficient data streaming with proper error handling and byte counting.
+// The function handles authentication through source-specific headers, redirect resolution
+// for tracking URLs, and implements chunked reading for memory-efficient processing
+// of large segment files.
+//
+// The streaming process reads segment data in configurable chunks, distributing each
+// chunk to clients immediately while maintaining accurate byte count statistics.
+// Special handling is provided for tracking URLs that require redirect resolution,
+// with appropriate referrer headers to maintain compatibility with analytics systems.
+//
+// Buffer management uses the configured buffer size to balance memory usage with
+// streaming performance, while client distribution ensures all connected clients
+// receive identical data streams for synchronized playback.
+//
+// Parameters:
+//   - segmentURL: complete URL of the segment to fetch and stream
+//   - playlistURL: original playlist URL for source configuration lookup and referrer headers
+//
+// Returns:
+//   - int64: total number of bytes successfully streamed to clients
+//   - error: non-nil if segment cannot be fetched or streaming fails
 func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) {
-	// Get source config for headers
+
+	// Apply rate limiting before segment request
+	if r.RateLimiter != nil {
+		r.RateLimiter.Take()
+	}
+
+	// Locate source configuration for authentication and header management
 	source := r.Config.GetSourceByURL(playlistURL)
 	if source == nil {
-		// Try to find source by matching any stream URL in the channel
+
+		// Attempt source matching through channel stream configuration
 		r.Channel.Mu.RLock()
 		for _, stream := range r.Channel.Streams {
 			if strings.Contains(playlistURL, stream.Source.URL) || strings.Contains(stream.URL, playlistURL) {
@@ -383,7 +354,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		r.Channel.Mu.RUnlock()
 	}
 
-	// Resolve redirect URL if this is a tracking URL
+	// Handle redirect resolution for tracking URLs
 	originalURL := segmentURL
 	if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
 		segmentURL = resolvedURL
@@ -392,26 +363,31 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		}
 	}
 
+	// Build HTTP request for segment fetching
 	req, err := http.NewRequest("GET", segmentURL, nil)
 	if err != nil {
 		return 0, err
 	}
 
-	// Add headers that might be needed for tracking URLs
+	// Add referrer header for tracking URLs to maintain analytics compatibility
 	if originalURL != segmentURL {
 		req.Header.Set("Referer", originalURL)
 	}
 
+	// Apply timeout context for segment fetch operations
 	ctx, cancel := context.WithTimeout(r.Ctx, 30*time.Second)
 	defer cancel()
 	req = req.WithContext(ctx)
 
+	// Execute request with appropriate authentication headers
 	var resp *http.Response
 	if source != nil {
-		// Use source-specific headers
+
+		// Use source-specific headers for authenticated access
 		resp, err = r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	} else {
-		// Fallback to basic request
+
+		// Fallback to basic HTTP request
 		resp, err = r.HttpClient.Do(req)
 	}
 
@@ -420,30 +396,39 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	}
 	defer resp.Body.Close()
 
+	// Verify successful response before processing content
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
+	// Allocate buffer for efficient chunk-based streaming
 	buffer := make([]byte, (r.Config.BufferSizePerStream * 1024 * 1024))
 	totalBytes := int64(0)
 
+	// Stream segment data in chunks to connected clients
 	for {
 		n, err := resp.Body.Read(buffer)
 		if n > 0 {
 			data := buffer[:n]
 			totalBytes += int64(n)
 
+			// Write chunk to shared buffer for client distribution
 			if !r.SafeBufferWrite(data) {
 				return totalBytes, fmt.Errorf("buffer write failed")
 			}
+
+			// Distribute chunk to all active clients
 			activeClients := r.DistributeToClients(data)
 			if activeClients == 0 {
 				return totalBytes, fmt.Errorf("no active clients")
 			}
 		}
 
+		// Handle read completion or errors
 		if err != nil {
 			if err == io.EOF {
+
+				// Normal end of segment - return success
 				return totalBytes, nil
 			}
 			return totalBytes, err

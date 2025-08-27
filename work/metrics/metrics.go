@@ -34,3 +34,78 @@ var ClientsConnected = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: "iptv_proxy_clients_connected",
 	Help: "Number of clients connected",
 }, []string{"channel"})
+
+// StreamSwitches tracks the number of times streams are switched per channel.
+// The "reason" label indicates why the switch occurred (e.g., "health_check", "manual", "failure").
+var StreamSwitches = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "iptv_proxy_stream_switches_total",
+	Help: "Total number of stream switches",
+}, []string{"channel", "reason"})
+
+// SourceConnections tracks the current number of active connections per source.
+var SourceConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "iptv_proxy_source_connections",
+	Help: "Number of active connections per source",
+}, []string{"source_name"})
+
+// SourceFailures tracks the total number of failures per source.
+var SourceFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "iptv_proxy_source_failures_total",
+	Help: "Total number of source failures",
+}, []string{"source_name", "failure_type"})
+
+// BufferUsage tracks buffer memory usage across all channels.
+var BufferUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "iptv_proxy_buffer_usage_bytes",
+	Help: "Buffer memory usage in bytes",
+}, []string{"channel"})
+
+// ImportDuration tracks how long import operations take.
+var ImportDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name:    "iptv_proxy_import_duration_seconds",
+	Help:    "Duration of import operations",
+	Buckets: prometheus.DefBuckets,
+}, []string{"source_name"})
+
+// ImportSuccess tracks successful vs failed imports per source.
+var ImportSuccess = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "iptv_proxy_imports_total",
+	Help: "Total number of import attempts",
+}, []string{"source_name", "status"})
+
+// CacheOperations tracks cache hit/miss rates.
+var CacheOperations = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "iptv_proxy_cache_operations_total",
+	Help: "Total cache operations",
+}, []string{"operation", "result"})
+
+// DeadStreams tracks the number of streams marked as dead.
+var DeadStreams = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "iptv_proxy_dead_streams",
+	Help: "Number of streams marked as dead",
+}, []string{"channel", "reason"})
+
+// HLSSegments tracks HLS segment processing.
+var HLSSegments = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "iptv_proxy_hls_segments_total",
+	Help: "Total HLS segments processed",
+}, []string{"channel", "status"})
+
+// StreamHealthChecks tracks watcher health check results.
+var StreamHealthChecks = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "iptv_proxy_health_checks_total",
+	Help: "Total stream health checks performed",
+}, []string{"channel", "result"})
+
+// APIRequestDuration tracks API endpoint response times.
+var APIRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name:    "iptv_proxy_api_request_duration_seconds",
+	Help:    "API request duration",
+	Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+}, []string{"endpoint", "method"})
+
+// MasterPlaylistVariants tracks variant selection from master playlists.
+var MasterPlaylistVariants = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "iptv_proxy_master_playlist_variants_total",
+	Help: "Total master playlist variants processed",
+}, []string{"channel", "selected"})

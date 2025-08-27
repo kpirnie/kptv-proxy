@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"go.uber.org/ratelimit"
 )
 
 // Restream wraps types.Restreamer to allow adding methods in this package.
@@ -33,20 +35,21 @@ type Restream struct {
 // - logger: application logger
 // - httpClient: custom HTTP client for making requests
 // - cfg: application configuration
-func NewRestreamer(channel *types.Channel, bufferSize int64, logger *log.Logger, httpClient *client.HeaderSettingClient, cfg *config.Config) *Restream {
+func NewRestreamer(channel *types.Channel, bufferSize int64, logger *log.Logger, httpClient *client.HeaderSettingClient, cfg *config.Config, rateLimiter ratelimit.Limiter) *Restream {
 
 	// Create a cancellable context for the restream lifecycle
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Initialize the base Restreamer struct with all dependencies
 	base := &types.Restreamer{
-		Channel:    channel,
-		Buffer:     buffer.NewRingBuffer(bufferSize), // initialize ring buffer for stream data
-		Ctx:        ctx,                              // streaming context
-		Cancel:     cancel,                           // cancel func
-		Logger:     logger,
-		HttpClient: httpClient,
-		Config:     cfg,
+		Channel:     channel,
+		Buffer:      buffer.NewRingBuffer(bufferSize), // initialize ring buffer for stream data
+		Ctx:         ctx,                              // streaming context
+		Cancel:      cancel,                           // cancel func
+		Logger:      logger,
+		HttpClient:  httpClient,
+		Config:      cfg,
+		RateLimiter: rateLimiter,
 	}
 
 	// Set initial timestamps and flags
@@ -481,6 +484,14 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 //   - error: any encountered error
 func (r *Restream) getStreamVariants(url string, source *config.SourceConfig) ([]parser.StreamVariant, bool, error) {
 
+	// Get rate limiter from StreamProxy (need to add this to Restreamer)
+	if r.RateLimiter != nil {
+		r.RateLimiter.Take()
+		if r.Config.Debug {
+			r.Logger.Printf("[RATE_LIMIT] Applied rate limit for stream request: %s", source.Name)
+		}
+	}
+
 	// Initialize a master playlist handler
 	masterHandler := parser.NewMasterPlaylistHandler(r.Logger, r.Config)
 
@@ -620,6 +631,11 @@ func (r *Restream) shouldCheckForMasterPlaylist(resp *http.Response) bool {
 //   - bool: success flag
 //   - int64: total number of bytes streamed
 func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool, int64) {
+
+	// Apply rate limiting before streaming request
+	if r.RateLimiter != nil {
+		r.RateLimiter.Take()
+	}
 
 	// Construct HTTP request for the stream URL
 	req, err := http.NewRequest("GET", url, nil)
