@@ -123,8 +123,6 @@ func (wm *WatcherManager) Start() {
 		return
 	}
 
-	wm.logger.Printf("[WATCHER] Stream Watcher Manager started")
-
 	// Launch background cleanup routine for resource management
 	go wm.cleanupRoutine()
 }
@@ -157,7 +155,6 @@ func (wm *WatcherManager) Stop() {
 		return true
 	})
 
-	wm.logger.Printf("[WATCHER] Stream Watcher Manager stopped")
 }
 
 // StartWatching initiates health monitoring for a specific channel and restreamer,
@@ -208,8 +205,10 @@ func (wm *WatcherManager) StartWatching(channelName string, restreamer *types.Re
 	}
 	restreamer.Channel.Mu.RUnlock()
 
-	wm.logger.Printf("[WATCHER] Started watching channel %s (stream %d): %s",
-		channelName, currentIdx, utils.LogURL(restreamer.Config, streamURL))
+	if restreamer.Config.Debug {
+		wm.logger.Printf("[WATCHER] Started watching channel %s (stream %d): %s",
+			channelName, currentIdx, utils.LogURL(restreamer.Config, streamURL))
+	}
 }
 
 // StopWatching terminates health monitoring for a specific channel, performing
@@ -227,7 +226,9 @@ func (wm *WatcherManager) StopWatching(channelName string) {
 	if watcher, exists := wm.watchers.LoadAndDelete(channelName); exists {
 		w := watcher.(*StreamWatcher)
 		w.Stop()
-		wm.logger.Printf("[WATCHER] Stopped watching channel %s", channelName)
+		if w.restreamer.Config.Debug {
+			wm.logger.Printf("[WATCHER] Stopped watching channel %s", channelName)
+		}
 	}
 }
 
@@ -301,7 +302,9 @@ func (sw *StreamWatcher) Watch() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	sw.logger.Printf("[WATCHER] Channel %s: Monitoring every %v", sw.channelName, interval)
+	if sw.restreamer.Config.Debug {
+		sw.logger.Printf("[WATCHER] Channel %s: Monitoring every %v", sw.channelName, interval)
+	}
 
 	// Main monitoring loop continues until context cancellation
 	for {
@@ -373,8 +376,10 @@ func (sw *StreamWatcher) checkStreamHealth() {
 		totalFails := atomic.LoadInt32(&sw.totalFailures)
 		consecFails := atomic.LoadInt32(&sw.consecutiveFailures)
 
-		sw.logger.Printf("[WATCHER] Channel %s: Health=%v, Activity=%ds ago, Clients=%d, TotalFails=%d, ConsecFails=%d, Check=%v",
-			sw.channelName, !hasIssues, timeSinceActivity, clientCount, totalFails, consecFails, checkDuration)
+		if sw.restreamer.Config.Debug {
+			sw.logger.Printf("[WATCHER] Channel %s: Health=%v, Activity=%ds ago, Clients=%d, TotalFails=%d, ConsecFails=%d, Check=%v",
+				sw.channelName, !hasIssues, timeSinceActivity, clientCount, totalFails, consecFails, checkDuration)
+		}
 	}
 
 	// if the stream has issues
@@ -384,8 +389,10 @@ func (sw *StreamWatcher) checkStreamHealth() {
 		consecutiveFailures := atomic.AddInt32(&sw.consecutiveFailures, 1)
 		totalFailures := atomic.AddInt32(&sw.totalFailures, 1)
 
-		sw.logger.Printf("[WATCHER] Channel %s: Health issue detected (consecutive: %d/5, total: %d/3)",
-			sw.channelName, consecutiveFailures, totalFailures)
+		if sw.restreamer.Config.Debug {
+			sw.logger.Printf("[WATCHER] Channel %s: Health issue detected (consecutive: %d/5, total: %d/3)",
+				sw.channelName, consecutiveFailures, totalFailures)
+		}
 
 		// Trigger failover if EITHER condition is met for comprehensive problem handling:
 		// 1. 3 consecutive failures (immediate serious issues requiring quick response)
@@ -416,15 +423,19 @@ func (sw *StreamWatcher) checkStreamHealth() {
 
 			// Log comprehensive recovery information for operational monitoring
 			if (oldConsecutiveFailures > 0 || oldTotalFailures > 0) && sw.restreamer.Config.Debug {
-				sw.logger.Printf("[WATCHER] Channel %s: Long-term health recovered, reset %d consecutive + %d total failures",
-					sw.channelName, oldConsecutiveFailures, oldTotalFailures)
+				if sw.restreamer.Config.Debug {
+					sw.logger.Printf("[WATCHER] Channel %s: Long-term health recovered, reset %d consecutive + %d total failures",
+						sw.channelName, oldConsecutiveFailures, oldTotalFailures)
+				}
 			}
 		} else if oldConsecutiveFailures > 0 && sw.restreamer.Config.Debug {
 
 			// Log partial recovery with remaining total failure count
 			totalFails := atomic.LoadInt32(&sw.totalFailures)
-			sw.logger.Printf("[WATCHER] Channel %s: Consecutive failures reset, but %d total failures remain",
-				sw.channelName, totalFails)
+			if sw.restreamer.Config.Debug {
+				sw.logger.Printf("[WATCHER] Channel %s: Consecutive failures reset, but %d total failures remain",
+					sw.channelName, totalFails)
+			}
 		}
 	}
 

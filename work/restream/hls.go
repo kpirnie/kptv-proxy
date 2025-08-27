@@ -134,7 +134,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	totalBytes := int64(0)
 
 	// IMPROVED: Use a circular buffer approach for segment tracking
-	segmentTracker := NewSegmentTracker(20) // Keep track of last 20 segments
+	segmentTracker := NewSegmentTracker(10) // Keep track of last 10 segments
 
 	for {
 		select {
