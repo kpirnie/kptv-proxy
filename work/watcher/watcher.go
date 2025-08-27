@@ -572,24 +572,6 @@ func (sw *StreamWatcher) analyzeStreamWithFFProbe() types.StreamHealthData {
 		return health
 	}
 
-	// Start FFprobe process with configured parameters
-	if err := cmd.Start(); err != nil {
-		stdin.Close()
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Failed to start ffprobe: %v", err)
-		}
-		return health
-	}
-
-	// Provide stream data to FFprobe through stdin in separate goroutine
-	go func() {
-		defer stdin.Close()
-		_, writeErr := stdin.Write(streamData)
-		if writeErr != nil && sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Error writing to ffprobe stdin: %v", writeErr)
-		}
-	}()
-
 	// Capture FFprobe analysis output with timeout protection
 	output, err := cmd.Output()
 	if err != nil {
@@ -598,6 +580,20 @@ func (sw *StreamWatcher) analyzeStreamWithFFProbe() types.StreamHealthData {
 		}
 		return health
 	}
+
+	// Provide stream data to FFprobe through stdin in separate goroutine
+	go func() {
+		defer stdin.Close()
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			_, writeErr := stdin.Write(streamData)
+			if writeErr != nil && sw.restreamer.Config.Debug {
+				sw.logger.Printf("[WATCHER] Error writing to ffprobe stdin: %v", writeErr)
+			}
+		}
+	}()
 
 	// Parse structured JSON output to extract stream characteristics
 	var result struct {
