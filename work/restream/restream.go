@@ -193,6 +193,7 @@ func (r *Restream) Stream() {
 
 	// Ensure panic recovery to avoid crashing the whole process
 	defer func() {
+
 		if rec := recover(); rec != nil {
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_PANIC] Channel %s: Recovered from panic: %v", r.Channel.Name, rec)
@@ -711,7 +712,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			totalBytes += int64(n)
 
 			// Update Prometheus metrics
-			metrics.BytesTransferred.WithLabelValues(r.Channel.Name).Add(float64(n))
+			metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
 			metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(float64(activeClients))
 
 			// Debug log every 1 MB
