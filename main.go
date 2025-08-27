@@ -57,7 +57,7 @@ func main() {
 	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger, cfg)
 
 	// start the watcher
-	proxyInstance.WatcherManager.Start()
+	//proxyInstance.WatcherManager.Start()
 
 	// Start restreamer cleanup routine
 	go proxyInstance.RestreamCleanup()
@@ -117,7 +117,7 @@ func main() {
 			}
 
 			// Stop stream watcher
-			proxyInstance.WatcherManager.Stop()
+			//proxyInstance.WatcherManager.Stop()
 
 			// Stop import refresh
 			proxyInstance.StopImportRefresh()
@@ -140,7 +140,7 @@ func main() {
 			go proxyInstance.StartImportRefresh()
 
 			// Restart stream watcher
-			proxyInstance.WatcherManager.Start()
+			//proxyInstance.WatcherManager.Start()
 
 			// debug logging
 			if cfg.Debug {
