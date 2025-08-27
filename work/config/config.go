@@ -10,79 +10,94 @@ import (
 	"time"
 )
 
-// Config holds all configuration values
+// Config holds all application configuration values for the IPTV proxy server.
+// It includes settings for buffering, caching, streaming, and multiple source configurations.
 type Config struct {
-	BaseURL               string         `json:"baseURL"`
-	MaxBufferSize         int64          `json:"maxBufferSize"`
-	BufferSizePerStream   int64          `json:"bufferSizePerStream"`
-	CacheEnabled          bool           `json:"cacheEnabled"`
-	CacheDuration         time.Duration  `json:"cacheDuration"`
-	ImportRefreshInterval time.Duration  `json:"importRefreshInterval"`
-	WorkerThreads         int            `json:"workerThreads"`
-	Debug                 bool           `json:"debug"`
-	ObfuscateUrls         bool           `json:"obfuscateUrls"`
-	SortField             string         `json:"sortField"`
-	SortDirection         string         `json:"sortDirection"`
-	StreamTimeout         time.Duration  `json:"streamTimeout"`
-	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"`
-	Sources               []SourceConfig `json:"sources"`
+	BaseURL               string         `json:"baseURL"`               // Base URL for the application (used for API and links)
+	MaxBufferSize         int64          `json:"maxBufferSize"`         // Maximum total buffer size in MB (all streams combined)
+	BufferSizePerStream   int64          `json:"bufferSizePerStream"`   // Buffer size per individual stream in MB
+	CacheEnabled          bool           `json:"cacheEnabled"`          // Whether caching is enabled globally
+	CacheDuration         time.Duration  `json:"cacheDuration"`         // Duration before cache entries expire
+	ImportRefreshInterval time.Duration  `json:"importRefreshInterval"` // Interval for refreshing imported content
+	WorkerThreads         int            `json:"workerThreads"`         // Number of worker threads for background tasks
+	Debug                 bool           `json:"debug"`                 // Enable debug logging
+	ObfuscateUrls         bool           `json:"obfuscateUrls"`         // Obfuscate URLs in logs for security
+	SortField             string         `json:"sortField"`             // Field to sort channels by (e.g., tvg-name)
+	SortDirection         string         `json:"sortDirection"`         // Sort direction: "asc" or "desc"
+	StreamTimeout         time.Duration  `json:"streamTimeout"`         // Timeout for stream operations
+	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"`   // Maximum concurrent connections allowed to the app
+	Sources               []SourceConfig `json:"sources"`               // List of configured stream sources
 }
 
-// SourceConfig represents a stream source configuration
+// SourceConfig represents the configuration for a single stream source.
+// It includes connection limits, timeouts, retry settings, and HTTP headers.
 type SourceConfig struct {
-	Name                   string        `json:"name"`
-	URL                    string        `json:"url"`
-	Order                  int           `json:"order"`
-	MaxConnections         int           `json:"maxConnections"`
-	MaxStreamTimeout       time.Duration `json:"maxStreamTimeout"`
-	RetryDelay             time.Duration `json:"retryDelay"`
-	MaxRetries             int           `json:"maxRetries"`
-	MaxFailuresBeforeBlock int           `json:"maxFailuresBeforeBlock"`
-	MinDataSize            int64         `json:"minDataSize"`
-	UserAgent              string        `json:"userAgent"`   // Added
-	ReqOrigin              string        `json:"reqOrigin"`   // Added
-	ReqReferrer            string        `json:"reqReferrer"` // Added
-	ActiveConns            int32         `json:"-"`           // Not serialized, runtime tracking
+	Name                   string        `json:"name"`                   // Descriptive name for the source
+	URL                    string        `json:"url"`                    // URL of the stream/playlist
+	Order                  int           `json:"order"`                  // Priority order for failover/selection
+	MaxConnections         int           `json:"maxConnections"`         // Maximum concurrent connections to this source
+	MaxStreamTimeout       time.Duration `json:"maxStreamTimeout"`       // Maximum timeout per stream request
+	RetryDelay             time.Duration `json:"retryDelay"`             // Delay between retry attempts
+	MaxRetries             int           `json:"maxRetries"`             // Maximum retry attempts before failing
+	MaxFailuresBeforeBlock int           `json:"maxFailuresBeforeBlock"` // Failures before marking source as blocked
+	MinDataSize            int64         `json:"minDataSize"`            // Minimum valid data size for a stream
+	UserAgent              string        `json:"userAgent"`              // HTTP User-Agent header for requests
+	ReqOrigin              string        `json:"reqOrigin"`              // HTTP Origin header for requests
+	ReqReferrer            string        `json:"reqReferrer"`            // HTTP Referer header for requests
+	ActiveConns            int32         `json:"-"`                      // Runtime-only: tracks active connections (not serialized)
 }
 
-// ConfigFile represents the JSON structure for marshaling/unmarshaling
+// ConfigFile represents the JSON file structure for marshaling/unmarshaling configuration.
+// String duration fields (e.g., "30m") are parsed into time.Duration values.
 type ConfigFile struct {
 	BaseURL               string             `json:"baseURL"`
 	MaxBufferSize         int64              `json:"maxBufferSize"`
 	BufferSizePerStream   int64              `json:"bufferSizePerStream"`
 	CacheEnabled          bool               `json:"cacheEnabled"`
-	CacheDuration         string             `json:"cacheDuration"`
-	ImportRefreshInterval string             `json:"importRefreshInterval"`
+	CacheDuration         string             `json:"cacheDuration"`         // Duration as string (e.g., "30m")
+	ImportRefreshInterval string             `json:"importRefreshInterval"` // Duration as string (e.g., "12h")
 	WorkerThreads         int                `json:"workerThreads"`
 	Debug                 bool               `json:"debug"`
 	ObfuscateUrls         bool               `json:"obfuscateUrls"`
 	SortField             string             `json:"sortField"`
 	SortDirection         string             `json:"sortDirection"`
-	StreamTimeout         string             `json:"streamTimeout"`
+	StreamTimeout         string             `json:"streamTimeout"` // Duration as string (e.g., "10s")
 	MaxConnectionsToApp   int                `json:"maxConnectionsToApp"`
 	Sources               []SourceConfigFile `json:"sources"`
 }
 
+// SourceConfigFile represents the source configuration in JSON format.
+// Duration fields are stored as strings (parsed later into time.Duration).
 type SourceConfigFile struct {
 	Name                   string `json:"name"`
 	URL                    string `json:"url"`
 	Order                  int    `json:"order"`
 	MaxConnections         int    `json:"maxConnections"`
-	MaxStreamTimeout       string `json:"maxStreamTimeout"`
-	RetryDelay             string `json:"retryDelay"`
+	MaxStreamTimeout       string `json:"maxStreamTimeout"` // Duration string (e.g., "30s")
+	RetryDelay             string `json:"retryDelay"`       // Duration string (e.g., "5s")
 	MaxRetries             int    `json:"maxRetries"`
 	MaxFailuresBeforeBlock int    `json:"maxFailuresBeforeBlock"`
 	MinDataSize            int64  `json:"minDataSize"`
-	UserAgent              string `json:"userAgent"`   // Added
-	ReqOrigin              string `json:"reqOrigin"`   // Added
-	ReqReferrer            string `json:"reqReferrer"` // Added
+	UserAgent              string `json:"userAgent"`   // User-Agent header
+	ReqOrigin              string `json:"reqOrigin"`   // Origin header
+	ReqReferrer            string `json:"reqReferrer"` // Referer header
 }
 
 var (
-	configCache *Config
-	configMutex sync.RWMutex
+	configCache *Config      // Cached configuration instance (singleton)
+	configMutex sync.RWMutex // Mutex for safe concurrent access to configCache
 )
 
+// LoadConfig loads the configuration from file or returns the cached instance.
+//
+// Process:
+//   - Uses double-checked locking to avoid redundant reloads.
+//   - Attempts to load from `/settings/config.json`.
+//   - Falls back to default config if file is missing or invalid.
+//   - Runs validation to ensure safe defaults.
+//
+// Returns:
+//   - *Config: fully validated configuration object
 func LoadConfig() *Config {
 	configMutex.RLock()
 	if configCache != nil {
@@ -94,12 +109,12 @@ func LoadConfig() *Config {
 	configMutex.Lock()
 	defer configMutex.Unlock()
 
-	// Double-check after acquiring write lock
+	// Double-check under write lock
 	if configCache != nil {
 		return configCache
 	}
 
-	// Try to load from settings directory first
+	// Attempt to load from file
 	configPath := "/settings/config.json"
 	config, err := loadFromFile(configPath)
 	if err != nil {
@@ -108,11 +123,13 @@ func LoadConfig() *Config {
 		config = getDefaultConfig()
 	}
 
-	// Validate and set defaults for any missing fields
+	// Ensure safe defaults for missing values
 	validateAndSetDefaults(config)
 
+	// Cache for future calls
 	configCache = config
 
+	// Debug logging of loaded config
 	if config.Debug {
 		log.Printf("Configuration loaded:")
 		log.Printf("  Sources: %d configured", len(config.Sources))
@@ -130,20 +147,34 @@ func LoadConfig() *Config {
 	return config
 }
 
+// loadFromFile reads and parses the configuration from a JSON file.
+//
+// Parameters:
+//   - path: path to JSON config file
+//
+// Returns:
+//   - *Config: parsed configuration
+//   - error: if reading/parsing failed
 func loadFromFile(path string) (*Config, error) {
+
+	// read from tthe file
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
+	// unmarshal the config file
 	var configFile ConfigFile
 	if err := json.Unmarshal(data, &configFile); err != nil {
 		return nil, fmt.Errorf("failed to parse config JSON: %w", err)
 	}
 
+	// convert to our settings
 	return convertFromFile(&configFile)
 }
 
+// convertFromFile converts a ConfigFile to Config,
+// parsing duration strings into time.Duration.
 func convertFromFile(cf *ConfigFile) (*Config, error) {
 	config := &Config{
 		BaseURL:             cf.BaseURL,
@@ -156,7 +187,6 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		SortField:           cf.SortField,
 		SortDirection:       cf.SortDirection,
 		MaxConnectionsToApp: cf.MaxConnectionsToApp,
-		// Removed: UserAgent, ReqOrigin, ReqReferrer
 	}
 
 	// Parse duration fields
@@ -182,10 +212,11 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		src.MaxRetries = srcFile.MaxRetries
 		src.MaxFailuresBeforeBlock = srcFile.MaxFailuresBeforeBlock
 		src.MinDataSize = srcFile.MinDataSize
-		src.UserAgent = srcFile.UserAgent     // Added
-		src.ReqOrigin = srcFile.ReqOrigin     // Added
-		src.ReqReferrer = srcFile.ReqReferrer // Added
+		src.UserAgent = srcFile.UserAgent
+		src.ReqOrigin = srcFile.ReqOrigin
+		src.ReqReferrer = srcFile.ReqReferrer
 
+		// Parse per-source durations
 		if src.MaxStreamTimeout, err = time.ParseDuration(srcFile.MaxStreamTimeout); err != nil {
 			return nil, fmt.Errorf("invalid maxStreamTimeout for source %s: %w", src.Name, err)
 		}
@@ -197,26 +228,29 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 	return config, nil
 }
 
+// getDefaultConfig returns a baseline configuration
+// with sensible defaults when no file is present.
 func getDefaultConfig() *Config {
 	return &Config{
 		BaseURL:               "http://localhost:8080",
-		MaxBufferSize:         16,
-		BufferSizePerStream:   1,
-		CacheEnabled:          true,
-		CacheDuration:         30 * time.Minute,
-		ImportRefreshInterval: 12 * time.Hour,
-		WorkerThreads:         8,
-		Debug:                 false,
-		ObfuscateUrls:         false,
-		SortField:             "tvg-name",
-		SortDirection:         "asc",
-		StreamTimeout:         10 * time.Second,
-		MaxConnectionsToApp:   100,
-		Sources:               []SourceConfig{},
-		// Removed: UserAgent, ReqOrigin, ReqReferrer
+		MaxBufferSize:         16,               // Default: 16 MB total buffer
+		BufferSizePerStream:   1,                // Default: 1 MB per stream
+		CacheEnabled:          true,             // Enable caching
+		CacheDuration:         30 * time.Minute, // Default 30 min expiration
+		ImportRefreshInterval: 12 * time.Hour,   // Default: refresh imports every 12 hours
+		WorkerThreads:         8,                // Default worker threads
+		Debug:                 false,            // Debug disabled
+		ObfuscateUrls:         false,            // Do not obfuscate by default
+		SortField:             "tvg-name",       // Default sort field
+		SortDirection:         "asc",            // Default ascending order
+		StreamTimeout:         10 * time.Second, // Default stream timeout
+		MaxConnectionsToApp:   100,              // Default connection limit
+		Sources:               []SourceConfig{}, // No sources configured
 	}
 }
 
+// validateAndSetDefaults ensures all config values are valid,
+// filling in defaults for missing/invalid ones.
 func validateAndSetDefaults(config *Config) {
 	if config.BaseURL == "" {
 		config.BaseURL = "http://localhost:8080"
@@ -249,7 +283,7 @@ func validateAndSetDefaults(config *Config) {
 		config.MaxConnectionsToApp = 100
 	}
 
-	// Validate and set defaults for sources
+	// Validate each source
 	for i := range config.Sources {
 		src := &config.Sources[i]
 		if src.Name == "" {
@@ -276,16 +310,18 @@ func validateAndSetDefaults(config *Config) {
 		if src.MinDataSize <= 0 {
 			src.MinDataSize = 1
 		}
-		// Add defaults for new header fields
 		if src.UserAgent == "" {
 			src.UserAgent = "VLC/3.0.18 LibVLC/3.0.18"
 		}
-		// ReqOrigin and ReqReferrer can be empty by default
+		// ReqOrigin and ReqReferrer may remain empty
 	}
 }
 
-// GetSourceByURL returns the source config for a given URL
+// GetSourceByURL returns a pointer to the SourceConfig matching the given URL.
+// Returns nil if no match is found.
 func (c *Config) GetSourceByURL(url string) *SourceConfig {
+
+	// loop the sources to make sure the url is valid
 	for i := range c.Sources {
 		if c.Sources[i].URL == url {
 			return &c.Sources[i]
@@ -294,12 +330,15 @@ func (c *Config) GetSourceByURL(url string) *SourceConfig {
 	return nil
 }
 
-// GetSourcesByOrder returns sources sorted by their order
+// GetSourcesByOrder returns a copy of sources sorted by their Order field.
+// Original slice remains unmodified.
 func (c *Config) GetSourcesByOrder() []SourceConfig {
+
+	// setup the original sources
 	sources := make([]SourceConfig, len(c.Sources))
 	copy(sources, c.Sources)
 
-	// Sort by order
+	// Simple bubble sort (sufficient since number of sources is small)
 	for i := 0; i < len(sources)-1; i++ {
 		for j := i + 1; j < len(sources); j++ {
 			if sources[i].Order > sources[j].Order {
@@ -311,7 +350,13 @@ func (c *Config) GetSourcesByOrder() []SourceConfig {
 	return sources
 }
 
-// CreateExampleConfig creates an example configuration file
+// CreateExampleConfig creates an example config file on disk.
+//
+// Parameters:
+//   - path: file path to write example config
+//
+// Returns:
+//   - error: if write fails
 func CreateExampleConfig(path string) error {
 	example := ConfigFile{
 		BaseURL:               "http://localhost:8080",
@@ -327,7 +372,6 @@ func CreateExampleConfig(path string) error {
 		SortDirection:         "asc",
 		StreamTimeout:         "10s",
 		MaxConnectionsToApp:   100,
-		// Removed: UserAgent, ReqOrigin, ReqReferrer
 		Sources: []SourceConfigFile{
 			{
 				Name:                   "Primary IPTV Source",
@@ -339,9 +383,9 @@ func CreateExampleConfig(path string) error {
 				MaxRetries:             3,
 				MaxFailuresBeforeBlock: 5,
 				MinDataSize:            2,
-				UserAgent:              "VLC/3.0.18 LibVLC/3.0.18", // Added
-				ReqOrigin:              "",                         // Added
-				ReqReferrer:            "",                         // Added
+				UserAgent:              "VLC/3.0.18 LibVLC/3.0.18",
+				ReqOrigin:              "",
+				ReqReferrer:            "",
 			},
 			{
 				Name:                   "Backup IPTV Source",
@@ -353,28 +397,37 @@ func CreateExampleConfig(path string) error {
 				MaxRetries:             2,
 				MaxFailuresBeforeBlock: 3,
 				MinDataSize:            1,
-				UserAgent:              "Mozilla/5.0 (Smart TV; Linux)", // Added - different user agent
-				ReqOrigin:              "https://provider2.com",         // Added
-				ReqReferrer:            "https://provider2.com/player",  // Added
+				UserAgent:              "Mozilla/5.0 (Smart TV; Linux)",
+				ReqOrigin:              "https://provider2.com",
+				ReqReferrer:            "https://provider2.com/player",
 			},
 		},
 	}
 
+	// setup the data properly
 	data, err := json.MarshalIndent(example, "", "  ")
 	if err != nil {
 		return err
 	}
 
+	// write the config file
 	return os.WriteFile(path, data, 0644)
 }
 
-// ClearConfigCache clears the cached configuration to force a reload
+// ClearConfigCache resets the configCache to nil.
+// Forces a reload on the next LoadConfig() call.
 func ClearConfigCache() {
 	configMutex.Lock()
 	defer configMutex.Unlock()
 	configCache = nil
 }
 
+// obfuscateURL masks sensitive parts of a URL for logging.
+//
+// Example:
+//
+//	Input:  "http://example.com/secret/stream.m3u8?token=abc"
+//	Output: "http://example.com/***?***"
 func obfuscateURL(urlStr string) string {
 	if urlStr == "" {
 		return ""

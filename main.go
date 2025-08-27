@@ -20,8 +20,9 @@ import (
 	"kptv-proxy/work/utils"
 )
 
+// default version
 var (
-	Version = "v0.1.0" // default version
+	Version = "v0.1.0"
 )
 
 // our main app worker
@@ -39,7 +40,7 @@ func main() {
 	// Initialize HTTP client
 	httpClient := client.NewHeaderSettingClient()
 
-	// Initialize worker pool
+	// Initialize worker pool, then make sure it gets released
 	workerPool, err := ants.NewPool(cfg.WorkerThreads, ants.WithPreAlloc(true))
 	if err != nil {
 		log.Fatalf("Failed to create worker pool: %v", err)
@@ -56,7 +57,7 @@ func main() {
 	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger, cfg)
 
 	// start the watcher
-	//proxyInstance.WatcherManager.Start()
+	proxyInstance.WatcherManager.Start()
 
 	// Start restreamer cleanup routine
 	go proxyInstance.RestreamCleanup()
@@ -116,7 +117,7 @@ func main() {
 			}
 
 			// Stop stream watcher
-			//proxyInstance.WatcherManager.Stop()
+			proxyInstance.WatcherManager.Stop()
 
 			// Stop import refresh
 			proxyInstance.StopImportRefresh()
@@ -139,7 +140,7 @@ func main() {
 			go proxyInstance.StartImportRefresh()
 
 			// Restart stream watcher
-			//proxyInstance.WatcherManager.Start()
+			proxyInstance.WatcherManager.Start()
 
 			// debug logging
 			if cfg.Debug {
@@ -150,7 +151,7 @@ func main() {
 
 	}()
 
-	// fire us up
+	// fire us up, if there's an error log it
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}

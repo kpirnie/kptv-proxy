@@ -1,4 +1,3 @@
-// work/restream/restream.go - Updated with variant testing
 package restream
 
 import (
@@ -13,7 +12,6 @@ import (
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/stream"
 	"kptv-proxy/work/types"
-	"kptv-proxy/work/utils"
 	"log"
 	"net/http"
 	"runtime"
@@ -24,54 +22,82 @@ import (
 )
 
 // Restream wraps types.Restreamer to allow adding methods in this package.
+// This enables higher-level restreaming logic without polluting the base struct.
 type Restream struct {
 	*types.Restreamer
 }
 
-// setup the restreamer
+// NewRestreamer creates and initializes a new Restreamer instance.
+// - channel: the channel object this restreamer is associated with
+// - bufferSize: the size of the ring buffer in bytes
+// - logger: application logger
+// - httpClient: custom HTTP client for making requests
+// - cfg: application configuration
 func NewRestreamer(channel *types.Channel, bufferSize int64, logger *log.Logger, httpClient *client.HeaderSettingClient, cfg *config.Config) *Restream {
+
+	// Create a cancellable context for the restream lifecycle
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Initialize the base Restreamer struct with all dependencies
 	base := &types.Restreamer{
 		Channel:    channel,
-		Buffer:     buffer.NewRingBuffer(bufferSize),
-		Ctx:        ctx,
-		Cancel:     cancel,
+		Buffer:     buffer.NewRingBuffer(bufferSize), // initialize ring buffer for stream data
+		Ctx:        ctx,                              // streaming context
+		Cancel:     cancel,                           // cancel func
 		Logger:     logger,
 		HttpClient: httpClient,
 		Config:     cfg,
 	}
-	base.LastActivity.Store(time.Now().Unix())
-	base.Running.Store(false)
+
+	// Set initial timestamps and flags
+	base.LastActivity.Store(time.Now().Unix()) // record start activity time
+	base.Running.Store(false)                  // initially not running
+
+	// return the restream
 	return &Restream{base}
 }
 
-// setup the client
+// AddClient registers a new client to receive stream data.
+// - id: unique identifier for the client
+// - w: the HTTP response writer
+// - flusher: the HTTP flusher to push data immediately
 func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flusher) {
+
+	// Create a new restream client object
 	client := &types.RestreamClient{
-		Id:      id,
-		Writer:  w,
-		Flusher: flusher,
-		Done:    make(chan bool),
+		Id:      id,              // unique identifier for the client
+		Writer:  w,               // HTTP response writer for TS data
+		Flusher: flusher,         // HTTP flusher for real-time streaming
+		Done:    make(chan bool), // channel to signal when client is closed
 	}
+
+	// Store the last seen time as current time
 	client.LastSeen.Store(time.Now().Unix())
 
+	// Add client to the restreamer's active clients map
 	r.Clients.Store(id, client)
+
+	// Update last activity timestamp for the restreamer
 	r.LastActivity.Store(time.Now().Unix())
 
-	// Update metrics
+	// Count active clients for metrics
 	count := 0
 	r.Clients.Range(func(_, _ interface{}) bool {
 		count++
 		return true
 	})
+
+	// Update Prometheus metric for connected clients
 	metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(count))
+
+	// Debug logging
 	if r.Config.Debug {
 		r.Logger.Printf("[CLIENT_CONNECT] Channel %s: ID: %s", r.Channel.Name, id)
 		r.Logger.Printf("[METRIC] clients_connected: %d [%s]", count, r.Channel.Name)
 		r.Logger.Printf("[CLIENT_ADD] Channel %s: Client %s added, total: %d", r.Channel.Name, id, count)
 	}
 
-	// Start restreaming if not running
+	// Start restreaming if it isn't already running
 	if !r.Running.Load() && r.Running.CompareAndSwap(false, true) {
 		if r.Config.Debug {
 			r.Logger.Printf("[RESTREAM_START] Channel %s: Starting goroutine", r.Channel.Name)
@@ -79,16 +105,22 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 			r.Logger.Printf("[RESTREAM_ACTIVE] Channel %s: Restreamer started", r.Channel.Name)
 		}
 
+		// Start the streaming loop in a goroutine
 		go r.Stream()
 	}
 }
 
-// all set? remove the client
+// RemoveClient unregisters a client from the restreamer.
+// - id: unique identifier for the client to be removed
 func (r *Restream) RemoveClient(id string) {
+
+	// Attempt to load and delete the client from the map
 	if client, ok := r.Clients.LoadAndDelete(id); ok {
+
+		// hold the client
 		c := client.(*types.RestreamClient)
 
-		// Signal client is done
+		// Mark client as finished by closing its Done channel
 		select {
 		case <-c.Done:
 			// Already closed
@@ -96,82 +128,103 @@ func (r *Restream) RemoveClient(id string) {
 			close(c.Done)
 		}
 
+		// Remove the client from the buffer’s internal tracking
 		r.Buffer.RemoveClient(id)
 
-		// Update metrics
+		// Count remaining clients
 		count := 0
 		r.Clients.Range(func(_, _ interface{}) bool {
 			count++
 			return true
 		})
+
+		// Update Prometheus metrics for clients
 		metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(count))
 
+		// Debug logging
 		if r.Config.Debug {
 			r.Logger.Printf("[CLIENT_DISCONNECT] Channel %s: Client: %s", r.Channel.Name, id)
 			r.Logger.Printf("[METRIC] clients_connected: %d [%s]", count, r.Channel.Name)
 			r.Logger.Printf("[CLIENT_REMOVE] Channel %s: Client %s removed, remaining: %d", r.Channel.Name, id, count)
 		}
 
-		// Stop restreaming immediately if no clients
+		// If no clients remain, stop the stream immediately
 		if count == 0 {
 			if r.Config.Debug {
 				r.Logger.Printf("[RESTREAM_STOP] Channel %s: No more clients", r.Channel.Name)
 			}
-
 			r.stopStream()
 		}
 	}
 }
 
-// force the stream to stop
+// stopStream forces the restreamer to stop streaming immediately.
+// It cancels the context, destroys the buffer, resets state, and runs GC.
 func (r *Restream) stopStream() {
+
+	// Only proceed if running state changes from true → false
 	if r.Running.CompareAndSwap(true, false) {
+
+		// Cancel the current streaming context
 		r.Cancel()
 
+		// Destroy buffer if valid
 		if r.Buffer != nil && !r.Buffer.IsDestroyed() {
 			r.Buffer.Destroy()
 		}
 		r.Buffer = nil
 
+		// Reset streaming context and index for future restarts
 		r.Ctx, r.Cancel = context.WithCancel(context.Background())
 		atomic.StoreInt32(&r.CurrentIndex, 0)
 
+		// Force garbage collection to release memory
 		runtime.GC()
 	}
 }
 
-// stream it!
-// stream it!
+// Stream is the main streaming loop for the restreamer.
+// It attempts to stream from preferred or fallback sources, handles failures,
+// switches streams when necessary, and manages retry logic.
 func (r *Restream) Stream() {
+
+	// Ensure panic recovery to avoid crashing the whole process
 	defer func() {
 		if rec := recover(); rec != nil {
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_PANIC] Channel %s: Recovered from panic: %v", r.Channel.Name, rec)
 			}
 		}
+
+		// Mark restreamer as no longer running
 		r.Running.Store(false)
+
+		// Reset active connections metric
 		metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(0)
 	}()
 
+	// Lock channel to get stream count
 	r.Channel.Mu.RLock()
 	streamCount := len(r.Channel.Streams)
 	r.Channel.Mu.RUnlock()
 
+	// Bail out if no streams exist
 	if streamCount == 0 {
 		return
 	}
 
-	// Check if current index is already set (from manual stream change)
+	// Load indexes for current and preferred streams
 	currentIndex := int(atomic.LoadInt32(&r.CurrentIndex))
 	preferredIndex := int(atomic.LoadInt32(&r.Channel.PreferredStreamIndex))
 
-	// If current index is valid and matches preferred, use it
+	// Decide starting index:
+	// - If current index matches preferred, keep it
+	// - Otherwise reset to preferred or fallback to 0
 	if currentIndex >= 0 && currentIndex < streamCount && currentIndex == preferredIndex {
 		if r.Config.Debug {
 			r.Logger.Printf("[STREAM_START] Channel %s: Using manually set stream index %d", r.Channel.Name, currentIndex)
 		}
 	} else {
-		// Otherwise, start with preferred stream index
 		if preferredIndex >= 0 && preferredIndex < streamCount {
 			atomic.StoreInt32(&r.CurrentIndex, int32(preferredIndex))
 			if r.Config.Debug {
@@ -185,18 +238,23 @@ func (r *Restream) Stream() {
 		}
 	}
 
-	maxTotalAttempts := streamCount * 2
-	totalAttempts := 0
-	triedPreferred := false
-	consecutiveFailures := make(map[int]int) // Track consecutive failures per stream index
+	// Retry configuration
+	maxTotalAttempts := streamCount * 2      // maximum attempts across streams
+	totalAttempts := 0                       // attempts counter
+	triedPreferred := false                  // whether the preferred was tried
+	consecutiveFailures := make(map[int]int) // map of stream index → consecutive failures
 
+	// Loop until all attempts exhausted
 	for totalAttempts < maxTotalAttempts {
 		select {
 		case <-r.Ctx.Done():
+
+			// Context cancelled → check if restart is needed
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_CONTEXT_CANCELLED] Channel %s: Context cancelled, checking for restart", r.Channel.Name)
 			}
-			// Check if we still have clients and should restart
+
+			// Count clients still connected
 			clientCount := 0
 			r.Clients.Range(func(_, _ interface{}) bool {
 				clientCount++
@@ -206,18 +264,22 @@ func (r *Restream) Stream() {
 				if r.Config.Debug {
 					r.Logger.Printf("[STREAM_RESTART_NEEDED] Channel %s: %d clients still connected, allowing restart", r.Channel.Name, clientCount)
 				}
-				r.Running.Store(false) // Allow restart
+
+				// Mark as not running so that AddClient may restart it
+				r.Running.Store(false)
 			}
 			return
 		default:
 		}
 
+		// Count active clients
 		clientCount := 0
 		r.Clients.Range(func(_, _ interface{}) bool {
 			clientCount++
 			return true
 		})
 
+		// Bail if no clients
 		if clientCount == 0 {
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_NO_CLIENTS] Channel %s: No clients remaining", r.Channel.Name)
@@ -225,9 +287,11 @@ func (r *Restream) Stream() {
 			return
 		}
 
+		// Get current index and increment attempts
 		currentIdx := int(atomic.LoadInt32(&r.CurrentIndex))
 		totalAttempts++
 
+		// Reset buffer for new attempt
 		if r.Buffer != nil && !r.Buffer.IsDestroyed() {
 			r.Buffer.Reset()
 		} else {
@@ -235,10 +299,12 @@ func (r *Restream) Stream() {
 			r.Buffer = buffer.NewRingBuffer(bufferSize)
 		}
 
+		// Attempt to stream from source
 		success, _ := r.StreamFromSource(currentIdx)
 
 		if success {
-			// Reset failure count for this stream on success
+
+			// Reset failure count for successful stream
 			consecutiveFailures[currentIdx] = 0
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_SUCCESS] Channel %s: Stream %d succeeded, resetting failure count", r.Channel.Name, currentIdx)
@@ -246,24 +312,26 @@ func (r *Restream) Stream() {
 			return
 		}
 
-		// Track consecutive failures and call HandleStreamFailure after multiple failures
+		// Increment consecutive failure count
 		consecutiveFailures[currentIdx]++
 
+		// debug logging
 		if r.Config.Debug {
 			r.Logger.Printf("[STREAM_FAILURE] Channel %s: Stream %d failed (consecutive failures: %d)",
 				r.Channel.Name, currentIdx, consecutiveFailures[currentIdx])
 		}
 
-		// Only call HandleStreamFailure after 2-3 consecutive failures to avoid false positives
+		// Handle multiple failures → mark stream as bad
 		if consecutiveFailures[currentIdx] >= 2 {
 			r.Channel.Mu.RLock()
 			if currentIdx < len(r.Channel.Streams) {
 				currentStream := r.Channel.Streams[currentIdx]
 				r.Channel.Mu.RUnlock()
 
-				// Track the stream failure
+				// Record the failure for monitoring/blocking
 				stream.HandleStreamFailure(currentStream, r.Config, r.Logger, r.Channel.Name, currentIdx)
 
+				// debug logging
 				if r.Config.Debug {
 					r.Logger.Printf("[STREAM_FAILURE_TRACKED] Channel %s: Stream %d failed %d consecutive times, tracked for potential auto-blocking",
 						r.Channel.Name, currentIdx, consecutiveFailures[currentIdx])
@@ -273,7 +341,7 @@ func (r *Restream) Stream() {
 			}
 		}
 
-		// If preferred stream failed and we haven't tried fallbacks yet
+		// Mark preferred as tried
 		if currentIdx == preferredIndex && !triedPreferred {
 			triedPreferred = true
 			if r.Config.Debug {
@@ -281,6 +349,7 @@ func (r *Restream) Stream() {
 			}
 		}
 
+		// If multiple streams, rotate index
 		if streamCount > 1 {
 			newIdx := (currentIdx + 1) % streamCount
 			atomic.StoreInt32(&r.CurrentIndex, int32(newIdx))
@@ -289,6 +358,7 @@ func (r *Restream) Stream() {
 			}
 		}
 
+		// Sleep briefly before retry
 		select {
 		case <-r.Ctx.Done():
 			if r.Config.Debug {
@@ -299,8 +369,10 @@ func (r *Restream) Stream() {
 		}
 	}
 
+	// If we reached here, all streams failed
 	if r.Config.Debug {
 		r.Logger.Printf("[STREAM_EXHAUSTED] Channel %s: All streams failed after %d attempts", r.Channel.Name, totalAttempts)
+
 		// Log final failure counts
 		for streamIdx, failures := range consecutiveFailures {
 			if failures > 0 {
@@ -311,330 +383,223 @@ func (r *Restream) Stream() {
 	}
 }
 
-// stream direct
+// StreamFromSource attempts to stream from a specific source index.
+// It performs the following checks and steps:
+//   - Ensure the index is valid
+//   - Check if the stream is marked dead or blocked
+//   - Enforce per-source connection limits
+//   - Retrieve variants (master playlists or single URLs)
+//   - Stream the variant (or all variants in master mode)
+//
+// Returns:
+//   - bool: whether the streaming attempt succeeded
+//   - int64: number of bytes successfully transferred
 func (r *Restream) StreamFromSource(index int) (bool, int64) {
+
+	// Acquire read lock to access the channel’s stream list safely
 	r.Channel.Mu.RLock()
 	if index >= len(r.Channel.Streams) {
+
+		// If the requested index is invalid, unlock and exit
 		r.Channel.Mu.RUnlock()
-		if r.Config.Debug {
-			r.Logger.Printf("Invalid stream index %d for channel: %s", index, r.Channel.Name)
-		}
 		return false, 0
 	}
 	stream := r.Channel.Streams[index]
 	r.Channel.Mu.RUnlock()
 
-	// Check if stream is dead
+	// Check if the stream was previously marked as dead
 	if deadstreams.IsStreamDead(r.Channel.Name, index) {
 		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_DEAD] Channel %s: Stream %d is marked as dead (reason: %s), skipping",
-				r.Channel.Name, index, deadstreams.GetDeadStreamReason(r.Channel.Name, index))
+			r.Logger.Printf("[STREAM_SKIP] Channel %s: Stream %d is marked dead", r.Channel.Name, index)
 		}
 		return false, 0
 	}
 
-	// ADD DEBUG LOGGING TO SHOW STREAM SELECTION
-	if r.Config.Debug {
-		r.Logger.Printf("[STREAM_SELECT] Channel %s: Attempting stream %d/%d - Source order=%d, %s=%s, URL=%s",
-			r.Channel.Name, index+1, len(r.Channel.Streams),
-			stream.Source.Order, r.Config.SortField, stream.Attributes[r.Config.SortField],
-			utils.LogURL(r.Config, stream.URL))
-	}
-
-	// Check if stream is blocked
+	// Skip stream if explicitly blocked
 	if atomic.LoadInt32(&stream.Blocked) == 1 {
 		if r.Config.Debug {
-			r.Logger.Printf("Stream blocked for channel %s: %s", r.Channel.Name, utils.LogURL(r.Config, stream.URL))
+			r.Logger.Printf("[STREAM_SKIP] Channel %s: Stream %d is blocked", r.Channel.Name, index)
 		}
 		return false, 0
 	}
 
-	// CRITICAL: Check connection limit BEFORE making request
-	currentConns := atomic.LoadInt32(&stream.Source.ActiveConns)
-	maxConns := int32(stream.Source.MaxConnections)
-
-	if currentConns >= maxConns {
+	// Enforce connection limit for this source
+	if atomic.LoadInt32(&stream.Source.ActiveConns) >= int32(stream.Source.MaxConnections) {
 		if r.Config.Debug {
-			r.Logger.Printf("[CONNECTION_LIMIT] Channel %s: Source at limit (%d/%d): %s",
-				r.Channel.Name, currentConns, maxConns, utils.LogURL(r.Config, stream.URL))
+			r.Logger.Printf("[STREAM_LIMIT] Channel %s: Stream %d source at max connections (%d)", r.Channel.Name, index, stream.Source.MaxConnections)
 		}
 		return false, 0
 	}
 
-	// Increment connection count BEFORE making request
-	newConns := atomic.AddInt32(&stream.Source.ActiveConns, 1)
-	if r.Config.Debug {
-		r.Logger.Printf("[CONNECTION_ACQUIRE] Channel %s: Using connection %d/%d for %s",
-			r.Channel.Name, newConns, maxConns, utils.LogURL(r.Config, stream.URL))
-	}
+	// Increment active connections for the source
+	atomic.AddInt32(&stream.Source.ActiveConns, 1)
+	defer atomic.AddInt32(&stream.Source.ActiveConns, -1) // ensure decrement when function exits
 
-	// CRITICAL: Always decrement connection count when done
-	defer func() {
-		remainingConns := atomic.AddInt32(&stream.Source.ActiveConns, -1)
-		if r.Config.Debug {
-			r.Logger.Printf("[CONNECTION_RELEASE] Channel %s: Released connection, remaining: %d/%d",
-				r.Channel.Name, remainingConns, maxConns)
-		}
-	}()
-
-	// Get all available variants for this stream
+	// Retrieve variants (single or master playlist)
 	variants, isMaster, err := r.getStreamVariants(stream.URL, stream.Source)
 	if err != nil {
 		if r.Config.Debug {
-			r.Logger.Printf("[VARIANT_ERROR] Channel %s: Error getting variants: %v", r.Channel.Name, err)
+			r.Logger.Printf("[STREAM_VARIANT_ERROR] Channel %s: Failed to get variants from stream %d: %v", r.Channel.Name, index, err)
 		}
 		return false, 0
 	}
 
+	// If master playlist → try all variants
 	if isMaster {
 		if r.Config.Debug {
-			r.Logger.Printf("[VARIANT_TEST] Channel %s: Testing %d variants from highest to lowest quality",
-				r.Channel.Name, len(variants))
+			r.Logger.Printf("[STREAM_MASTER] Channel %s: Master playlist detected with %d variants", r.Channel.Name, len(variants))
 		}
 
-		// Try each variant from highest to lowest quality
+		// loop over all viriants to test them
 		for i, variant := range variants {
 			if r.Config.Debug {
-				r.Logger.Printf("[VARIANT_TRY] Channel %s: Trying variant %d/%d - %s (%d kbps)",
-					r.Channel.Name, i+1, len(variants), variant.Resolution, variant.Bandwidth/1000)
+				r.Logger.Printf("[STREAM_MASTER_VARIANT] Channel %s: Testing variant %d (%s)", r.Channel.Name, i, variant.URL)
 			}
-
-			success, bytes := r.testAndStreamVariant(variant, stream.Source)
-			if success {
+			if ok, bytes := r.testAndStreamVariant(variant, stream.Source); ok {
 				if r.Config.Debug {
-					r.Logger.Printf("[VARIANT_SUCCESS] Channel %s: Variant %d worked - %s (%d kbps), streaming with %d bytes",
-						r.Channel.Name, i+1, variant.Resolution, variant.Bandwidth/1000, bytes)
+					r.Logger.Printf("[STREAM_MASTER_SUCCESS] Channel %s: Successfully streamed variant %d (%s)", r.Channel.Name, i, variant.URL)
 				}
 				return true, bytes
-			} else {
-				if r.Config.Debug {
-					r.Logger.Printf("[VARIANT_FAIL] Channel %s: Variant %d failed - %s (%d kbps)",
-						r.Channel.Name, i+1, variant.Resolution, variant.Bandwidth/1000)
-				}
 			}
 		}
+
+		// None of the variants succeeded
 		if r.Config.Debug {
-			r.Logger.Printf("[VARIANT_EXHAUSTED] Channel %s: All %d variants failed", r.Channel.Name, len(variants))
+			r.Logger.Printf("[STREAM_MASTER_FAILURE] Channel %s: All variants failed", r.Channel.Name)
 		}
 		return false, 0
-
-	} else {
-		// Single variant (media playlist or direct stream)
-		if r.Config.Debug {
-			r.Logger.Printf("[SINGLE_STREAM] Channel %s: Processing single stream/media playlist", r.Channel.Name)
-		}
-		return r.streamFromURL(variants[0].URL, stream.Source)
 	}
+
+	// If single URL, stream directly
+	return r.streamFromURL(variants[0].URL, stream.Source)
 }
 
-// getStreamVariants resolves master playlist and returns all variants
+// getStreamVariants fetches a stream URL and determines if it is a master playlist.
+// Returns:
+//   - []parser.StreamVariant: a list of parsed variants
+//   - bool: true if master playlist, false if single URL
+//   - error: any encountered error
 func (r *Restream) getStreamVariants(url string, source *config.SourceConfig) ([]parser.StreamVariant, bool, error) {
-	// Create master playlist handler
+
+	// Initialize a master playlist handler
 	masterHandler := parser.NewMasterPlaylistHandler(r.Logger, r.Config)
 
-	// Create request to check the playlist
+	// Build HTTP GET request for the stream URL
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, false, err
 	}
 
-	// Use context with timeout for playlist check
-	checkCtx, checkCancel := context.WithTimeout(r.Ctx, 15*time.Second)
-	defer checkCancel()
+	// Apply a timeout context for safety (15s)
+	checkCtx, cancel := context.WithTimeout(r.Ctx, 15*time.Second)
+	defer cancel()
 	req = req.WithContext(checkCtx)
 
-	// Use source-specific headers
+	// Execute HTTP request with custom headers from the source
 	resp, err := r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		return nil, false, err
 	}
 	defer resp.Body.Close()
 
+	// Non-200 response codes are considered fatal
 	if resp.StatusCode != http.StatusOK {
 		return nil, false, fmt.Errorf("HTTP %d response", resp.StatusCode)
 	}
 
-	// Check if this might be a master playlist based on response headers
+	// Decide whether to check the body as a potential master playlist
 	if !r.shouldCheckForMasterPlaylist(resp) {
-		if r.Config.Debug {
-			r.Logger.Printf("[PLAYLIST_CHECK] Channel %s: Response doesn't look like playlist", r.Channel.Name)
-		}
-		// Return single variant for direct stream
-		singleVariant := parser.StreamVariant{
-			URL:        url,
-			Bandwidth:  0,
-			Resolution: "unknown",
-		}
-		return []parser.StreamVariant{singleVariant}, false, nil
+
+		// If not, return single variant
+		return []parser.StreamVariant{{URL: url, Resolution: "unknown"}}, false, nil
 	}
 
-	// Read the response to check content
+	// Read the entire body for playlist parsing
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, false, err
 	}
 
-	content := string(body)
-	if r.Config.Debug {
-		r.Logger.Printf("[PLAYLIST_CONTENT] Channel %s: Downloaded %d bytes", r.Channel.Name, len(content))
-	}
-	// Process with master playlist handler
-	variants, isMaster, err := masterHandler.ProcessMasterPlaylistVariants(content, url, r.Channel.Name)
-	if err != nil {
-		return nil, false, err
-	}
-
-	return variants, isMaster, nil
+	// Parse the body as a master playlist and return variants
+	return masterHandler.ProcessMasterPlaylistVariants(string(body), url, r.Channel.Name)
 }
 
-// testAndStreamVariant tests a specific variant and streams if it works
+// testAndStreamVariant attempts to validate and stream from a variant URL.
+// - It fetches the variant and checks the first chunk of data.
+// - If the data resembles an HLS playlist (#EXTINF markers), it streams HLS segments.
+// - Otherwise, it streams directly from the variant URL.
+// Returns:
+//   - bool: success flag
+//   - int64: number of bytes streamed
 func (r *Restream) testAndStreamVariant(variant parser.StreamVariant, source *config.SourceConfig) (bool, int64) {
-	if r.Config.Debug {
-		r.Logger.Printf("[VARIANT_TEST_START] Testing variant: %s", utils.LogURL(r.Config, variant.URL))
-	}
 
+	// Build HTTP GET request for the variant
 	testReq, err := http.NewRequest("GET", variant.URL, nil)
 	if err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[VARIANT_TEST_ERROR] Error creating test request: %v", err)
-		}
 		return false, 0
 	}
 
-	testCtx, testCancel := context.WithTimeout(r.Ctx, 10*time.Second)
-	defer testCancel()
+	// Apply 10-second timeout for initial validation
+	testCtx, cancel := context.WithTimeout(r.Ctx, 10*time.Second)
+	defer cancel()
 	testReq = testReq.WithContext(testCtx)
 
-	// Use source-specific headers
+	// Execute the request
 	resp, err := r.HttpClient.DoWithHeaders(testReq, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[VARIANT_TEST_ERROR] Error testing variant: %v", err)
-		}
 		return false, 0
 	}
 	defer resp.Body.Close()
 
+	// Reject if status code is not OK
 	if resp.StatusCode != http.StatusOK {
-		if r.Config.Debug {
-			r.Logger.Printf("[VARIANT_TEST_ERROR] Variant returned HTTP %d", resp.StatusCode)
-		}
-
 		return false, 0
 	}
 
-	testBuffer := make([]byte, 8192)
+	// Read a small buffer to validate the response content
+	testBuffer := make([]byte, 8192) // 8 KB peek
 	n, err := resp.Body.Read(testBuffer)
-
 	if err != nil && err != io.EOF {
-		if r.Config.Debug {
-			r.Logger.Printf("[VARIANT_TEST_ERROR] Error reading test data: %v", err)
-		}
-
 		return false, 0
 	}
-
 	if n == 0 {
-		if r.Config.Debug {
-			r.Logger.Printf("[VARIANT_TEST_ERROR] No data received from variant")
-		}
-
 		return false, 0
 	}
 
+	// Convert to string for content inspection
 	content := string(testBuffer[:n])
 
-	// Check if this is HLS
-	if strings.Contains(content, "#EXTINF") || strings.Contains(content, "#EXT-X-TARGETDURATION") {
-		if r.Config.Debug {
-			r.Logger.Printf("[HLS_DETECTED] HLS media playlist detected")
-		}
-		// Check if this playlist contains tracking URLs
-		hasTrackingURLs := strings.Contains(content, "/beacon/") ||
-			strings.Contains(content, "redirect_url=") ||
-			strings.Contains(content, "bcn=") ||
-			strings.Contains(content, "seen-ad=")
-
-		if hasTrackingURLs {
-			if r.Config.Debug {
-				r.Logger.Printf("[HLS_TRACKING] Detected tracking URLs in playlist, skipping ffprobe validation")
-			}
-			// For streams with tracking URLs, skip ffprobe and try streaming directly
-			resp.Body.Close()
-			return r.streamHLSSegments(variant.URL)
-		} else {
-			// Standard HLS validation with ffprobe
-			if r.Config.Debug {
-				r.Logger.Printf("[HLS_STANDARD] Standard HLS playlist, testing with ffprobe")
-			}
-			result, _ := r.testStreamWithFFprobe(variant.URL)
-
-			switch result {
-			case "video":
-				if r.Config.Debug {
-					r.Logger.Printf("[HLS_VALID] Stream has valid video, starting segment streaming")
-				}
-				resp.Body.Close()
-				return r.streamHLSSegments(variant.URL)
-
-			case "timeout":
-				if r.Config.Debug {
-					r.Logger.Printf("[HLS_TIMEOUT] Stream caused ffprobe timeout - invalid stream, trying next")
-				}
-				return false, 0
-
-			case "invalid_format":
-				if r.Config.Debug {
-					r.Logger.Printf("[HLS_INVALID_FORMAT] Stream has invalid format, skipping")
-				}
-				return false, 0
-
-			case "error":
-				if r.Config.Debug {
-					r.Logger.Printf("[HLS_ERROR] ffprobe error but no timeout - might work with proxying")
-				}
-				resp.Body.Close()
-				return r.streamHLSSegments(variant.URL)
-
-			case "no_video":
-				if r.Config.Debug {
-					r.Logger.Printf("[HLS_NO_VIDEO] No video stream found, trying next variant")
-				}
-				return false, 0
-
-			default:
-				if r.Config.Debug {
-					r.Logger.Printf("[HLS_UNKNOWN] Unknown ffprobe result: %s, attempting to stream anyway", result)
-				}
-				resp.Body.Close()
-				return r.streamHLSSegments(variant.URL)
-			}
-		}
+	// If this looks like an HLS playlist (contains EXTINF tags)
+	if strings.Contains(content, "#EXTINF") {
+		// Use HLS segment streaming method
+		return r.streamHLSSegments(variant.URL)
 	}
-	if r.Config.Debug {
-		r.Logger.Printf("[VARIANT_TEST_SUCCESS] Direct stream variant, got %d test bytes", n)
-	}
-	resp.Body.Close()
 
+	// Otherwise, stream directly from the URL
 	return r.streamFromURL(variant.URL, source)
 }
 
-// shouldCheckForMasterPlaylist determines if response might be a master playlist
+// shouldCheckForMasterPlaylist decides whether a given HTTP response
+// should be parsed as a potential master playlist.
+// Criteria:
+//   - Content-Type contains "mpegurl" or "m3u8"
+//   - Content-Length is below 100 KB (heuristic for playlists)
 func (r *Restream) shouldCheckForMasterPlaylist(resp *http.Response) bool {
+
+	// get the content type and length
 	contentType := resp.Header.Get("Content-Type")
 	contentLength := resp.Header.Get("Content-Length")
 
-	// Check for M3U8 content type
+	// Check content-type header
 	if strings.Contains(strings.ToLower(contentType), "mpegurl") ||
 		strings.Contains(strings.ToLower(contentType), "m3u8") {
 		return true
 	}
 
-	// Check for small content length (master playlists are typically small)
+	// If length is very small, it’s likely a playlist
 	if contentLength != "" {
 		if length, err := strconv.ParseInt(contentLength, 10, 64); err == nil {
-			// Master playlists are typically under 100KB
-			if length > 0 && length < 100*1024 {
+			if length > 0 && length < 100*1024 { // under 100 KB
 				return true
 			}
 		}
@@ -643,209 +608,206 @@ func (r *Restream) shouldCheckForMasterPlaylist(resp *http.Response) bool {
 	return false
 }
 
-// streamFromURL handles the actual streaming from a resolved URL
+// streamFromURL handles the main streaming loop for a single direct URL.
+// It continuously reads data from the source and distributes it to clients
+// until cancelled, an error occurs, or clients disconnect.
+//
+// Parameters:
+//   - url: the stream URL to fetch
+//   - source: the source configuration (headers, limits, etc.)
+//
+// Returns:
+//   - bool: success flag
+//   - int64: total number of bytes streamed
 func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool, int64) {
-	if r.Config.Debug {
-		r.Logger.Printf("[STREAMING_START] Channel %s: Starting stream from %s", r.Channel.Name, utils.LogURL(r.Config, url))
-	}
 
-	// Create request with reasonable timeout
+	// Construct HTTP request for the stream URL
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		if r.Config.Debug {
-			r.Logger.Printf("Error creating request for channel %s: %v", r.Channel.Name, err)
+			r.Logger.Printf("[STREAM_REQUEST_ERROR] Channel %s: Failed to create request for %s: %v",
+				r.Channel.Name, url, err)
 		}
 		return false, 0
 	}
 
-	// Use context without timeout for streaming (let it run until cancelled)
+	// Attach cancellable context to the request
 	req = req.WithContext(r.Ctx)
 
-	// Use source-specific headers
+	// Execute HTTP request with source-specific headers
 	resp, err := r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		if r.Config.Debug {
-			r.Logger.Printf("Error connecting to stream for %s: %v", r.Channel.Name, err)
-			r.Logger.Printf("[STREAM_ERROR] Channel %s: Connection error: %v", r.Channel.Name, err)
+			r.Logger.Printf("[STREAM_CONNECT_ERROR] Channel %s: Failed to connect to %s: %v",
+				r.Channel.Name, url, err)
 		}
-		metrics.StreamErrors.WithLabelValues(r.Channel.Name, "connection").Inc()
 		return false, 0
 	}
+	defer resp.Body.Close()
 
-	// CRITICAL: Always close response body
-	defer func() {
-		resp.Body.Close()
-		if r.Config.Debug {
-			r.Logger.Printf("[CONNECTION_CLOSE] Channel %s: HTTP connection closed", r.Channel.Name)
-		}
-	}()
-
+	// Reject on bad HTTP status
 	if resp.StatusCode != http.StatusOK {
 		if r.Config.Debug {
-			r.Logger.Printf("HTTP %d from upstream for channel %s", resp.StatusCode, r.Channel.Name)
+			r.Logger.Printf("[STREAM_HTTP_ERROR] Channel %s: %s returned HTTP %d",
+				r.Channel.Name, url, resp.StatusCode)
 		}
-		metrics.StreamErrors.WithLabelValues(r.Channel.Name, fmt.Sprintf("http_%d", resp.StatusCode)).Inc()
 		return false, 0
 	}
-	if r.Config.Debug {
-		r.Logger.Printf("[CONNECTED] Channel %s: Streaming from resolved URL", r.Channel.Name)
-	}
-	metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(1)
 
-	// Stream data with frequent cancellation checks
-	buffer := make([]byte, (r.Config.BufferSizePerStream * 1024 * 1024))
-	totalBytes := int64(0)
+	// Track total bytes streamed
+	var totalBytes int64
 
-	// Set a deadline for receiving first data
-	firstDataTimer := time.NewTimer(15 * time.Second) // Increased timeout for variants
-	defer firstDataTimer.Stop()
-	firstData := true
-	lastDataTime := time.Now()
+	// Allocate reusable buffer
+	buf := make([]byte, 32*1024) // 32 KB chunks
 
-	// Get source-specific MinDataSize
-	minDataSize := source.MinDataSize * 1024
-
+	// fire up a loop
 	for {
-		// Check for cancellation more frequently
+
+		// Check if streaming context was cancelled
 		select {
 		case <-r.Ctx.Done():
 			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_CANCELLED] Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
+				r.Logger.Printf("[STREAM_CANCELLED] Channel %s: Context cancelled during stream", r.Channel.Name)
 			}
-			return totalBytes >= minDataSize, totalBytes
-		case <-firstDataTimer.C:
-			if firstData && totalBytes == 0 {
-				if r.Config.Debug {
-					r.Logger.Printf("[STREAM_ERROR] Channel %s: No data received in 15 seconds", r.Channel.Name)
-				}
-				return false, 0
-			}
+			return true, totalBytes
 		default:
 		}
 
-		// Check for data timeout (no data for 30 seconds)
-		if !firstData && time.Since(lastDataTime) > 30*time.Second {
-			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_TIMEOUT] Channel %s: No data for 30 seconds, ending stream", r.Channel.Name)
-			}
-			return totalBytes >= minDataSize, totalBytes
-		}
-
-		n, err := resp.Body.Read(buffer)
+		// Read from the HTTP body
+		n, err := resp.Body.Read(buf)
 		if n > 0 {
-			if firstData {
-				firstData = false
-				firstDataTimer.Stop()
-				if r.Config.Debug {
-					r.Logger.Printf("[STREAM_DATA] Channel %s: First video data received", r.Channel.Name)
-				}
-			}
 
-			lastDataTime = time.Now()
-			data := buffer[:n]
-			if !r.SafeBufferWrite(data) {
+			// Slice to only include actual bytes read
+			chunk := buf[:n]
+
+			// Write into buffer safely
+			if !r.SafeBufferWrite(chunk) {
+				if r.Config.Debug {
+					r.Logger.Printf("[STREAM_BUFFER_ERROR] Channel %s: Buffer write failed", r.Channel.Name)
+				}
 				return false, totalBytes
 			}
+
+			// Distribute chunk to all active clients
+			activeClients := r.DistributeToClients(chunk)
+
+			// Update byte counter
 			totalBytes += int64(n)
-			metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
 
-			// Send to all clients and check if any disconnected
-			activeClients := r.DistributeToClients(data)
-			if activeClients == 0 {
-				if r.Config.Debug {
-					r.Logger.Printf("[STREAM_STOP] Channel %s: No active clients", r.Channel.Name)
-				}
-				return totalBytes >= minDataSize, totalBytes
+			// Update Prometheus metrics
+			metrics.BytesTransferred.WithLabelValues(r.Channel.Name).Add(float64(n))
+			metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(float64(activeClients))
+
+			// Debug log every 1 MB
+			if r.Config.Debug && totalBytes%(1024*1024) < int64(n) {
+				r.Logger.Printf("[STREAM_PROGRESS] Channel %s: Streamed %d MB",
+					r.Channel.Name, totalBytes/(1024*1024))
 			}
-
 		}
 
+		// Handle read errors
 		if err != nil {
+
+			// EOF → end of stream gracefully
 			if err == io.EOF {
 				if r.Config.Debug {
-					r.Logger.Printf("Stream ended normally for channel %s after %d bytes", r.Channel.Name, totalBytes)
+					r.Logger.Printf("[STREAM_EOF] Channel %s: Source ended", r.Channel.Name)
 				}
-				return totalBytes >= minDataSize, totalBytes
+				return true, totalBytes
 			}
 
-			// Check if error is due to context cancellation
-			select {
-			case <-r.Ctx.Done():
-				if r.Config.Debug {
-					r.Logger.Printf("[STREAM_CANCELLED] Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
-				}
-				return totalBytes >= minDataSize, totalBytes
-			default:
-				if r.Config.Debug {
-					r.Logger.Printf("Error reading stream for channel %s after %d bytes: %v", r.Channel.Name, totalBytes, err)
-					r.Logger.Printf("[STREAM_ERROR] Channel %s: Error after %d bytes: %s", r.Channel.Name, totalBytes, err.Error())
-				}
-				metrics.StreamErrors.WithLabelValues(r.Channel.Name, "read").Inc()
-				return false, totalBytes
+			// Any other error → failure
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_READ_ERROR] Channel %s: %v", r.Channel.Name, err)
 			}
+			return false, totalBytes
 		}
 	}
 }
 
-// distribute the streams to the client
+// DistributeToClients sends a chunk of stream data to all active clients.
+// Clients that fail to receive data are removed.
+//
+// Parameters:
+//   - data: TS/HLS chunk of stream data
+//
+// Returns:
+//   - int: number of active clients remaining after distribution
 func (r *Restream) DistributeToClients(data []byte) int {
+
+	// initial active clients
 	activeClients := 0
 
+	// Iterate over all connected clients
 	r.Clients.Range(func(key, value interface{}) bool {
-		id := key.(string)
 		client := value.(*types.RestreamClient)
 
-		select {
-		case <-client.Done:
-			return true
-		default:
-			_, writeErr := client.Writer.Write(data)
-			if writeErr != nil {
-				if r.Config.Debug {
-					r.Logger.Printf("Write error to client %s: %v (keeping client active for HLS buffering)", id, writeErr)
-				}
-				// Don't fail immediately on write errors for HLS - client might be buffering
-				// Update last seen anyway to prevent premature cleanup
-				client.LastSeen.Store(time.Now().Unix())
-				activeClients++
-			} else {
-				client.Flusher.Flush()
-				client.LastSeen.Store(time.Now().Unix())
-				metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "upstream").Add(float64(len(data)))
-				activeClients++
+		// Attempt to write data to client
+		_, err := client.Writer.Write(data)
+		if err != nil {
+
+			// Remove failed client
+			if r.Config.Debug {
+				r.Logger.Printf("[CLIENT_WRITE_ERROR] Channel %s: Client %s write failed: %v",
+					r.Channel.Name, client.Id, err)
 			}
+			r.RemoveClient(client.Id)
+			return true
 		}
+
+		// Flush data immediately
+		client.Flusher.Flush()
+
+		// Update last seen timestamp
+		client.LastSeen.Store(time.Now().Unix())
+
+		// Count client as active
+		activeClients++
+
 		return true
 	})
 
+	// return the active clients
 	return activeClients
 }
 
+// SafeBufferWrite writes data to the buffer if it is still valid.
+// It ensures data is not written if the buffer has been destroyed
+// or the streaming context is cancelled.
+//
+// Parameters:
+//   - data: the byte slice to write into the buffer
+//
+// Returns:
+//   - bool: true if write succeeded, false if buffer closed/cancelled
 func (r *Restream) SafeBufferWrite(data []byte) bool {
-	// Don't check buffer if context is cancelled
+
+	// Abort if context cancelled
 	select {
 	case <-r.Ctx.Done():
 		return false
 	default:
 	}
 
+	// Check buffer validity
 	if r.Buffer == nil || r.Buffer.IsDestroyed() {
-		if r.Config.Debug {
-			r.Logger.Printf("[BUFFER_INVALID] Channel %s: Cannot write to invalid buffer", r.Channel.Name)
-		}
 		return false
 	}
 
+	// Perform write into ring buffer
 	r.Buffer.Write(data)
 	return true
 }
 
-// WatcherStreamFromSource allows the watcher to use existing streaming logic
+// WatcherStreamFromSource provides an external entry point
+// for observers/watchers to call StreamFromSource.
+// This is useful for testing or monitoring streams.
 func (r *Restream) WatcherStreamFromSource(index int) (bool, int64) {
 	return r.StreamFromSource(index)
 }
 
-// WatcherStream allows the watcher to use the existing Stream method
+// WatcherStream provides an external entry point for observers
+// to run the full Stream loop directly.
 func (r *Restream) WatcherStream() {
 	r.Stream()
 }

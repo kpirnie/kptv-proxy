@@ -39,6 +39,7 @@ docker-compose.yaml
 
 # Log files
 *.log
+*.txt
 logs/
 
 # Temporary files

@@ -18,6 +18,9 @@ import (
 	"github.com/grafov/m3u8"
 )
 
+// ParseM3U8 fetches and parses an M3U8 playlist from the given URL, using source-specific headers.
+// It first attempts to parse with the grafov/m3u8 library, and falls back to a custom parser if that fails.
+// Returns a slice of Stream objects extracted from the playlist, or nil if parsing fails.
 func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig) []*types.Stream {
 	if cfg.Debug {
 		logger.Printf("Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
@@ -124,6 +127,9 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 	return ParseM3U8Fallback(resp2.Body, source, cfg, logger)
 }
 
+// ParseWithGrafov processes a parsed M3U8 playlist using the grafov/m3u8 library.
+// Handles both master playlists (with variants) and media playlists (direct streams).
+// Returns a slice of Stream objects extracted from the playlist.
 func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *config.SourceConfig, cfg *config.Config, logger *log.Logger) []*types.Stream {
 	var streams []*types.Stream
 
@@ -177,6 +183,9 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 	return streams
 }
 
+// ParseM3U8Fallback provides a fallback parsing mechanism for M3U8 playlists when the grafov parser fails.
+// It manually scans the playlist content line by line to extract stream information.
+// Returns a slice of Stream objects extracted from the playlist.
 func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *config.Config, logger *log.Logger) []*types.Stream {
 	var streams []*types.Stream
 	scanner := bufio.NewScanner(reader)
@@ -219,6 +228,9 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 	return streams
 }
 
+// ParseEXTINF parses an EXTINF line from an M3U8 playlist and extracts attributes.
+// The line format is: #EXTINF:duration [attribute=value]..., "Channel Name"
+// Returns a map containing duration, channel name, and any additional attributes.
 func ParseEXTINF(line string) map[string]string {
 	attrs := make(map[string]string)
 
@@ -270,6 +282,9 @@ func ParseEXTINF(line string) map[string]string {
 	return attrs
 }
 
+// SortStreams sorts a slice of Stream objects based on configuration settings.
+// Primary sort is by source order (lower order = higher priority), secondary sort
+// is by the configured field (bandwidth, resolution, etc.) in the specified direction.
 func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string) {
 	if cfg.Debug && len(streams) > 1 {
 		log.Printf("[SORT_BEFORE] Channel %s: Sorting %d streams by source order, then by %s (%s)",

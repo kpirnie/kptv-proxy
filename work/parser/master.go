@@ -1,4 +1,3 @@
-// work/parser/master.go - Enhanced with variant testing
 package parser
 
 import (
@@ -14,23 +13,23 @@ import (
 	"strings"
 )
 
-// StreamVariant represents a single variant in a master playlist
+// StreamVariant represents a single variant in a master playlist with its metadata.
 type StreamVariant struct {
-	URL              string
-	Bandwidth        int
-	AverageBandwidth int
-	Resolution       string
-	Codecs           string
-	FrameRate        string
+	URL              string // The URL of the variant stream
+	Bandwidth        int    // Bandwidth in bits per second
+	AverageBandwidth int    // Average bandwidth in bits per second (optional)
+	Resolution       string // Video resolution (e.g., "1280x720")
+	Codecs           string // Codec information
+	FrameRate        string // Frame rate (e.g., "30.000")
 }
 
-// MasterPlaylistHandler handles master playlist parsing and variant selection
+// MasterPlaylistHandler handles master playlist parsing, variant selection, and URL resolution.
 type MasterPlaylistHandler struct {
 	logger *log.Logger
 	config *config.Config
 }
 
-// NewMasterPlaylistHandler creates a new master playlist handler
+// NewMasterPlaylistHandler creates a new master playlist handler instance.
 func NewMasterPlaylistHandler(logger *log.Logger, config *config.Config) *MasterPlaylistHandler {
 	return &MasterPlaylistHandler{
 		logger: logger,
@@ -38,17 +37,18 @@ func NewMasterPlaylistHandler(logger *log.Logger, config *config.Config) *Master
 	}
 }
 
-// IsMasterPlaylist checks if the content is a master playlist
+// IsMasterPlaylist checks if the content contains master playlist indicators (#EXT-X-STREAM-INF tags).
 func (mph *MasterPlaylistHandler) IsMasterPlaylist(content string) bool {
 	return strings.Contains(content, "#EXT-X-STREAM-INF")
 }
 
-// IsMediaPlaylist checks if the content is a media playlist
+// IsMediaPlaylist checks if the content contains media playlist indicators (#EXTINF or #EXT-X-TARGETDURATION tags).
 func (mph *MasterPlaylistHandler) IsMediaPlaylist(content string) bool {
 	return strings.Contains(content, "#EXTINF") || strings.Contains(content, "#EXT-X-TARGETDURATION")
 }
 
-// ParseMasterPlaylist parses a master playlist and returns available variants
+// ParseMasterPlaylist parses a master playlist content and extracts all available stream variants.
+// Returns a slice of StreamVariant objects sorted by bandwidth (highest first).
 func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL string) ([]StreamVariant, error) {
 	var variants []StreamVariant
 
@@ -100,7 +100,8 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 	return variants, nil
 }
 
-// ProcessMasterPlaylist handles master playlist detection and variant selection (original method for backward compatibility)
+// ProcessMasterPlaylist handles master playlist detection and variant selection (original method for backward compatibility).
+// Returns the selected variant URL, a boolean indicating if it was a master playlist, and any error.
 func (mph *MasterPlaylistHandler) ProcessMasterPlaylist(content string, originalURL string, channelName string) (string, bool, error) {
 	// Check what type of playlist this is
 	if mph.IsMasterPlaylist(content) {
@@ -152,7 +153,7 @@ func (mph *MasterPlaylistHandler) ProcessMasterPlaylist(content string, original
 	}
 }
 
-// parseStreamInf parses a #EXT-X-STREAM-INF line
+// parseStreamInf parses a #EXT-X-STREAM-INF line and extracts variant attributes.
 func (mph *MasterPlaylistHandler) parseStreamInf(line string) (StreamVariant, error) {
 	variant := StreamVariant{}
 
@@ -188,7 +189,8 @@ func (mph *MasterPlaylistHandler) parseStreamInf(line string) (StreamVariant, er
 	return variant, nil
 }
 
-// parseAttributes parses key=value pairs from a parameter string
+// parseAttributes parses key=value pairs from a parameter string using regex.
+// Handles quoted values and returns a map of attribute names to values.
 func (mph *MasterPlaylistHandler) parseAttributes(params string) map[string]string {
 	attributes := make(map[string]string)
 
@@ -207,7 +209,8 @@ func (mph *MasterPlaylistHandler) parseAttributes(params string) map[string]stri
 	return attributes
 }
 
-// resolveURL resolves a potentially relative URL against a base URL
+// resolveURL resolves a potentially relative URL against a base URL.
+// Returns the absolute URL, or the original URL if resolution fails.
 func (mph *MasterPlaylistHandler) resolveURL(streamURL, baseURL string) string {
 	// If it's already an absolute URL, return as-is
 	if strings.HasPrefix(streamURL, "http://") || strings.HasPrefix(streamURL, "https://") {
@@ -250,7 +253,8 @@ func (mph *MasterPlaylistHandler) resolveURL(streamURL, baseURL string) string {
 	return resolved.String()
 }
 
-// SelectVariant selects the best variant based on strategy
+// SelectVariant selects the best variant based on the specified quality strategy.
+// Supported strategies: "lowest", "highest", "medium", "720p".
 func (mph *MasterPlaylistHandler) SelectVariant(variants []StreamVariant, strategy string) StreamVariant {
 	if len(variants) == 0 {
 		return StreamVariant{}
@@ -286,7 +290,8 @@ func (mph *MasterPlaylistHandler) SelectVariant(variants []StreamVariant, strate
 	}
 }
 
-// ProcessMasterPlaylist handles master playlist detection and returns ALL variants for testing
+// ProcessMasterPlaylistVariants handles master playlist detection and returns ALL variants for testing purposes.
+// Returns a slice of variants, a boolean indicating if it was a master playlist, and any error.
 func (mph *MasterPlaylistHandler) ProcessMasterPlaylistVariants(content string, originalURL string, channelName string) ([]StreamVariant, bool, error) {
 	if mph.IsMasterPlaylist(content) {
 		variants, err := mph.ParseMasterPlaylist(content, originalURL)
@@ -303,7 +308,8 @@ func (mph *MasterPlaylistHandler) ProcessMasterPlaylistVariants(content string, 
 	}
 }
 
-// GetVariantsOrderedByQuality returns variants ordered from highest to lowest quality
+// GetVariantsOrderedByQuality returns variants ordered from highest to lowest quality (bandwidth).
+// Creates a copy of the input slice to avoid modifying the original.
 func (mph *MasterPlaylistHandler) GetVariantsOrderedByQuality(variants []StreamVariant) []StreamVariant {
 	// Make a copy to avoid modifying the original slice
 	orderedVariants := make([]StreamVariant, len(variants))

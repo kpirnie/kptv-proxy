@@ -15,7 +15,9 @@ import (
 	"time"
 )
 
-// test the stream with FFProbe
+// testStreamWithFFprobe tests a stream URL using FFprobe to validate stream viability.
+// Returns a result string ("video", "timeout", "invalid_format", "no_video", "error") and error.
+// Handles tracking URLs by attempting to resolve redirects before testing.
 func (r *Restream) testStreamWithFFprobe(streamURL string) (string, error) {
 	// Check if this looks like a tracking URL that might need special handling
 	if strings.Contains(streamURL, "/beacon/") || strings.Contains(streamURL, "redirect_url") {
@@ -144,7 +146,9 @@ func (r *Restream) testStreamWithFFprobe(streamURL string) (string, error) {
 	return "no_video", fmt.Errorf("no video stream found")
 }
 
-// stream url segments
+// streamHLSSegments continuously streams HLS segments from a playlist URL.
+// Returns true if any bytes were streamed successfully, and the total bytes streamed.
+// Implements memory management by cleaning up old segments to prevent memory growth.
 func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	if r.Config.Debug {
 		r.Logger.Printf("[HLS_STREAM] Starting HLS segment streaming for: %s", utils.LogURL(r.Config, playlistURL))
@@ -252,7 +256,9 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	}
 }
 
-// Enhanced getHLSSegments function to handle redirect URLs
+// getHLSSegments fetches and parses an HLS playlist to extract segment URLs.
+// Handles both absolute and relative URLs, and resolves tracking/redirect URLs.
+// Returns a slice of segment URLs or an error if the playlist cannot be fetched/parsed.
 func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	// Get source config for headers
 	source := r.Config.GetSourceByURL(playlistURL)
@@ -331,6 +337,8 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	return segments, nil
 }
 
+// resolveRedirectURL attempts to extract and decode a redirect URL from tracking/beacon URLs.
+// Returns the resolved URL if found, or empty string if no redirect URL can be extracted.
 func (r *Restream) resolveRedirectURL(segmentURL string) string {
 	// Parse the URL to extract redirect_url parameter
 	if strings.Contains(segmentURL, "redirect_url=") {
@@ -357,7 +365,9 @@ func (r *Restream) resolveRedirectURL(segmentURL string) string {
 	return ""
 }
 
-// Enhanced streamSegment to handle tracking URLs
+// streamSegment fetches and streams a single HLS segment to connected clients.
+// Handles tracking URLs by resolving redirects and applies appropriate headers.
+// Returns the number of bytes streamed or an error if the segment cannot be fetched/streamed.
 func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) {
 	// Get source config for headers
 	source := r.Config.GetSourceByURL(playlistURL)

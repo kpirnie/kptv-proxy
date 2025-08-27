@@ -69,3 +69,13 @@ type RestreamClient struct {
 	Done     chan bool
 	LastSeen atomic.Int64
 }
+
+// stream health data, primarily for the stream watcher
+type StreamHealthData struct {
+	HasVideo   bool
+	HasAudio   bool
+	Bitrate    int64
+	FPS        float64
+	Resolution string
+	Valid      bool
+}
