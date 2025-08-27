@@ -8,8 +8,102 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
+
+// SegmentTracker uses a circular buffer approach to track processed segments
+// with bounded memory usage and efficient lookups
+type SegmentTracker struct {
+	segments    []string       // Circular buffer of segment URLs
+	segmentMap  map[string]int // Maps segment URL to position in buffer
+	head        int            // Current head position in circular buffer
+	maxSize     int            // Maximum number of segments to track
+	currentSize int            // Current number of segments in tracker
+	mutex       sync.RWMutex   // Protects concurrent access
+}
+
+// NewSegmentTracker creates a new segment tracker with bounded memory
+func NewSegmentTracker(maxSize int) *SegmentTracker {
+	return &SegmentTracker{
+		segments:    make([]string, maxSize),
+		segmentMap:  make(map[string]int),
+		maxSize:     maxSize,
+		head:        0,
+		currentSize: 0,
+	}
+}
+
+// HasProcessed checks if a segment has been processed recently
+func (st *SegmentTracker) HasProcessed(segmentURL string) bool {
+	st.mutex.RLock()
+	defer st.mutex.RUnlock()
+
+	_, exists := st.segmentMap[segmentURL]
+	return exists
+}
+
+// MarkProcessed marks a segment as processed, automatically handling cleanup
+func (st *SegmentTracker) MarkProcessed(segmentURL string) {
+	st.mutex.Lock()
+	defer st.mutex.Unlock()
+
+	// If we're at capacity, remove the oldest segment
+	if st.currentSize >= st.maxSize {
+		// Remove the segment that's about to be overwritten
+		oldSegment := st.segments[st.head]
+		if oldSegment != "" {
+			delete(st.segmentMap, oldSegment)
+		}
+	} else {
+		st.currentSize++
+	}
+
+	// Add new segment at head position
+	st.segments[st.head] = segmentURL
+	st.segmentMap[segmentURL] = st.head
+
+	// Move head to next position (circular)
+	st.head = (st.head + 1) % st.maxSize
+}
+
+// Size returns the current number of tracked segments
+func (st *SegmentTracker) Size() int {
+	st.mutex.RLock()
+	defer st.mutex.RUnlock()
+	return st.currentSize
+}
+
+// Clear removes all tracked segments (useful for cleanup)
+func (st *SegmentTracker) Clear() {
+	st.mutex.Lock()
+	defer st.mutex.Unlock()
+
+	// Clear the map
+	st.segmentMap = make(map[string]int)
+
+	// Clear the slice
+	for i := range st.segments {
+		st.segments[i] = ""
+	}
+
+	st.head = 0
+	st.currentSize = 0
+}
+
+// GetTrackedSegments returns a copy of currently tracked segments (for debugging)
+func (st *SegmentTracker) GetTrackedSegments() []string {
+	st.mutex.RLock()
+	defer st.mutex.RUnlock()
+
+	result := make([]string, 0, st.currentSize)
+	for _, segment := range st.segments {
+		if segment != "" {
+			result = append(result, segment)
+		}
+	}
+	return result
+}
 
 // streamHLSSegments implements continuous HLS segment streaming from a master or media playlist URL,
 // managing the complete lifecycle of segment discovery, fetching, and distribution to connected clients.
@@ -38,10 +132,10 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	}
 
 	totalBytes := int64(0)
-	processedSegments := make(map[string]bool) // Track processed segments by URL to avoid duplicates
-	maxSegmentsInMemory := 10                  // Memory limit: retain only recent segments in cache
 
-	// Main streaming loop continues until context cancellation or client disconnection
+	// IMPROVED: Use a circular buffer approach for segment tracking
+	segmentTracker := NewSegmentTracker(20) // Keep track of last 20 segments
+
 	for {
 		select {
 		case <-r.Ctx.Done():
@@ -49,7 +143,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		default:
 		}
 
-		// Verify active clients remain connected before continuing
+		// Check if we still have clients
 		clientCount := 0
 		r.Clients.Range(func(_, _ interface{}) bool {
 			clientCount++
@@ -63,7 +157,6 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			return totalBytes > 0, totalBytes
 		}
 
-		// Fetch updated playlist and extract segment URLs
 		segments, err := r.getHLSSegments(playlistURL)
 		if err != nil {
 			if r.Config.Debug {
@@ -71,21 +164,22 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			}
 			return false, totalBytes
 		}
+
 		if r.Config.Debug {
 			r.Logger.Printf("[HLS_PLAYLIST_REFRESH] Found %d segments", len(segments))
 		}
 
-		// Process only new segments that haven't been streamed previously
+		// Stream new segments only
 		newSegmentCount := 0
 		for _, segmentURL := range segments {
-			if processedSegments[segmentURL] {
-				continue // Skip segments already processed
+			if segmentTracker.HasProcessed(segmentURL) {
+				continue // Skip already processed segments
 			}
+
 			if r.Config.Debug {
 				r.Logger.Printf("[HLS_SEGMENT_NEW] Processing new segment: %s", utils.LogURL(r.Config, segmentURL))
 			}
 
-			// Stream individual segment and accumulate byte count
 			segmentBytes, err := r.streamSegment(segmentURL, playlistURL)
 			if err != nil {
 				if r.Config.Debug {
@@ -94,47 +188,22 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 				continue
 			}
 
-			// Mark segment as processed and update statistics
-			processedSegments[segmentURL] = true
+			// Mark as processed (automatically handles cleanup)
+			segmentTracker.MarkProcessed(segmentURL)
 			totalBytes += segmentBytes
 			newSegmentCount++
+
 			if r.Config.Debug {
 				r.Logger.Printf("[HLS_SEGMENT] Streamed segment: %d bytes", segmentBytes)
 			}
 		}
 
 		if r.Config.Debug && newSegmentCount > 0 {
-			r.Logger.Printf("[HLS_BATCH] Streamed %d new segments", newSegmentCount)
+			r.Logger.Printf("[HLS_BATCH] Streamed %d new segments, tracker size: %d",
+				newSegmentCount, segmentTracker.Size())
 		}
 
-		// Implement aggressive segment cache cleanup to prevent memory growth
-		if len(processedSegments) > maxSegmentsInMemory {
-
-			// Create new cache containing only recent segments
-			newProcessed := make(map[string]bool)
-			keepCount := maxSegmentsInMemory / 2 // Retain half of limit for efficiency
-
-			// Keep only the most recent segments from current playlist
-			startIdx := len(segments) - keepCount
-			if startIdx < 0 {
-				startIdx = 0
-			}
-
-			for i := startIdx; i < len(segments); i++ {
-				if processedSegments[segments[i]] {
-					newProcessed[segments[i]] = true
-				}
-			}
-
-			// Replace entire map to free memory from old segment references
-			processedSegments = newProcessed
-
-			if r.Config.Debug {
-				r.Logger.Printf("[HLS_CLEANUP] Cleaned segment cache, kept %d recent segments", len(newProcessed))
-			}
-		}
-
-		// Wait before next playlist refresh with reasonable interval for live streams
+		// Wait before next playlist refresh
 		select {
 		case <-r.Ctx.Done():
 			return totalBytes > 0, totalBytes
