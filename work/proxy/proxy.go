@@ -151,10 +151,25 @@ func (sp *StreamProxy) ImportStreams() {
 			// Get rate limiter for this source
 			rateLimiter := sp.getRateLimiterForSource(src)
 
-			// Parse M3U8 playlist and extract individual stream definitions
-			streams := parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter)
+			// pull and parse the streams based on the username/password passed
+			var streams []*types.Stream
+			if src.Username != "" && src.Password != "" {
+
+				// Use Xtreme Codes API parser when credentials are available
+				streams = parser.ParseXtremeCodesAPI(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter)
+			} else {
+
+				// Use standard M3U8 parser
+				streams = parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter)
+			}
+
+			// debug logging
 			if sp.Config.Debug {
-				sp.Logger.Printf("Parsed %d streams from source: %s", len(streams), utils.LogURL(sp.Config, src.URL))
+				if src.Username != "" && src.Password != "" {
+					sp.Logger.Printf("Parsed %d streams from Xtreme Codes API: %s", len(streams), utils.LogURL(sp.Config, src.URL))
+				} else {
+					sp.Logger.Printf("Parsed %d streams from M3U8 source: %s", len(streams), utils.LogURL(sp.Config, src.URL))
+				}
 			}
 
 			// Aggregate streams by channel name, supporting multiple sources per channel
