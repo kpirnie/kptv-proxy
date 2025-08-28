@@ -27,6 +27,7 @@ type Config struct {
 	StreamTimeout         time.Duration  `json:"streamTimeout"`         // Timeout for stream operations
 	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"`   // Maximum concurrent connections allowed to the app
 	Sources               []SourceConfig `json:"sources"`               // List of configured stream sources
+	WatcherEnabled        bool           `json:"watcherEnabled"`
 }
 
 // SourceConfig represents the configuration for a single stream source.
@@ -64,6 +65,7 @@ type ConfigFile struct {
 	StreamTimeout         string             `json:"streamTimeout"` // Duration as string (e.g., "10s")
 	MaxConnectionsToApp   int                `json:"maxConnectionsToApp"`
 	Sources               []SourceConfigFile `json:"sources"`
+	WatcherEnabled        bool               `json:"watcherEnabled"`
 }
 
 // SourceConfigFile represents the source configuration in JSON format.
@@ -187,6 +189,7 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		SortField:           cf.SortField,
 		SortDirection:       cf.SortDirection,
 		MaxConnectionsToApp: cf.MaxConnectionsToApp,
+		WatcherEnabled:      cf.WatcherEnabled,
 	}
 
 	// Parse duration fields
@@ -246,6 +249,7 @@ func getDefaultConfig() *Config {
 		StreamTimeout:         10 * time.Second, // Default stream timeout
 		MaxConnectionsToApp:   100,              // Default connection limit
 		Sources:               []SourceConfig{}, // No sources configured
+		WatcherEnabled:        true,
 	}
 }
 

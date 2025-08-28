@@ -77,6 +77,14 @@ class KPTVAdmin {
         document.getElementById('log-level').addEventListener('change', (e) => {
             this.filterLogs(e.target.value);
         });
+
+        // Watcher toggle
+        const watcherCheckbox = document.querySelector('input[name="watcherEnabled"]');
+        if (watcherCheckbox) {
+            watcherCheckbox.addEventListener('change', (e) => {
+                this.toggleWatcher(e.target.checked);
+            });
+        }
     }
 
     startAutoRefresh() {
@@ -165,6 +173,12 @@ class KPTVAdmin {
                 }
             }
         });
+
+        // Handle watcherEnabled specifically if not in config
+        const watcherCheckbox = form.querySelector('input[name="watcherEnabled"]');
+        if (watcherCheckbox && config.watcherEnabled !== undefined) {
+            watcherCheckbox.checked = config.watcherEnabled;
+        }
     }
 
     async saveGlobalSettings() {
@@ -527,6 +541,14 @@ class KPTVAdmin {
         document.getElementById('active-restreamers').textContent = stats.activeRestreamers || 0;
         document.getElementById('stream-errors').textContent = stats.streamErrors || 0;
         document.getElementById('response-time').textContent = stats.responseTime || '0ms';
+
+        // Update watcher status
+        const watcherStatus = stats.watcherEnabled ? 'Enabled' : 'Disabled';
+        const watcherElement = document.getElementById('watcher-status');
+        if (watcherElement) {
+            watcherElement.textContent = watcherStatus;
+            watcherElement.className = `watcher-status ${stats.watcherEnabled ? 'enabled' : 'disabled'}`;
+        }
     }
 
     // Channels
@@ -908,6 +930,40 @@ class KPTVAdmin {
             
         } catch (error) {
             this.showNotification('Failed to revive stream', 'danger');
+        }
+    }
+
+    // Watcher Management (add this method to KPTVAdmin class)
+    async toggleWatcher(enable) {
+        try {
+            const result = await this.apiCall('/api/watcher/toggle', {
+                method: 'POST',
+                body: JSON.stringify({ enabled: enable })
+            });
+
+            const status = enable ? 'enabled' : 'disabled';
+            this.showNotification(`Stream watcher ${status} successfully!`, 'success');
+            
+            // Update the checkbox to reflect the change
+            const checkbox = document.querySelector('input[name="watcherEnabled"]');
+            if (checkbox) {
+                checkbox.checked = enable;
+            }
+            
+            // Reload stats to update the display
+            this.loadStats();
+            
+            return result;
+        } catch (error) {
+            this.showNotification(`Failed to ${enable ? 'enable' : 'disable'} watcher: ` + error.message, 'danger');
+            
+            // Revert checkbox state on error
+            const checkbox = document.querySelector('input[name="watcherEnabled"]');
+            if (checkbox) {
+                checkbox.checked = !enable;
+            }
+            
+            throw error;
         }
     }
 

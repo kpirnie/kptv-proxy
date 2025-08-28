@@ -56,14 +56,16 @@ func main() {
 	// Initialize master playlist handler
 	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger, cfg)
 
-	// start the watcher
-	//proxyInstance.WatcherManager.Start()
-
 	// Start restreamer cleanup routine
 	go proxyInstance.RestreamCleanup()
 
 	// Start import refresh routine
 	go proxyInstance.StartImportRefresh()
+
+	// Start watcher if enabled
+	if cfg.WatcherEnabled {
+		proxyInstance.WatcherManager.Start()
+	}
 
 	// Initial import
 	proxyInstance.ImportStreams()
@@ -116,8 +118,16 @@ func main() {
 				logger.Printf("Graceful restart requested...")
 			}
 
-			// Stop stream watcher
-			//proxyInstance.WatcherManager.Stop()
+			// Stop/Start watcher based on new config
+			if cfg.Debug {
+				logger.Printf("Managing watcher state during restart...")
+			}
+			proxyInstance.WatcherManager.Stop()
+
+			// if its enabled
+			if cfg.WatcherEnabled {
+				proxyInstance.WatcherManager.Start()
+			}
 
 			// Stop import refresh
 			proxyInstance.StopImportRefresh()
@@ -138,9 +148,6 @@ func main() {
 			// Restart import process
 			proxyInstance.ImportStreams()
 			go proxyInstance.StartImportRefresh()
-
-			// Restart stream watcher
-			//proxyInstance.WatcherManager.Start()
 
 			// debug logging
 			if cfg.Debug {

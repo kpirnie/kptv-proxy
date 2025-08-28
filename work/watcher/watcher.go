@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -540,110 +541,108 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 func (sw *StreamWatcher) analyzeStreamWithFFProbe() types.StreamHealthData {
 	health := types.StreamHealthData{}
 
-	// Obtain stream data from existing buffer rather than creating new network connections
 	streamData := sw.getStreamDataFromBuffer()
 	if len(streamData) == 0 {
 		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] No stream data available in buffer for ffprobe analysis")
+			sw.logger.Printf("[WATCHER] Channel %s: No stream data available for FFprobe", sw.channelName)
 		}
 		return health
 	}
 
-	// Configure FFprobe execution with reasonable timeout for analysis operations
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if sw.restreamer.Config.Debug {
+		sw.logger.Printf("[WATCHER] Channel %s: Starting FFprobe analysis with %d bytes of data", sw.channelName, len(streamData))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	// Configure FFprobe for comprehensive stream analysis using stdin input
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "quiet", // Minimize verbose output for cleaner parsing
 		"-print_format", "json", // Request structured JSON output
 		"-show_format",           // Include format information (bitrate, duration)
 		"-show_streams",          // Include individual stream details (video, audio)
-		"-analyzeduration", "3M", // Allow adequate analysis time for reliable results
-		"-probesize", "3M", // Allocate sufficient buffer for content examination
+		"-analyzeduration", "2M", // Allow adequate analysis time for reliable results
+		"-probesize", "2M", // Allocate sufficient buffer for content examination
+		"-fflags", "nobuffer+discardcorrupt",
+		"-thread_queue_size", "1024",
 		"-i", "pipe:0") // Read from stdin using buffered stream data
 
-	// Create stdin pipe for providing stream data to FFprobe
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Failed to create stdin pipe for ffprobe: %v", err)
+			sw.logger.Printf("[WATCHER] Channel %s: Failed to create stdin pipe: %v", sw.channelName, err)
 		}
 		return health
 	}
 
-	// Capture FFprobe analysis output with timeout protection
-	output, err := cmd.Output()
-	if err != nil {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] ffprobe analysis failed for %s: %v", sw.channelName, err)
-		}
-		return health
-	}
-
-	// Provide stream data to FFprobe through stdin in separate goroutine
 	go func() {
 		defer stdin.Close()
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			_, writeErr := stdin.Write(streamData)
-			if writeErr != nil && sw.restreamer.Config.Debug {
-				sw.logger.Printf("[WATCHER] Error writing to ffprobe stdin: %v", writeErr)
-			}
+		maxData := 2 * 1024 * 1024 // 2MB
+		if len(streamData) > maxData {
+			stdin.Write(streamData[:maxData])
+		} else {
+			stdin.Write(streamData)
 		}
 	}()
 
-	// Parse structured JSON output to extract stream characteristics
+	output, err := cmd.Output()
+	if err != nil {
+		if cmd.Process != nil {
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		if sw.restreamer.Config.Debug {
+			sw.logger.Printf("[WATCHER] Channel %s: FFprobe failed (non-fatal): %v", sw.channelName, err)
+		}
+		return health
+	}
+
+	if sw.restreamer.Config.Debug {
+		sw.logger.Printf("[WATCHER] Channel %s: FFprobe completed successfully", sw.channelName)
+	}
+
 	var result struct {
 		Format struct {
-			BitRate string `json:"bit_rate"` // Overall bitrate for quality assessment
+			BitRate string `json:"bit_rate"`
 		} `json:"format"`
 		Streams []struct {
-			CodecType  string `json:"codec_type"`   // Stream type (video, audio, subtitle)
-			CodecName  string `json:"codec_name"`   // Specific codec identifier
-			Width      int    `json:"width"`        // Video width in pixels
-			Height     int    `json:"height"`       // Video height in pixels
-			RFrameRate string `json:"r_frame_rate"` // Frame rate specification
+			CodecType string `json:"codec_type"`
+			CodecName string `json:"codec_name"`
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
 		} `json:"streams"`
 	}
 
 	if err := json.Unmarshal(output, &result); err != nil {
+		if sw.restreamer.Config.Debug {
+			sw.logger.Printf("[WATCHER] Channel %s: Failed to parse FFprobe output: %v", sw.channelName, err)
+		}
 		return health
 	}
 
-	// Analyze individual streams to extract video and audio characteristics
 	for _, stream := range result.Streams {
-		switch stream.CodecType {
-		case "video":
-			// Validate video stream has proper dimensions and codec
+		if stream.CodecType == "video" {
 			health.HasVideo = stream.Width > 0 && stream.Height > 0
 			if health.HasVideo {
 				health.Resolution = fmt.Sprintf("%dx%d", stream.Width, stream.Height)
-				// Parse frame rate if available and valid
-				if stream.RFrameRate != "" && stream.RFrameRate != "0/0" {
-					health.FPS = sw.parseFrameRate(stream.RFrameRate)
-				}
 			}
-		case "audio":
-			// Validate audio stream has proper codec specification
+		} else if stream.CodecType == "audio" {
 			health.HasAudio = stream.CodecName != ""
 		}
 	}
 
-	// Extract and parse overall bitrate information
 	if result.Format.BitRate != "" {
 		if bitrate, err := strconv.ParseInt(result.Format.BitRate, 10, 64); err == nil {
 			health.Bitrate = bitrate
 		}
 	}
 
-	// Mark analysis as successful for result validation
 	health.Valid = true
+
 	if sw.restreamer.Config.Debug {
-		sw.logger.Printf("[WATCHER] ffprobe analysis using existing stream data: Video=%v, Audio=%v, Bitrate=%d",
-			health.HasVideo, health.HasAudio, health.Bitrate)
+		sw.logger.Printf("[WATCHER] Channel %s: FFprobe analysis complete - Video=%v, Audio=%v, Bitrate=%d, Resolution=%s",
+			sw.channelName, health.HasVideo, health.HasAudio, health.Bitrate, health.Resolution)
 	}
 
 	return health

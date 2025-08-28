@@ -687,10 +687,10 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	// Register client with the restreamer for data distribution
 	restreamer.AddClient(clientID, w, flusher)
 
-	// Integrate with stream watcher if stream is active
-	//if restreamer.Restreamer.Running.Load() {
-	//	sp.WatcherManager.StartWatching(channel.Name, restreamer.Restreamer)
-	//}
+	// Integrate with stream watcher if enabled and stream is active
+	if sp.Config.WatcherEnabled && restreamer.Restreamer.Running.Load() {
+		sp.WatcherManager.StartWatching(channel.Name, restreamer.Restreamer)
+	}
 
 	// Setup cleanup function for client disconnection
 	cleanup := func() {

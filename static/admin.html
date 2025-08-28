@@ -107,6 +107,10 @@
                                     <span>Worker Threads</span>
                                     <span id="worker-threads">-</span>
                                 </div>
+                                <div class="metric-row">
+                                    <span>Stream Watcher</span>
+                                    <span id="watcher-status" class="watcher-status disabled">Disabled</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -196,6 +200,10 @@
                                     <input class="uk-input" type="number" name="maxConnectionsToApp" min="1" max="1000">
                                 </div>
                                 <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Cache Settings</label>
+                                    <label><input class="uk-checkbox" type="checkbox" name="cacheEnabled"> Enable Cache</label>
+                                </div>
+                                <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Cache Duration</label>
                                     <input class="uk-input" type="text" name="cacheDuration" placeholder="30m">
                                 </div>
@@ -223,13 +231,10 @@
                                     </select>
                                 </div>
                                 <div class="uk-width-1-1">
-                                    <label><input class="uk-checkbox" type="checkbox" name="cacheEnabled"> Enable Cache</label>
-                                </div>
-                                <div class="uk-width-1-1">
+                                    <label class="uk-form-label">System Settings</label>
                                     <label><input class="uk-checkbox" type="checkbox" name="debug"> Debug Mode</label>
-                                </div>
-                                <div class="uk-width-1-1">
                                     <label><input class="uk-checkbox" type="checkbox" name="obfuscateUrls"> Obfuscate URLs in Logs</label>
+                                    <label><input class="uk-checkbox" type="checkbox" name="watcherEnabled"> Enable Stream Watcher</label>
                                 </div>
                             </div>
                         </div>

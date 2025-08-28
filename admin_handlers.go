@@ -43,6 +43,7 @@ type StatsResponse struct {
 	ActiveRestreamers int    `json:"activeRestreamers"` // Number of active restreaming instances
 	StreamErrors      int    `json:"streamErrors"`      // Count of streaming errors (requires implementation)
 	ResponseTime      string `json:"responseTime"`      // API response time measurement
+	WatcherEnabled    bool   `json:"watcherEnabled"`
 }
 
 // ChannelResponse provides comprehensive channel information for admin interface display,
@@ -125,6 +126,7 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 	router.HandleFunc("/api/logs", corsMiddleware(handleGetLogs)).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/logs", corsMiddleware(handleClearLogs)).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/api/restart", corsMiddleware(handleRestart)).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/watcher/toggle", corsMiddleware(handleToggleWatcher(proxyInstance))).Methods("POST", "OPTIONS")
 
 	// Record admin interface initialization
 	addLogEntry("info", "Admin interface initialized")
@@ -324,6 +326,74 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
+func handleToggleWatcher(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		var request struct {
+			Enabled bool `json:"enabled"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		// Update memory config
+		sp.Config.WatcherEnabled = request.Enabled
+
+		// CRITICAL: Save to config file
+		configPath := "/settings/config.json"
+
+		// Read current config from file
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to read config file: %v", err))
+			http.Error(w, "Failed to read config file", http.StatusInternalServerError)
+			return
+		}
+
+		// Parse config
+		var configFile config.ConfigFile
+		if err := json.Unmarshal(data, &configFile); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to parse config: %v", err))
+			http.Error(w, "Failed to parse config", http.StatusInternalServerError)
+			return
+		}
+
+		// Update watcher setting
+		configFile.WatcherEnabled = request.Enabled
+
+		// Write back to file
+		newData, err := json.MarshalIndent(configFile, "", "  ")
+		if err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to marshal config: %v", err))
+			http.Error(w, "Failed to marshal config", http.StatusInternalServerError)
+			return
+		}
+
+		if err := os.WriteFile(configPath, newData, 0644); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to write config file: %v", err))
+			http.Error(w, "Failed to write config file", http.StatusInternalServerError)
+			return
+		}
+
+		// Start/stop watcher
+		if request.Enabled {
+			sp.WatcherManager.Start()
+			addLogEntry("info", "Stream watcher enabled via admin interface")
+		} else {
+			sp.WatcherManager.Stop()
+			addLogEntry("info", "Stream watcher disabled via admin interface")
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":         "success",
+			"watcherEnabled": request.Enabled,
+		})
+	}
+}
+
 // handleAdminInterface serves the main admin HTML page
 func handleAdminInterface(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "/static/admin.html")
@@ -489,6 +559,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			ActiveRestreamers: activeRestreamers,
 			StreamErrors:      0,       // Requires implementation
 			ResponseTime:      "< 1ms", // Requires implementation
+			WatcherEnabled:    sp.Config.WatcherEnabled,
 		}
 
 		if err := json.NewEncoder(w).Encode(stats); err != nil {

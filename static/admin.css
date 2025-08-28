@@ -747,3 +747,29 @@ body, .uk-text-primary {
     pointer-events: none;
     z-index: 1;
 }
+/* Watcher Status Indicator */
+.watcher-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.watcher-status.enabled {
+    background: rgba(76, 175, 80, 0.1);
+    color: var(--uk-success);
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.watcher-status.disabled {
+    background: rgba(158, 158, 158, 0.1);
+    color: var(--uk-text-muted);
+    border: 1px solid rgba(158, 158, 158, 0.3);
+}
+
+.watcher-toggle-btn {
+    min-width: 120px;
+}
