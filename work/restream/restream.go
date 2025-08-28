@@ -131,8 +131,10 @@ func (r *Restream) RemoveClient(id string) {
 			close(c.Done)
 		}
 
-		// Remove the client from the buffer’s internal tracking
-		r.Buffer.RemoveClient(id)
+		// Remove the client from the buffer's internal tracking - with nil check
+		if r.Buffer != nil && !r.Buffer.IsDestroyed() {
+			r.Buffer.RemoveClient(id)
+		}
 
 		// Count remaining clients
 		count := 0
@@ -269,10 +271,17 @@ func (r *Restream) Stream() {
 					r.Logger.Printf("[STREAM_RESTART_NEEDED] Channel %s: %d clients still connected, allowing restart", r.Channel.Name, clientCount)
 				}
 
-				// Mark as not running so that AddClient may restart it
-				r.Running.Store(false)
+				// Create fresh context and restart immediately
+				newCtx, newCancel := context.WithCancel(context.Background())
+				r.Ctx = newCtx
+				r.Cancel = newCancel
+				r.Running.Store(true)
+
+				// Continue streaming with new context
+				continue
 			}
 			return
+
 		default:
 		}
 
@@ -789,7 +798,7 @@ func (r *Restream) SafeBufferWrite(data []byte) bool {
 	default:
 	}
 
-	// Check buffer validity
+	// Check buffer validity with nil check
 	if r.Buffer == nil || r.Buffer.IsDestroyed() {
 		return false
 	}
@@ -810,4 +819,22 @@ func (r *Restream) WatcherStreamFromSource(index int) (bool, int64) {
 // to run the full Stream loop directly.
 func (r *Restream) WatcherStream() {
 	r.Stream()
+}
+
+// ForceStreamSwitch forces a switch to a specific stream index while preserving clients
+func (r *Restream) ForceStreamSwitch(newIndex int) {
+	if r.Config.Debug {
+		r.Logger.Printf("[FORCE_SWITCH] Channel %s: Switching to stream %d", r.Channel.Name, newIndex)
+	}
+
+	// Update current index
+	atomic.StoreInt32(&r.CurrentIndex, int32(newIndex))
+
+	// If not running, just update index
+	if !r.Running.Load() {
+		return
+	}
+
+	// Cancel current context to trigger restart
+	r.Cancel()
 }

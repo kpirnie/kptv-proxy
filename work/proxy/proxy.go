@@ -168,7 +168,7 @@ func (sp *StreamProxy) ImportStreams() {
 
 			// Apply content filtering
 			if sp != nil && sp.FilterManager != nil {
-				streams = filter.FilterStreams(streams, source, sp.FilterManager)
+				streams = filter.FilterStreams(streams, src, sp.FilterManager, sp.Config.Debug)
 			}
 
 			// debug logging

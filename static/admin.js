@@ -692,23 +692,37 @@ class KPTVAdmin {
 
     updateStatsDisplay(stats) {
         // Update main stats cards
-        document.getElementById('total-channels').textContent = stats.totalChannels || 0;
-        document.getElementById('active-streams').textContent = stats.activeStreams || 0;
-        document.getElementById('total-sources').textContent = stats.totalSources || 0;
-        document.getElementById('connected-clients').textContent = stats.connectedClients || 0;
+        const totalChannelsEl = document.getElementById('total-channels');
+        const activeStreamsEl = document.getElementById('active-streams');
+        const totalSourcesEl = document.getElementById('total-sources');
+        const connectedClientsEl = document.getElementById('connected-clients');
+
+        if (totalChannelsEl) totalChannelsEl.textContent = stats.totalChannels || 0;
+        if (activeStreamsEl) activeStreamsEl.textContent = stats.activeStreams || 0;
+        if (totalSourcesEl) totalSourcesEl.textContent = stats.totalSources || 0;
+        if (connectedClientsEl) connectedClientsEl.textContent = stats.connectedClients || 0;
 
         // Update system status
-        document.getElementById('uptime').textContent = stats.uptime || '0m';
-        document.getElementById('memory-usage').textContent = stats.memoryUsage || '0 MB';
-        document.getElementById('cache-status').textContent = stats.cacheStatus || 'Unknown';
-        document.getElementById('worker-threads').textContent = stats.workerThreads || 0;
+        const uptimeEl = document.getElementById('uptime');
+        const memoryUsageEl = document.getElementById('memory-usage');
+        const cacheStatusEl = document.getElementById('cache-status');
+        
+        if (uptimeEl) uptimeEl.textContent = stats.uptime || '0m';
+        if (memoryUsageEl) memoryUsageEl.textContent = stats.memoryUsage || '0 MB';
+        if (cacheStatusEl) cacheStatusEl.textContent = stats.cacheStatus || 'Unknown';
 
         // Update traffic stats
-        document.getElementById('total-connections').textContent = stats.totalConnections || 0;
-        document.getElementById('bytes-transferred').textContent = stats.bytesTransferred || '0 B';
-        document.getElementById('active-restreamers').textContent = stats.activeRestreamers || 0;
-        document.getElementById('stream-errors').textContent = stats.streamErrors || 0;
-        document.getElementById('response-time').textContent = stats.responseTime || '0ms';
+        const totalConnectionsEl = document.getElementById('total-connections');
+        const bytesTransferredEl = document.getElementById('bytes-transferred');
+        const activeRestreamersEl = document.getElementById('active-restreamers');
+        const streamErrorsEl = document.getElementById('stream-errors');
+        const responseTimeEl = document.getElementById('response-time');
+
+        if (totalConnectionsEl) totalConnectionsEl.textContent = stats.totalConnections || 0;
+        if (bytesTransferredEl) bytesTransferredEl.textContent = stats.bytesTransferred || '0 B';
+        if (activeRestreamersEl) activeRestreamersEl.textContent = stats.activeRestreamers || 0;
+        if (streamErrorsEl) streamErrorsEl.textContent = stats.streamErrors || 0;
+        if (responseTimeEl) responseTimeEl.textContent = stats.responseTime || '0ms';
 
         // Update watcher status
         const watcherStatus = stats.watcherEnabled ? 'Enabled' : 'Disabled';

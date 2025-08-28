@@ -15,9 +15,54 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/grafov/m3u8"
 	"go.uber.org/ratelimit"
 )
+
+// Content type detection regexes - should match the ones used in XC API parsing
+var (
+	seriesRegex = regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
+	vodRegex    = regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
+)
+
+// classifyStreamContent applies the same content classification logic as XC API parsing
+func classifyStreamContent(streamName, streamURL string, existingGroup string) string {
+	// If there's already a meaningful group-title, preserve it unless we have a better classification
+	if existingGroup != "" && !strings.EqualFold(existingGroup, "uncategorized") {
+		// Still check if our regex patterns suggest a different classification
+		seriesNameMatch := seriesRegex.MatchString(streamName)
+		vodNameMatch := vodRegex.MatchString(streamName)
+		seriesURLMatch := seriesRegex.MatchString(streamURL)
+		vodURLMatch := vodRegex.MatchString(streamURL)
+
+		if seriesNameMatch || seriesURLMatch {
+			return "series"
+		}
+		if vodNameMatch || vodURLMatch {
+			return "vod"
+		}
+
+		// Keep existing group if our patterns don't match
+		return existingGroup
+	}
+
+	// Apply regex-based classification
+	seriesNameMatch := seriesRegex.MatchString(streamName)
+	vodNameMatch := vodRegex.MatchString(streamName)
+	seriesURLMatch := seriesRegex.MatchString(streamURL)
+	vodURLMatch := vodRegex.MatchString(streamURL)
+
+	if seriesNameMatch || seriesURLMatch {
+		return "series"
+	}
+	if vodNameMatch || vodURLMatch {
+		return "vod"
+	}
+
+	// Default to live
+	return "live"
+}
 
 // ParseM3U8 fetches and parses an M3U8 playlist from a specified URL, extracting stream information
 // using source-specific HTTP headers for authentication and access control. The function implements
@@ -178,6 +223,11 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 			Source:     source,
 			Attributes: make(map[string]string),
 		}
+
+		// Apply content classification
+		group := classifyStreamContent(stream.Name, stream.URL, "")
+		stream.Attributes["group-title"] = group
+
 		streams = append(streams, stream)
 
 	case m3u8.MASTER:
@@ -214,6 +264,10 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 			if variant.Resolution != "" {
 				stream.Attributes["resolution"] = variant.Resolution
 			}
+
+			// Apply content classification
+			group := classifyStreamContent(stream.Name, stream.URL, "")
+			stream.Attributes["group-title"] = group
 
 			streams = append(streams, stream)
 		}
@@ -276,6 +330,19 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 			// Ensure stream has a valid display name
 			if stream.Name == "" {
 				stream.Name = "Unknown"
+			}
+
+			// Apply content classification, preserving existing group-title if meaningful
+			existingGroup := currentAttrs["group-title"]
+			if existingGroup == "" {
+				existingGroup = currentAttrs["tvg-group"] // Also check tvg-group
+			}
+
+			group := classifyStreamContent(stream.Name, stream.URL, existingGroup)
+			stream.Attributes["group-title"] = group
+
+			if cfg.Debug {
+				logger.Printf("Classified stream '%s' as '%s' (URL: %s)", stream.Name, group, utils.LogURL(cfg, stream.URL))
 			}
 
 			streams = append(streams, stream)

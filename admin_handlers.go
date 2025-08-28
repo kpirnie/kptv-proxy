@@ -274,33 +274,43 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		// Update preferred stream index first
 		atomic.StoreInt32(&channel.PreferredStreamIndex, int32(request.StreamIndex))
 
-		// Handle active restreamer with forced restart
+		// Handle active restreamer with proper client preservation
 		if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
 			addLogEntry("info", fmt.Sprintf("Forcing stream restart for channel %s to index %d", channelName, request.StreamIndex))
 
-			// Gracefully stop current streaming
-			channel.Restreamer.Running.Store(false)
-			channel.Restreamer.Cancel()
-
-			// Allow brief cleanup period
-			time.Sleep(200 * time.Millisecond)
-
-			// Create fresh context for restart
-			ctx, cancel := context.WithCancel(context.Background())
-			channel.Restreamer.Ctx = ctx
-			channel.Restreamer.Cancel = cancel
-
-			// Update current index to requested stream
-			atomic.StoreInt32(&channel.Restreamer.CurrentIndex, int32(request.StreamIndex))
-
-			// Verify client presence before restart
+			// Count clients before restart
 			clientCount := 0
-			channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
+			var clientList []interface{}
+			channel.Restreamer.Clients.Range(func(key, value interface{}) bool {
 				clientCount++
+				clientList = append(clientList, map[string]interface{}{
+					"id":     key,
+					"client": value,
+				})
 				return true
 			})
 
 			if clientCount > 0 {
+				// Update current index immediately
+				atomic.StoreInt32(&channel.Restreamer.CurrentIndex, int32(request.StreamIndex))
+
+				// Gracefully stop current streaming
+				channel.Restreamer.Running.Store(false)
+				channel.Restreamer.Cancel()
+
+				// Allow brief cleanup period
+				time.Sleep(500 * time.Millisecond)
+
+				// Reset buffer for new stream
+				if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
+					channel.Restreamer.Buffer.Reset()
+				}
+
+				// Create fresh context for restart
+				ctx, cancel := context.WithCancel(context.Background())
+				channel.Restreamer.Ctx = ctx
+				channel.Restreamer.Cancel = cancel
+
 				// Restart streaming with new index
 				channel.Restreamer.Running.Store(true)
 				go func() {
@@ -310,6 +320,7 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 					r := &restream.Restream{Restreamer: channel.Restreamer}
 					r.Stream()
 				}()
+
 				addLogEntry("info", fmt.Sprintf("Restarted streaming for channel %s at index %d with %d clients", channelName, request.StreamIndex, clientCount))
 			}
 		}
@@ -326,6 +337,7 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
+// handle the watcher toggle to stream while watching proper
 func handleToggleWatcher(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -561,11 +573,11 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			MemoryUsage:       memoryUsage,
 			CacheStatus:       cacheStatus,
 			WorkerThreads:     sp.Config.WorkerThreads,
-			TotalConnections:  connectedClients,                       // Current approximation
-			BytesTransferred:  utils.FormatBytes(int64(m.TotalAlloc)), // Approximation
+			TotalConnections:  connectedClients,
+			BytesTransferred:  utils.FormatBytes(int64(m.TotalAlloc)),
 			ActiveRestreamers: activeRestreamers,
-			StreamErrors:      0,       // Requires implementation
-			ResponseTime:      "< 1ms", // Requires implementation
+			StreamErrors:      0,
+			ResponseTime:      "< 1ms",
 			WatcherEnabled:    sp.Config.WatcherEnabled,
 		}
 

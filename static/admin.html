@@ -49,6 +49,7 @@
 
         <!-- Tab Content -->
         <div class="uk-switcher uk-margin">
+
             <!-- Dashboard Tab -->
             <div>
                 <!-- Stats Cards -->
@@ -105,7 +106,7 @@
                                 </div>
                                 <div class="metric-row">
                                     <span>Stream Watcher</span>
-                                    <span id="watcher-status" class="watcher-status disabled">Disabled</span>
+                                    <span id="watcher-status">Disabled</span>
                                 </div>
                             </div>
                         </div>
@@ -352,6 +353,7 @@
                     <ul uk-tab>
                         <li><a href="#">Basic Settings</a></li>
                         <li><a href="#">Content Filtering</a></li>
+                        <li><a href="#">HTTP Headers</a></li>
                     </ul>
                     
                     <!-- Tab content -->
@@ -403,18 +405,6 @@
                                     <label class="uk-form-label">Min Data Size (KB)</label>
                                     <input class="uk-input" type="number" id="source-min-data-size" min="1" value="2">
                                 </div>
-                                <div class="uk-width-1-1">
-                                    <label class="uk-form-label">User Agent</label>
-                                    <input class="uk-input" type="text" id="source-user-agent" placeholder="VLC/3.0.18 LibVLC/3.0.18">
-                                </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Origin</label>
-                                    <input class="uk-input" type="text" id="source-origin" placeholder="https://example.com">
-                                </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Referrer</label>
-                                    <input class="uk-input" type="text" id="source-referrer" placeholder="https://example.com/player">
-                                </div>
                             </div>
                         </li>
                         
@@ -447,6 +437,24 @@
                                 </div>
                             </div>
                         </li>
+
+                        <!-- Headers -->
+                         <li>
+                            <div class="uk-grid-small" uk-grid>
+                                <div class="uk-width-1-1">
+                                    <label class="uk-form-label">User Agent</label>
+                                    <input class="uk-input" type="text" id="source-user-agent" placeholder="VLC/3.0.18 LibVLC/3.0.18">
+                                </div>
+                                <div class="uk-width-1-1">
+                                    <label class="uk-form-label">Origin</label>
+                                    <input class="uk-input" type="text" id="source-origin" placeholder="https://example.com">
+                                </div>
+                                <div class="uk-width-1-1">
+                                    <label class="uk-form-label">Referrer</label>
+                                    <input class="uk-input" type="text" id="source-referrer" placeholder="https://example.com/player">
+                                </div>
+                            </div>
+                         </li>
                     </ul>
                 </form>
             </div>

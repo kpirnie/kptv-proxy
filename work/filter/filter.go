@@ -1,12 +1,19 @@
 package filter
 
 import (
+	"fmt"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/types"
 	"strings"
 	"sync"
 
 	"github.com/grafana/regexp"
+)
+
+// Content type detection regexes - should match the ones used during import
+var (
+	seriesRegex = regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
+	vodRegex    = regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
 )
 
 // CompiledFilter holds compiled regex patterns for a source
@@ -33,7 +40,7 @@ func NewFilterManager() *FilterManager {
 }
 
 // GetOrCreateFilter gets or creates a compiled filter for a source
-func (fm *FilterManager) GetOrCreateFilter(source *config.SourceConfig) *CompiledFilter {
+func (fm *FilterManager) GetOrCreateFilter(source *config.SourceConfig, debug bool) *CompiledFilter {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
 
@@ -48,10 +55,30 @@ func (fm *FilterManager) GetOrCreateFilter(source *config.SourceConfig) *Compile
 
 	// Compile regex patterns (ignore errors, treat as no filter if invalid)
 	if source.LiveIncludeRegex != "" {
-		filter.LiveInclude, _ = regexp.Compile(source.LiveIncludeRegex)
+		compiled, err := regexp.Compile(source.LiveIncludeRegex)
+		if err != nil {
+			if debug {
+				fmt.Printf("[FILTER_DEBUG] Failed to compile LiveIncludeRegex '%s': %v\n", source.LiveIncludeRegex, err)
+			}
+		} else {
+			filter.LiveInclude = compiled
+			if debug {
+				fmt.Printf("[FILTER_DEBUG] Compiled LiveIncludeRegex: '%s'\n", source.LiveIncludeRegex)
+			}
+		}
 	}
 	if source.LiveExcludeRegex != "" {
-		filter.LiveExclude, _ = regexp.Compile(source.LiveExcludeRegex)
+		compiled, err := regexp.Compile(source.LiveExcludeRegex)
+		if err != nil {
+			if debug {
+				fmt.Printf("[FILTER_DEBUG] Failed to compile LiveExcludeRegex '%s': %v\n", source.LiveExcludeRegex, err)
+			}
+		} else {
+			filter.LiveExclude = compiled
+			if debug {
+				fmt.Printf("[FILTER_DEBUG] Compiled LiveExcludeRegex: '%s'\n", source.LiveExcludeRegex)
+			}
+		}
 	}
 	if source.SeriesIncludeRegex != "" {
 		filter.SeriesInclude, _ = regexp.Compile(source.SeriesIncludeRegex)
@@ -85,50 +112,96 @@ func (fm *FilterManager) RemoveFilter(sourceURL string) {
 }
 
 // FilterStreams applies content filtering to streams
-func FilterStreams(streams []*types.Stream, source *config.SourceConfig, filterManager *FilterManager) []*types.Stream {
+func FilterStreams(streams []*types.Stream, source *config.SourceConfig, filterManager *FilterManager, debug bool) []*types.Stream {
+
+	// Debug logging to see if filtering is being called
+	if debug && len(streams) > 0 && streams[0].Source != nil && streams[0].Source.Name != "" {
+		fmt.Printf("[FILTER_DEBUG] Source: %s, Streams: %d, LiveInclude: %s, LiveExclude: %s, SeriesInclude: %s, SeriesExclude: %s, VODInclude: %s, VODExclude: %s\n",
+			source.Name, len(streams), source.LiveIncludeRegex, source.LiveExcludeRegex,
+			source.SeriesIncludeRegex, source.SeriesExcludeRegex, source.VODIncludeRegex, source.VODExcludeRegex)
+	}
+
 	if source.LiveIncludeRegex == "" && source.LiveExcludeRegex == "" &&
 		source.SeriesIncludeRegex == "" && source.SeriesExcludeRegex == "" &&
 		source.VODIncludeRegex == "" && source.VODExcludeRegex == "" {
+		if debug {
+			fmt.Printf("[FILTER_DEBUG] No filters configured for source %s, returning %d streams unchanged\n", source.Name, len(streams))
+		}
 		return streams
 	}
-
-	filter := filterManager.GetOrCreateFilter(source)
+	if debug {
+		fmt.Printf("[FILTER_DEBUG] Applying filters to %d streams from source %s\n", len(streams), source.Name)
+	}
+	filter := filterManager.GetOrCreateFilter(source, debug)
 	filtered := make([]*types.Stream, 0, len(streams))
 
 	for _, stream := range streams {
-		if shouldIncludeStream(stream, filter) {
+		contentType := getContentType(stream, debug)
+		shouldInclude := shouldIncludeStream(stream, filter, debug)
+		if debug {
+			fmt.Printf("[FILTER_DEBUG] Stream: %s, Type: %s, Include: %v\n", stream.Name, contentType, shouldInclude)
+		}
+		if shouldInclude {
 			filtered = append(filtered, stream)
 		}
 	}
-
+	if debug {
+		fmt.Printf("[FILTER_DEBUG] Filtered %d -> %d streams for source %s\n", len(streams), len(filtered), source.Name)
+	}
 	return filtered
 }
 
 // shouldIncludeStream determines if a stream should be included based on filters
-func shouldIncludeStream(stream *types.Stream, filter *CompiledFilter) bool {
-	streamName := strings.ToLower(stream.Name)
-	contentType := getContentType(stream)
+func shouldIncludeStream(stream *types.Stream, filter *CompiledFilter, debug bool) bool {
+	streamName := strings.TrimSpace(strings.ToLower(stream.Name))
+	originalName := stream.Name
+	contentType := getContentType(stream, debug)
 
-	// Check include filters first (take precedence)
+	if debug {
+		fmt.Printf("[FILTER_DEBUG] Evaluating stream: '%s', trimmed lowercase: '%s', content type: %s\n", originalName, streamName, contentType)
+	}
+
+	// Check include filters first - if any exist, stream must match at least one
+	var hasIncludeFilters bool
+	var matchesInclude bool
+
 	switch contentType {
 	case "live":
 		if filter.LiveInclude != nil {
-			if filter.LiveInclude.MatchString(streamName) {
-				return true
+			hasIncludeFilters = true
+			matchesInclude = filter.LiveInclude.MatchString(streamName)
+			if debug {
+				fmt.Printf("[FILTER_DEBUG] Live include pattern exists, matches: %v (pattern tested against: '%s')\n", matchesInclude, streamName)
 			}
 		}
 	case "series":
 		if filter.SeriesInclude != nil {
-			if filter.SeriesInclude.MatchString(streamName) {
-				return true
+			hasIncludeFilters = true
+			matchesInclude = filter.SeriesInclude.MatchString(streamName)
+			if debug {
+				fmt.Printf("[FILTER_DEBUG] Series include pattern exists, matches: %v\n", matchesInclude)
 			}
 		}
 	case "vod":
 		if filter.VODInclude != nil {
-			if filter.VODInclude.MatchString(streamName) {
-				return true
+			hasIncludeFilters = true
+			matchesInclude = filter.VODInclude.MatchString(streamName)
+			if debug {
+				fmt.Printf("[FILTER_DEBUG] VOD include pattern exists, matches: %v\n", matchesInclude)
 			}
 		}
+	}
+
+	if debug {
+		fmt.Printf("[FILTER_DEBUG] hasIncludeFilters: %v, matchesInclude: %v\n", hasIncludeFilters, matchesInclude)
+	}
+
+	// If include filters exist but stream doesn't match any, exclude it
+	if hasIncludeFilters && !matchesInclude {
+		if debug {
+			fmt.Printf("[FILTER_DEBUG] EXCLUDED by include filters: '%s'\n", originalName)
+		}
+		return false
 	}
 
 	// Then check exclude filters
@@ -136,63 +209,126 @@ func shouldIncludeStream(stream *types.Stream, filter *CompiledFilter) bool {
 	case "live":
 		if filter.LiveExclude != nil {
 			if filter.LiveExclude.MatchString(streamName) {
+				if debug {
+					fmt.Printf("[FILTER_DEBUG] EXCLUDED by live exclude filter: '%s'\n", originalName)
+				}
 				return false
+			}
+			if debug {
+				fmt.Printf("[FILTER_DEBUG] Live exclude pattern exists but didn't match: '%s'\n", streamName)
 			}
 		}
 	case "series":
 		if filter.SeriesExclude != nil {
 			if filter.SeriesExclude.MatchString(streamName) {
+				if debug {
+					fmt.Printf("[FILTER_DEBUG] EXCLUDED by series exclude filter: '%s'\n", originalName)
+				}
 				return false
 			}
 		}
 	case "vod":
 		if filter.VODExclude != nil {
 			if filter.VODExclude.MatchString(streamName) {
+				if debug {
+					fmt.Printf("[FILTER_DEBUG] EXCLUDED by VOD exclude filter: '%s'\n", originalName)
+				}
 				return false
 			}
 		}
 	}
 
-	// If no specific filters matched, include the stream
+	if debug {
+		fmt.Printf("[FILTER_DEBUG] INCLUDED: '%s'\n", originalName)
+	}
 	return true
 }
 
 // getContentType determines the content type from stream attributes
-func getContentType(stream *types.Stream) string {
-	// Check stream attributes for content type hints
+func getContentType(stream *types.Stream, debug bool) string {
+	// First check using the same regex patterns used during import
+	streamName := stream.Name
+	streamURL := stream.URL
+
+	// Check both name and URL with series regex
+	seriesNameMatch := seriesRegex.MatchString(streamName)
+	vodNameMatch := vodRegex.MatchString(streamName)
+	seriesURLMatch := seriesRegex.MatchString(streamURL)
+	vodURLMatch := vodRegex.MatchString(streamURL)
+
+	if debug {
+		fmt.Printf("[FILTER_DEBUG] Content type detection for '%s':\n", streamName)
+		fmt.Printf("[FILTER_DEBUG]   SeriesName: %v, VODName: %v, SeriesURL: %v, VODURL: %v\n",
+			seriesNameMatch, vodNameMatch, seriesURLMatch, vodURLMatch)
+	}
+
+	// Apply same logic as import parsing
+	if seriesNameMatch || seriesURLMatch {
+		if debug {
+			fmt.Printf("[FILTER_DEBUG] Classified as SERIES\n")
+		}
+		return "series"
+	}
+	if vodNameMatch || vodURLMatch {
+		if debug {
+			fmt.Printf("[FILTER_DEBUG] Classified as VOD\n")
+		}
+		return "vod"
+	}
+
+	// Fallback to attribute-based detection (secondary method)
 	if group, ok := stream.Attributes["group-title"]; ok {
 		groupLower := strings.ToLower(group)
+		if debug {
+			fmt.Printf("[FILTER_DEBUG] Content type from group-title '%s': ", group)
+		}
 		switch {
-		case strings.Contains(groupLower, "live") || strings.Contains(groupLower, "tv"):
-			return "live"
 		case strings.Contains(groupLower, "series"):
+			if debug {
+				fmt.Printf("series\n")
+			}
 			return "series"
 		case strings.Contains(groupLower, "vod") || strings.Contains(groupLower, "movie"):
+			if debug {
+				fmt.Printf("vod\n")
+			}
 			return "vod"
+		case strings.Contains(groupLower, "live") || strings.Contains(groupLower, "tv"):
+			if debug {
+				fmt.Printf("live\n")
+			}
+			return "live"
 		}
 	}
 
 	// Also check tvg-group attribute
 	if group, ok := stream.Attributes["tvg-group"]; ok {
 		groupLower := strings.ToLower(group)
+		if debug {
+			fmt.Printf("[FILTER_DEBUG] Content type from tvg-group '%s': ", group)
+		}
 		switch {
-		case strings.Contains(groupLower, "live") || strings.Contains(groupLower, "tv"):
-			return "live"
 		case strings.Contains(groupLower, "series"):
+			if debug {
+				fmt.Printf("series\n")
+			}
 			return "series"
 		case strings.Contains(groupLower, "vod") || strings.Contains(groupLower, "movie"):
+			if debug {
+				fmt.Printf("vod\n")
+			}
 			return "vod"
+		case strings.Contains(groupLower, "live") || strings.Contains(groupLower, "tv"):
+			if debug {
+				fmt.Printf("live\n")
+			}
+			return "live"
 		}
 	}
 
-	// Check stream name for hints
-	nameLower := strings.ToLower(stream.Name)
-	switch {
-	case strings.Contains(nameLower, "series") || strings.Contains(nameLower, "episode"):
-		return "series"
-	case strings.Contains(nameLower, "movie") || strings.Contains(nameLower, "vod"):
-		return "vod"
-	default:
-		return "live" // Default to live
+	// Default to live
+	if debug {
+		fmt.Printf("[FILTER_DEBUG] Defaulted to LIVE\n")
 	}
+	return "live"
 }
