@@ -327,7 +327,7 @@
             <div class="uk-modal-header">
                 <h2 class="uk-modal-title" id="source-modal-title">Add Source</h2>
             </div>
-            <div class="uk-modal-body">
+            <div class="uk-modal-body uk-padding-remove-top">
                 <form id="source-form">
                     <input type="hidden" id="source-index" value="">
                     <div class="uk-margin">
@@ -335,10 +335,18 @@
                         <input class="uk-input" type="text" id="source-name" placeholder="Source Name" required>
                     </div>
                     <div class="uk-margin">
-                        <label class="uk-form-label">URL</label>
+                        <label class="uk-form-label">URL/XC Domain</label>
                         <input class="uk-input" type="url" id="source-url" placeholder="http://example.com/playlist.m3u8" required>
                     </div>
                     <div class="uk-grid-small" uk-grid>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">XC Username</label>
+                            <input class="uk-input" type="text" id="source-username" placeholder="Username...">
+                        </div>
+                        <div class="uk-width-1-2">
+                            <label class="uk-form-label">XC Password</label>
+                            <input class="uk-input" type="text" id="source-password" placeholder="Password...">
+                        </div>
                         <div class="uk-width-1-2">
                             <label class="uk-form-label">Order</label>
                             <input class="uk-input" type="number" id="source-order" min="1" value="1">

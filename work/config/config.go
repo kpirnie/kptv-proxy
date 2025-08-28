@@ -46,6 +46,8 @@ type SourceConfig struct {
 	ReqOrigin              string        `json:"reqOrigin"`              // HTTP Origin header for requests
 	ReqReferrer            string        `json:"reqReferrer"`            // HTTP Referer header for requests
 	ActiveConns            int32         `json:"-"`                      // Runtime-only: tracks active connections (not serialized)
+	Username               string        `json:"username"`               // XC Username
+	Password               string        `json:"password"`               // XC Password
 }
 
 // ConfigFile represents the JSON file structure for marshaling/unmarshaling configuration.
@@ -83,6 +85,8 @@ type SourceConfigFile struct {
 	UserAgent              string `json:"userAgent"`   // User-Agent header
 	ReqOrigin              string `json:"reqOrigin"`   // Origin header
 	ReqReferrer            string `json:"reqReferrer"` // Referer header
+	Username               string `json:"username"`
+	Password               string `json:"password"`
 }
 
 var (
@@ -218,6 +222,8 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		src.UserAgent = srcFile.UserAgent
 		src.ReqOrigin = srcFile.ReqOrigin
 		src.ReqReferrer = srcFile.ReqReferrer
+		src.Username = srcFile.Username
+		src.Password = srcFile.Password
 
 		// Parse per-source durations
 		if src.MaxStreamTimeout, err = time.ParseDuration(srcFile.MaxStreamTimeout); err != nil {
@@ -380,6 +386,8 @@ func CreateExampleConfig(path string) error {
 			{
 				Name:                   "Primary IPTV Source",
 				URL:                    "http://example.com/playlist1.m3u8",
+				Username:               "",
+				Password:               "",
 				Order:                  1,
 				MaxConnections:         5,
 				MaxStreamTimeout:       "30s",
@@ -394,6 +402,8 @@ func CreateExampleConfig(path string) error {
 			{
 				Name:                   "Backup IPTV Source",
 				URL:                    "http://example.com/playlist2.m3u8",
+				Username:               "",
+				Password:               "",
 				Order:                  2,
 				MaxConnections:         10,
 				MaxStreamTimeout:       "45s",

@@ -358,6 +358,8 @@ class KPTVAdmin {
         document.getElementById('source-index').value = index;
         document.getElementById('source-name').value = source.name || '';
         document.getElementById('source-url').value = source.url || '';
+        document.getElementById('source-username').value = source.username || '';
+        document.getElementById('source-password').value = source.password || '';
         document.getElementById('source-order').value = source.order || 1;
         document.getElementById('source-max-connections').value = source.maxConnections || 5;
         document.getElementById('source-max-stream-timeout').value = source.maxStreamTimeout || '10s';
@@ -373,6 +375,8 @@ class KPTVAdmin {
     clearSourceForm() {
         document.getElementById('source-index').value = '';
         document.getElementById('source-form').reset();
+        document.getElementById('source-username').value = '';
+        document.getElementById('source-password').value = '';
         document.getElementById('source-order').value = 1;
         document.getElementById('source-max-connections').value = 5;
         document.getElementById('source-max-stream-timeout').value = '10s';
@@ -394,6 +398,8 @@ class KPTVAdmin {
             const source = {
                 name: document.getElementById('source-name').value,
                 url: document.getElementById('source-url').value,
+                username: document.getElementById('source-username').value || '',
+                password: document.getElementById('source-password').value || '',
                 order: parseInt(document.getElementById('source-order').value) || 1,
                 maxConnections: parseInt(document.getElementById('source-max-connections').value) || 5,
                 maxStreamTimeout: document.getElementById('source-max-stream-timeout').value || '30s',
