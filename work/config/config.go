@@ -48,6 +48,12 @@ type SourceConfig struct {
 	ActiveConns            int32         `json:"-"`                      // Runtime-only: tracks active connections (not serialized)
 	Username               string        `json:"username"`               // XC Username
 	Password               string        `json:"password"`               // XC Password
+	LiveIncludeRegex       string        `json:"liveIncludeRegex,omitempty"`
+	LiveExcludeRegex       string        `json:"liveExcludeRegex,omitempty"`
+	SeriesIncludeRegex     string        `json:"seriesIncludeRegex,omitempty"`
+	SeriesExcludeRegex     string        `json:"seriesExcludeRegex,omitempty"`
+	VODIncludeRegex        string        `json:"vodIncludeRegex,omitempty"`
+	VODExcludeRegex        string        `json:"vodExcludeRegex,omitempty"`
 }
 
 // ConfigFile represents the JSON file structure for marshaling/unmarshaling configuration.
@@ -87,6 +93,12 @@ type SourceConfigFile struct {
 	ReqReferrer            string `json:"reqReferrer"` // Referer header
 	Username               string `json:"username"`
 	Password               string `json:"password"`
+	LiveIncludeRegex       string `json:"liveIncludeRegex,omitempty"`
+	LiveExcludeRegex       string `json:"liveExcludeRegex,omitempty"`
+	SeriesIncludeRegex     string `json:"seriesIncludeRegex,omitempty"`
+	SeriesExcludeRegex     string `json:"seriesExcludeRegex,omitempty"`
+	VODIncludeRegex        string `json:"vodIncludeRegex,omitempty"`
+	VODExcludeRegex        string `json:"vodExcludeRegex,omitempty"`
 }
 
 var (
@@ -224,6 +236,12 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		src.ReqReferrer = srcFile.ReqReferrer
 		src.Username = srcFile.Username
 		src.Password = srcFile.Password
+		src.LiveIncludeRegex = srcFile.LiveIncludeRegex
+		src.LiveExcludeRegex = srcFile.LiveExcludeRegex
+		src.SeriesIncludeRegex = srcFile.SeriesIncludeRegex
+		src.SeriesExcludeRegex = srcFile.SeriesExcludeRegex
+		src.VODIncludeRegex = srcFile.VODIncludeRegex
+		src.VODExcludeRegex = srcFile.VODExcludeRegex
 
 		// Parse per-source durations
 		if src.MaxStreamTimeout, err = time.ParseDuration(srcFile.MaxStreamTimeout); err != nil {
@@ -398,6 +416,12 @@ func CreateExampleConfig(path string) error {
 				UserAgent:              "VLC/3.0.18 LibVLC/3.0.18",
 				ReqOrigin:              "",
 				ReqReferrer:            "",
+				LiveIncludeRegex:       "",
+				LiveExcludeRegex:       "",
+				SeriesIncludeRegex:     "",
+				SeriesExcludeRegex:     "",
+				VODIncludeRegex:        "",
+				VODExcludeRegex:        "",
 			},
 			{
 				Name:                   "Backup IPTV Source",
@@ -414,6 +438,12 @@ func CreateExampleConfig(path string) error {
 				UserAgent:              "Mozilla/5.0 (Smart TV; Linux)",
 				ReqOrigin:              "https://provider2.com",
 				ReqReferrer:            "https://provider2.com/player",
+				LiveIncludeRegex:       "",
+				LiveExcludeRegex:       "",
+				SeriesIncludeRegex:     "",
+				SeriesExcludeRegex:     "",
+				VODIncludeRegex:        "",
+				VODExcludeRegex:        "",
 			},
 		},
 	}

@@ -347,64 +347,107 @@
             <div class="uk-modal-body uk-padding-remove-top">
                 <form id="source-form">
                     <input type="hidden" id="source-index" value="">
-                    <div class="uk-margin">
-                        <label class="uk-form-label">Name</label>
-                        <input class="uk-input" type="text" id="source-name" placeholder="Source Name" required>
-                    </div>
-                    <div class="uk-margin">
-                        <label class="uk-form-label">URL/XC Domain</label>
-                        <input class="uk-input" type="url" id="source-url" placeholder="http://example.com/playlist.m3u8" required>
-                    </div>
-                    <div class="uk-grid-small" uk-grid>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">XC Username</label>
-                            <input class="uk-input" type="text" id="source-username" placeholder="Username...">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">XC Password</label>
-                            <input class="uk-input" type="text" id="source-password" placeholder="Password...">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">Order</label>
-                            <input class="uk-input" type="number" id="source-order" min="1" value="1">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">Max Connections</label>
-                            <input class="uk-input" type="number" id="source-max-connections" min="1" value="5">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">Max Stream Timeout</label>
-                            <input class="uk-input" type="text" id="source-max-stream-timeout" placeholder="30s">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">Retry Delay</label>
-                            <input class="uk-input" type="text" id="source-retry-delay" placeholder="5s">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">Max Retries</label>
-                            <input class="uk-input" type="number" id="source-max-retries" min="1" value="3">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">Max Failures Before Block</label>
-                            <input class="uk-input" type="number" id="source-max-failures" min="1" value="5">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">Min Data Size (KB)</label>
-                            <input class="uk-input" type="number" id="source-min-data-size" min="1" value="2">
-                        </div>
-                        <div class="uk-width-1-1">
-                            <label class="uk-form-label">User Agent</label>
-                            <input class="uk-input" type="text" id="source-user-agent" placeholder="VLC/3.0.18 LibVLC/3.0.18">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">Origin</label>
-                            <input class="uk-input" type="text" id="source-origin" placeholder="https://example.com">
-                        </div>
-                        <div class="uk-width-1-2">
-                            <label class="uk-form-label">Referrer</label>
-                            <input class="uk-input" type="text" id="source-referrer" placeholder="https://example.com/player">
-                        </div>
-                    </div>
+                    
+                    <!-- Tab navigation -->
+                    <ul uk-tab>
+                        <li><a href="#">Basic Settings</a></li>
+                        <li><a href="#">Content Filtering</a></li>
+                    </ul>
+                    
+                    <!-- Tab content -->
+                    <ul class="uk-switcher uk-margin">
+                        <!-- Basic Settings Tab -->
+                        <li>
+                            <div class="uk-margin">
+                                <label class="uk-form-label">Name</label>
+                                <input class="uk-input" type="text" id="source-name" placeholder="Source Name" required>
+                            </div>
+                            <div class="uk-margin">
+                                <label class="uk-form-label">URL/XC Domain</label>
+                                <input class="uk-input" type="url" id="source-url" placeholder="http://example.com/playlist.m3u8" required>
+                            </div>
+                            <div class="uk-grid-small" uk-grid>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">XC Username</label>
+                                    <input class="uk-input" type="text" id="source-username" placeholder="Username...">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">XC Password</label>
+                                    <input class="uk-input" type="text" id="source-password" placeholder="Password...">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Order</label>
+                                    <input class="uk-input" type="number" id="source-order" min="1" value="1">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Max Connections</label>
+                                    <input class="uk-input" type="number" id="source-max-connections" min="1" value="5">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Max Stream Timeout</label>
+                                    <input class="uk-input" type="text" id="source-max-stream-timeout" placeholder="30s">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Retry Delay</label>
+                                    <input class="uk-input" type="text" id="source-retry-delay" placeholder="5s">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Max Retries</label>
+                                    <input class="uk-input" type="number" id="source-max-retries" min="1" value="3">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Max Failures Before Block</label>
+                                    <input class="uk-input" type="number" id="source-max-failures" min="1" value="5">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Min Data Size (KB)</label>
+                                    <input class="uk-input" type="number" id="source-min-data-size" min="1" value="2">
+                                </div>
+                                <div class="uk-width-1-1">
+                                    <label class="uk-form-label">User Agent</label>
+                                    <input class="uk-input" type="text" id="source-user-agent" placeholder="VLC/3.0.18 LibVLC/3.0.18">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Origin</label>
+                                    <input class="uk-input" type="text" id="source-origin" placeholder="https://example.com">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Referrer</label>
+                                    <input class="uk-input" type="text" id="source-referrer" placeholder="https://example.com/player">
+                                </div>
+                            </div>
+                        </li>
+                        
+                        <!-- Content Filtering Tab -->
+                        <li>
+                            <div class="uk-grid-small" uk-grid>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Live Include Regex</label>
+                                    <input class="uk-input" type="text" id="source-live-include-regex" placeholder=".*live.*">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Live Exclude Regex</label>
+                                    <input class="uk-input" type="text" id="source-live-exclude-regex" placeholder=".*adult.*">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Series Include Regex</label>
+                                    <input class="uk-input" type="text" id="source-series-include-regex" placeholder=".*series.*">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">Series Exclude Regex</label>
+                                    <input class="uk-input" type="text" id="source-series-exclude-regex" placeholder=".*adult.*">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">VOD Include Regex</label>
+                                    <input class="uk-input" type="text" id="source-vod-include-regex" placeholder=".*movie.*">
+                                </div>
+                                <div class="uk-width-1-2">
+                                    <label class="uk-form-label">VOD Exclude Regex</label>
+                                    <input class="uk-input" type="text" id="source-vod-exclude-regex" placeholder=".*adult.*">
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
                 </form>
             </div>
             <div class="uk-modal-footer uk-text-right">

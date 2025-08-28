@@ -450,6 +450,13 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 		// Reset body reader for JSON decoder
 		r.Body = io.NopCloser(bytes.NewBuffer(body))
 
+		// Clear all filters when config is updated
+		// This ensures any changed regex patterns are recompiled
+		if sp != nil && sp.FilterManager != nil {
+			sp.FilterManager.ClearFilters()
+			addLogEntry("info", "Cleared all compiled regex filters due to config update")
+		}
+
 		// Parse and validate configuration
 		var configFile config.ConfigFile
 		if err := json.NewDecoder(r.Body).Decode(&configFile); err != nil {

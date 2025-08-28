@@ -6,6 +6,7 @@ import (
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/filter"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
@@ -48,6 +49,7 @@ type StreamProxy struct {
 	WatcherManager        *watcher.WatcherManager       // Stream health monitoring and automatic failover management system
 	SourceRateLimiters    map[string]ratelimit.Limiter
 	rateLimiterMutex      sync.RWMutex
+	FilterManager         *filter.FilterManager
 }
 
 // New creates and initializes a new StreamProxy instance with all required dependencies
@@ -83,6 +85,7 @@ func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, 
 		WatcherManager:        watcher.NewWatcherManager(logger),
 		SourceRateLimiters:    make(map[string]ratelimit.Limiter),
 		rateLimiterMutex:      sync.RWMutex{},
+		FilterManager:         filter.NewFilterManager(),
 	}
 }
 
@@ -161,6 +164,11 @@ func (sp *StreamProxy) ImportStreams() {
 
 				// Use standard M3U8 parser
 				streams = parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter)
+			}
+
+			// Apply content filtering
+			if sp != nil && sp.FilterManager != nil {
+				streams = filter.FilterStreams(streams, source, sp.FilterManager)
 			}
 
 			// debug logging

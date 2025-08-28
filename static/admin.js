@@ -512,6 +512,13 @@ class KPTVAdmin {
         document.getElementById('source-user-agent').value = source.userAgent || '';
         document.getElementById('source-origin').value = source.reqOrigin || '';
         document.getElementById('source-referrer').value = source.reqReferrer || '';
+        // Populate regex filters
+        document.getElementById('source-live-include-regex').value = source.liveIncludeRegex || '';
+        document.getElementById('source-live-exclude-regex').value = source.liveExcludeRegex || '';
+        document.getElementById('source-series-include-regex').value = source.seriesIncludeRegex || '';
+        document.getElementById('source-series-exclude-regex').value = source.seriesExcludeRegex || '';
+        document.getElementById('source-vod-include-regex').value = source.vodIncludeRegex || '';
+        document.getElementById('source-vod-exclude-regex').value = source.vodExcludeRegex || '';
     }
 
     clearSourceForm() {
@@ -526,6 +533,12 @@ class KPTVAdmin {
         document.getElementById('source-max-retries').value = 3;
         document.getElementById('source-max-failures').value = 5;
         document.getElementById('source-min-data-size').value = 2;
+        document.getElementById('source-live-include-regex').value = '';
+        document.getElementById('source-live-exclude-regex').value = '';
+        document.getElementById('source-series-include-regex').value = '';
+        document.getElementById('source-series-exclude-regex').value = '';
+        document.getElementById('source-vod-include-regex').value = '';
+        document.getElementById('source-vod-exclude-regex').value = '';
     }
 
     async saveSource() {
@@ -551,7 +564,14 @@ class KPTVAdmin {
                 minDataSize: parseInt(document.getElementById('source-min-data-size').value) || 2,
                 userAgent: document.getElementById('source-user-agent').value || '',
                 reqOrigin: document.getElementById('source-origin').value || '',
-                reqReferrer: document.getElementById('source-referrer').value || ''
+                reqReferrer: document.getElementById('source-referrer').value || '',
+                // Add regex filters
+                liveIncludeRegex: document.getElementById('source-live-include-regex').value || '',
+                liveExcludeRegex: document.getElementById('source-live-exclude-regex').value || '',
+                seriesIncludeRegex: document.getElementById('source-series-include-regex').value || '',
+                seriesExcludeRegex: document.getElementById('source-series-exclude-regex').value || '',
+                vodIncludeRegex: document.getElementById('source-vod-include-regex').value || '',
+                vodExcludeRegex: document.getElementById('source-vod-exclude-regex').value || ''
             };
 
             console.log('Source object created:', source);
