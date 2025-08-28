@@ -632,13 +632,10 @@ func (r *Restream) shouldCheckForMasterPlaylist(resp *http.Response) bool {
 //   - bool: success flag
 //   - int64: total number of bytes streamed
 func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool, int64) {
-
-	// Apply rate limiting before streaming request
 	if r.RateLimiter != nil {
 		r.RateLimiter.Take()
 	}
 
-	// Construct HTTP request for the stream URL
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		if r.Config.Debug {
@@ -648,10 +645,8 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 		return false, 0
 	}
 
-	// Attach cancellable context to the request
 	req = req.WithContext(r.Ctx)
 
-	// Execute HTTP request with source-specific headers
 	resp, err := r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		if r.Config.Debug {
@@ -662,7 +657,6 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 	}
 	defer resp.Body.Close()
 
-	// Reject on bad HTTP status
 	if resp.StatusCode != http.StatusOK {
 		if r.Config.Debug {
 			r.Logger.Printf("[STREAM_HTTP_ERROR] Channel %s: %s returned HTTP %d",
@@ -671,16 +665,11 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 		return false, 0
 	}
 
-	// Track total bytes streamed
 	var totalBytes int64
+	buf := make([]byte, 32*1024)
+	lastActivityUpdate := time.Now()
 
-	// Allocate reusable buffer
-	buf := make([]byte, 32*1024) // 32 KB chunks
-
-	// fire up a loop
 	for {
-
-		// Check if streaming context was cancelled
 		select {
 		case <-r.Ctx.Done():
 			if r.Config.Debug {
@@ -690,14 +679,10 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 		default:
 		}
 
-		// Read from the HTTP body
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
-
-			// Slice to only include actual bytes read
 			chunk := buf[:n]
 
-			// Write into buffer safely
 			if !r.SafeBufferWrite(chunk) {
 				if r.Config.Debug {
 					r.Logger.Printf("[STREAM_BUFFER_ERROR] Channel %s: Buffer write failed", r.Channel.Name)
@@ -705,27 +690,26 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 				return false, totalBytes
 			}
 
-			// Distribute chunk to all active clients
 			activeClients := r.DistributeToClients(chunk)
-
-			// Update byte counter
 			totalBytes += int64(n)
 
-			// Update Prometheus metrics
+			// UPDATE ACTIVITY EVERY 10 SECONDS
+			now := time.Now()
+			if now.Sub(lastActivityUpdate) > 10*time.Second {
+				r.LastActivity.Store(now.Unix())
+				lastActivityUpdate = now
+			}
+
 			metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
 			metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(float64(activeClients))
 
-			// Debug log every 1 MB
 			if r.Config.Debug && totalBytes%(1024*1024) < int64(n) {
 				r.Logger.Printf("[STREAM_PROGRESS] Channel %s: Streamed %d MB",
 					r.Channel.Name, totalBytes/(1024*1024))
 			}
 		}
 
-		// Handle read errors
 		if err != nil {
-
-			// EOF → end of stream gracefully
 			if err == io.EOF {
 				if r.Config.Debug {
 					r.Logger.Printf("[STREAM_EOF] Channel %s: Source ended", r.Channel.Name)
@@ -733,7 +717,6 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 				return true, totalBytes
 			}
 
-			// Any other error → failure
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_READ_ERROR] Channel %s: %v", r.Channel.Name, err)
 			}

@@ -356,18 +356,13 @@ func (sw *StreamWatcher) Stop() {
 // through proactive quality management.
 func (sw *StreamWatcher) checkStreamHealth() {
 	startTime := time.Now()
-
-	// Perform comprehensive health evaluation using existing restreamer state
 	hasIssues := sw.evaluateStreamHealthFromState()
-
 	checkDuration := time.Since(startTime)
 
-	// Provide comprehensive debug logging for operational monitoring
 	if sw.restreamer.Config.Debug {
 		lastActivity := sw.restreamer.LastActivity.Load()
 		timeSinceActivity := time.Now().Unix() - lastActivity
 
-		// Count active clients for context
 		clientCount := 0
 		sw.restreamer.Clients.Range(func(_, _ interface{}) bool {
 			clientCount++
@@ -377,70 +372,42 @@ func (sw *StreamWatcher) checkStreamHealth() {
 		totalFails := atomic.LoadInt32(&sw.totalFailures)
 		consecFails := atomic.LoadInt32(&sw.consecutiveFailures)
 
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: Health=%v, Activity=%ds ago, Clients=%d, TotalFails=%d, ConsecFails=%d, Check=%v",
-				sw.channelName, !hasIssues, timeSinceActivity, clientCount, totalFails, consecFails, checkDuration)
-		}
+		sw.logger.Printf("[WATCHER] Channel %s: Health=%v, Activity=%ds ago, Clients=%d, TotalFails=%d, ConsecFails=%d, Check=%v",
+			sw.channelName, !hasIssues, timeSinceActivity, clientCount, totalFails, consecFails, checkDuration)
 	}
 
-	// if the stream has issues
 	if hasIssues {
-
-		// Increment failure counters with atomic operations for thread safety
 		consecutiveFailures := atomic.AddInt32(&sw.consecutiveFailures, 1)
 		totalFailures := atomic.AddInt32(&sw.totalFailures, 1)
 
 		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: Health issue detected (consecutive: %d/5, total: %d/3)",
+			sw.logger.Printf("[WATCHER] Channel %s: Health issue detected (consecutive: %d/5, total: %d/5)",
 				sw.channelName, consecutiveFailures, totalFailures)
 		}
 
-		// Trigger failover if EITHER condition is met for comprehensive problem handling:
-		// 1. 3 consecutive failures (immediate serious issues requiring quick response)
-		// 2. 3 total failures (pattern of instability indicating persistent problems)
-		if consecutiveFailures >= 3 || totalFailures >= 3 {
-
-			// Determine failover reason for logging and analysis
-			reason := "consecutive_failures"
-			if totalFailures >= 3 {
-				reason = "total_failures"
-			}
+		// CHANGED: REQUIRE BOTH CONDITIONS AND HIGHER THRESHOLDS
+		if consecutiveFailures >= 5 && totalFailures >= 5 {
+			reason := "persistent_failures"
 			sw.triggerStreamSwitch(reason)
 
-			// Reset both failure counters after successful failover operation
 			atomic.StoreInt32(&sw.consecutiveFailures, 0)
 			atomic.StoreInt32(&sw.totalFailures, 0)
 			sw.lastFailureReset = time.Now()
 		}
 	} else {
-
-		// Handle healthy stream state with intelligent counter management
 		oldConsecutiveFailures := atomic.SwapInt32(&sw.consecutiveFailures, 0)
 
-		// Reset total failures after sustained health period (10 minutes of stability)
-		if time.Since(sw.lastFailureReset) > 10*time.Minute {
+		if time.Since(sw.lastFailureReset) > 15*time.Minute {
 			oldTotalFailures := atomic.SwapInt32(&sw.totalFailures, 0)
 			sw.lastFailureReset = time.Now()
 
-			// Log comprehensive recovery information for operational monitoring
 			if (oldConsecutiveFailures > 0 || oldTotalFailures > 0) && sw.restreamer.Config.Debug {
-				if sw.restreamer.Config.Debug {
-					sw.logger.Printf("[WATCHER] Channel %s: Long-term health recovered, reset %d consecutive + %d total failures",
-						sw.channelName, oldConsecutiveFailures, oldTotalFailures)
-				}
-			}
-		} else if oldConsecutiveFailures > 0 && sw.restreamer.Config.Debug {
-
-			// Log partial recovery with remaining total failure count
-			totalFails := atomic.LoadInt32(&sw.totalFailures)
-			if sw.restreamer.Config.Debug {
-				sw.logger.Printf("[WATCHER] Channel %s: Consecutive failures reset, but %d total failures remain",
-					sw.channelName, totalFails)
+				sw.logger.Printf("[WATCHER] Channel %s: Long-term health recovered, reset %d consecutive + %d total failures",
+					sw.channelName, oldConsecutiveFailures, oldTotalFailures)
 			}
 		}
 	}
 
-	// Update last check timestamp for interval management
 	sw.lastCheck = time.Now()
 }
 
@@ -463,20 +430,15 @@ func (sw *StreamWatcher) checkStreamHealth() {
 // Returns:
 //   - bool: true if health issues detected, false if stream appears healthy
 func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
-
-	// Implement grace period for newly started streams to prevent false positives
-	// during normal startup and initialization phases
-	if time.Since(sw.lastStreamStart) < 30*time.Second {
+	if time.Since(sw.lastStreamStart) < 60*time.Second {
 		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: In grace period, skipping health check",
-				sw.channelName)
+			sw.logger.Printf("[WATCHER] Channel %s: In grace period, skipping health check", sw.channelName)
 		}
 		return false
 	}
 
 	hasIssues := false
 
-	// 1. Evaluate buffer health for infrastructure integrity assessment
 	if sw.restreamer.Buffer != nil && sw.restreamer.Buffer.IsDestroyed() {
 		if sw.restreamer.Config.Debug {
 			sw.logger.Printf("[WATCHER] Channel %s: Buffer destroyed", sw.channelName)
@@ -484,37 +446,31 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 		hasIssues = true
 	}
 
-	// 2. Monitor for extended inactivity indicating stream stalls or interruptions
 	lastActivity := sw.restreamer.LastActivity.Load()
 	timeSinceActivity := time.Now().Unix() - lastActivity
 
-	if timeSinceActivity > 60 { // 1 minute threshold for activity monitoring
+	// CHANGED FROM 60 TO 300 SECONDS
+	if timeSinceActivity > 300 {
 		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: No activity for %d seconds",
-				sw.channelName, timeSinceActivity)
+			sw.logger.Printf("[WATCHER] Channel %s: No activity for %d seconds", sw.channelName, timeSinceActivity)
 		}
 		hasIssues = true
 	}
 
-	// 3. Evaluate context state for restreamer lifecycle management
 	if sw.restreamer.Running.Load() {
 		select {
 		case <-sw.restreamer.Ctx.Done():
-
-			// Implement grace period after context cancellation to handle normal restart sequences
-			if time.Since(sw.lastCheck) > 60*time.Second {
+			if time.Since(sw.lastCheck) > 120*time.Second {
 				if sw.restreamer.Config.Debug {
-					sw.logger.Printf("[WATCHER] Channel %s: Context cancelled and running for >60s",
-						sw.channelName)
+					sw.logger.Printf("[WATCHER] Channel %s: Context cancelled and running for >120s", sw.channelName)
 				}
 				hasIssues = true
 			}
 		default:
-			// Context is healthy - no issues from this check
 		}
 	}
 
-	// 4. Perform periodic FFprobe analysis (every 2nd check to balance thoroughness with efficiency)
+	// FFPROBE CHECK EVERY 5TH HEALTH CHECK (LESS FREQUENT)
 	if sw.shouldRunFFProbeCheck() {
 		streamHealth := sw.analyzeStreamWithFFProbe()
 		if sw.evaluateFFProbeResults(streamHealth) {
@@ -697,44 +653,37 @@ func (sw *StreamWatcher) parseFrameRate(frameRate string) float64 {
 //   - bool: true if quality issues warrant failover, false if stream is acceptable
 func (sw *StreamWatcher) evaluateFFProbeResults(health types.StreamHealthData) bool {
 
-	// Skip evaluation if FFprobe analysis failed to avoid false positives
+	// if we're already not healthy
 	if !health.Valid {
-		return false // Don't consider analysis failures as stream issues
+		return false
 	}
 
+	// default has issues
 	hasIssues := false
 
-	// Evaluate video stream presence (critical for IPTV functionality)
-	if !health.HasVideo {
+	// ONLY FAIL ON CRITICAL ISSUES - NO VIDEO AND NO BITRATE
+	if !health.HasVideo && health.Bitrate == 0 {
 		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: No video stream detected", sw.channelName)
+			sw.logger.Printf("[WATCHER] Channel %s: CRITICAL - No video stream AND no bitrate detected", sw.channelName)
 		}
 		hasIssues = true
 	}
 
-	// Evaluate bitrate characteristics for content viability
-	if health.Bitrate == 0 {
+	// VERY LOW BITRATE THRESHOLD
+	if health.Bitrate > 0 && health.Bitrate < 10000 {
 		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: No bitrate detected (stream may be problematic)",
-				sw.channelName)
-		}
-		hasIssues = true
-	} else if health.Bitrate < 50000 {
-
-		// Minimum 50 kbps threshold for usable streaming content
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: Bitrate too low (%d bps)",
-				sw.channelName, health.Bitrate)
+			sw.logger.Printf("[WATCHER] Channel %s: CRITICAL - Bitrate too low (%d bps)", sw.channelName, health.Bitrate)
 		}
 		hasIssues = true
 	}
 
-	// Provide comprehensive health logging for operational monitoring
+	// default debug
 	if !hasIssues && sw.restreamer.Config.Debug {
-		sw.logger.Printf("[WATCHER] Channel %s: Stream healthy - Video=%v, Audio=%v, Bitrate=%d, Resolution=%s",
+		sw.logger.Printf("[WATCHER] Channel %s: FFprobe OK - Video=%v, Audio=%v, Bitrate=%d, Resolution=%s",
 			sw.channelName, health.HasVideo, health.HasAudio, health.Bitrate, health.Resolution)
 	}
 
+	// return if there's issues or not
 	return hasIssues
 }
 

@@ -402,17 +402,12 @@ func (r *Restream) resolveRedirectURL(segmentURL string) string {
 //   - int64: total number of bytes successfully streamed to clients
 //   - error: non-nil if segment cannot be fetched or streaming fails
 func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) {
-
-	// Apply rate limiting before segment request
 	if r.RateLimiter != nil {
 		r.RateLimiter.Take()
 	}
 
-	// Locate source configuration for authentication and header management
 	source := r.Config.GetSourceByURL(playlistURL)
 	if source == nil {
-
-		// Attempt source matching through channel stream configuration
 		r.Channel.Mu.RLock()
 		for _, stream := range r.Channel.Streams {
 			if strings.Contains(playlistURL, stream.Source.URL) || strings.Contains(stream.URL, playlistURL) {
@@ -423,7 +418,6 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		r.Channel.Mu.RUnlock()
 	}
 
-	// Handle redirect resolution for tracking URLs
 	originalURL := segmentURL
 	if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
 		segmentURL = resolvedURL
@@ -432,31 +426,23 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		}
 	}
 
-	// Build HTTP request for segment fetching
 	req, err := http.NewRequest("GET", segmentURL, nil)
 	if err != nil {
 		return 0, err
 	}
 
-	// Add referrer header for tracking URLs to maintain analytics compatibility
 	if originalURL != segmentURL {
 		req.Header.Set("Referer", originalURL)
 	}
 
-	// Apply timeout context for segment fetch operations
 	ctx, cancel := context.WithTimeout(r.Ctx, 30*time.Second)
 	defer cancel()
 	req = req.WithContext(ctx)
 
-	// Execute request with appropriate authentication headers
 	var resp *http.Response
 	if source != nil {
-
-		// Use source-specific headers for authenticated access
 		resp, err = r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	} else {
-
-		// Fallback to basic HTTP request
 		resp, err = r.HttpClient.Do(req)
 	}
 
@@ -465,39 +451,39 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	}
 	defer resp.Body.Close()
 
-	// Verify successful response before processing content
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	// Allocate buffer for efficient chunk-based streaming
 	buffer := make([]byte, (r.Config.BufferSizePerStream * 1024 * 1024))
 	totalBytes := int64(0)
+	lastActivityUpdate := time.Now()
 
-	// Stream segment data in chunks to connected clients
 	for {
 		n, err := resp.Body.Read(buffer)
 		if n > 0 {
 			data := buffer[:n]
 			totalBytes += int64(n)
 
-			// Write chunk to shared buffer for client distribution
 			if !r.SafeBufferWrite(data) {
 				return totalBytes, fmt.Errorf("buffer write failed")
 			}
 
-			// Distribute chunk to all active clients
 			activeClients := r.DistributeToClients(data)
 			if activeClients == 0 {
 				return totalBytes, fmt.Errorf("no active clients")
 			}
+
+			// UPDATE ACTIVITY EVERY 5 SECONDS
+			now := time.Now()
+			if now.Sub(lastActivityUpdate) > 5*time.Second {
+				r.LastActivity.Store(now.Unix())
+				lastActivityUpdate = now
+			}
 		}
 
-		// Handle read completion or errors
 		if err != nil {
 			if err == io.EOF {
-
-				// Normal end of segment - return success
 				return totalBytes, nil
 			}
 			return totalBytes, err
