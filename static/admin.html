@@ -104,10 +104,6 @@
                                     <span id="cache-status">-</span>
                                 </div>
                                 <div class="metric-row">
-                                    <span>Worker Threads</span>
-                                    <span id="worker-threads">-</span>
-                                </div>
-                                <div class="metric-row">
                                     <span>Stream Watcher</span>
                                     <span id="watcher-status" class="watcher-status disabled">Disabled</span>
                                 </div>
@@ -276,6 +272,27 @@
                         </div>
                     </div>
                     <div class="uk-card-body">
+                        <!-- Add pagination controls here -->
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-bottom">
+                            <div class="uk-text-small uk-text-muted" id="channel-pagination-info">
+                                Showing 0 of 0 channels
+                            </div>
+                            <div class="uk-flex uk-flex-middle">
+                                <ul class="uk-pagination uk-flex-nowrap uk-margin-remove" id="channel-pagination">
+                                    <li><a href="#" id="first-page" uk-tooltip="First page"><span uk-icon="chevron-double-left"></span></a></li>
+                                    <li><a href="#" id="prev-page" uk-tooltip="Previous page"><span uk-pagination-previous></span></a></li>
+                                    <li class="uk-visible@s">
+                                        <select class="uk-select uk-form-width-small" id="page-selector" style="min-width: 80px;">
+                                            <option>1</option>
+                                        </select>
+                                    </li>
+                                    <li class="uk-hidden@s"><span id="current-page">1</span></li>
+                                    <li><a href="#" id="next-page" uk-tooltip="Next page"><span uk-pagination-next></span></a></li>
+                                    <li><a href="#" id="last-page" uk-tooltip="Last page"><span uk-icon="chevron-double-right"></span></a></li>
+                                </ul>
+                            </div>
+                        </div>
+                        
                         <div id="all-channels-list">
                             <div class="uk-text-center uk-margin">
                                 <div uk-spinner></div>
@@ -396,6 +413,7 @@
             </div>
         </div>
     </div>
+
     <!-- Selector Modal -->
     <div id="stream-selector-modal" uk-modal>
         <div class="uk-modal-dialog">
@@ -416,6 +434,7 @@
             </div>
         </div>
     </div>
+
     <!-- Footer -->
     <footer class="uk-section uk-section-small uk-text-center" style="margin-top: 2rem; border-top: 1px solid var(--uk-border-color);">
         <div class="uk-container">

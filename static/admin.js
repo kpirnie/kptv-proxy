@@ -7,6 +7,9 @@ class KPTVAdmin {
         this.refreshInterval = null;
         this.allChannels = null;
         this.allLogs = null;
+        this.currentPage = 1;
+        this.pageSize = 50;
+        this.filteredChannels = null;
         this.init();
     }
 
@@ -57,6 +60,9 @@ class KPTVAdmin {
         });
 
         document.getElementById('refresh-all-channels').addEventListener('click', () => {
+            this.currentPage = 1; // Reset to first page on manual refresh
+            this.filteredChannels = null; // Clear any filters
+            document.getElementById('channel-search').value = ''; // Clear search input
             this.loadAllChannels();
         });
 
@@ -70,6 +76,7 @@ class KPTVAdmin {
 
         // Search functionality
         document.getElementById('channel-search').addEventListener('input', (e) => {
+            this.currentPage = 1; // Reset to first page when searching
             this.filterChannels(e.target.value);
         });
 
@@ -85,6 +92,122 @@ class KPTVAdmin {
                 this.toggleWatcher(e.target.checked);
             });
         }
+
+        // Pagination
+        document.getElementById('prev-page').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.previousPage();
+        });
+
+        document.getElementById('next-page').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.nextPage();
+        });
+        document.getElementById('first-page').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.goToFirstPage();
+        });
+
+        document.getElementById('last-page').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.goToLastPage();
+        });
+
+        document.getElementById('page-selector').addEventListener('change', (e) => {
+            const page = parseInt(e.target.value);
+            if (!isNaN(page)) {
+                this.goToPage(page);
+            }
+        });
+
+    }
+
+    // pagination methods:
+    previousPage() {
+        if (this.currentPage > 1) {
+            this.currentPage--;
+            this.renderCurrentPage();
+        }
+    }
+    nextPage() {
+        const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
+        if (this.currentPage < totalPages) {
+            this.currentPage++;
+            this.renderCurrentPage();
+        }
+    }
+    goToFirstPage() {
+        if (this.currentPage !== 1) {
+            this.currentPage = 1;
+            this.renderCurrentPage();
+        }
+    }
+    goToLastPage() {
+        const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
+        if (this.currentPage !== totalPages && totalPages > 0) {
+            this.currentPage = totalPages;
+            this.renderCurrentPage();
+        }
+    }
+    goToPage(page) {
+        const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
+        if (page >= 1 && page <= totalPages && page !== this.currentPage) {
+            this.currentPage = page;
+            this.renderCurrentPage();
+        }
+    }
+
+    renderCurrentPage() {
+        const channels = this.filteredChannels || this.allChannels;
+        if (!channels) return;
+        
+        const startIndex = (this.currentPage - 1) * this.pageSize;
+        const endIndex = startIndex + this.pageSize;
+        const pageChannels = channels.slice(startIndex, endIndex);
+        
+        this.renderAllChannels(pageChannels);
+        this.updatePaginationInfo();
+    }
+
+    updatePaginationInfo() {
+        const channels = this.filteredChannels || this.allChannels || [];
+        const totalChannels = channels.length;
+        const totalPages = Math.ceil(totalChannels / this.pageSize);
+        const startIndex = (this.currentPage - 1) * this.pageSize + 1;
+        const endIndex = Math.min(startIndex + this.pageSize - 1, totalChannels);
+        
+        document.getElementById('channel-pagination-info').textContent = 
+            `Showing ${startIndex}-${endIndex} of ${totalChannels} channels`;
+        
+        document.getElementById('current-page').textContent = this.currentPage;
+        
+        // Update page selector dropdown
+        const pageSelector = document.getElementById('page-selector');
+        if (pageSelector) {
+            // Save current value to restore after update
+            const currentValue = pageSelector.value;
+            
+            // Clear and rebuild options
+            pageSelector.innerHTML = '';
+            for (let i = 1; i <= totalPages; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = i;
+                option.selected = i === this.currentPage;
+                pageSelector.appendChild(option);
+            }
+            
+            // If current page wasn't in the options (shouldn't happen), select it
+            if (pageSelector.value !== this.currentPage.toString()) {
+                pageSelector.value = this.currentPage;
+            }
+        }
+        
+        // Update button states
+        document.getElementById('first-page').parentElement.classList.toggle('uk-disabled', this.currentPage === 1);
+        document.getElementById('prev-page').parentElement.classList.toggle('uk-disabled', this.currentPage === 1);
+        document.getElementById('next-page').parentElement.classList.toggle('uk-disabled', this.currentPage === totalPages || totalPages === 0);
+        document.getElementById('last-page').parentElement.classList.toggle('uk-disabled', this.currentPage === totalPages || totalPages === 0);
     }
 
     startAutoRefresh() {
@@ -93,15 +216,34 @@ class KPTVAdmin {
             this.loadStats();
             this.loadActiveChannels();
             
-            // Always refresh all channels but preserve search
+            // Preserve current page, search state, and page selector
             const searchInput = document.getElementById('channel-search');
             const currentSearch = searchInput ? searchInput.value.trim() : '';
+            const currentPage = this.currentPage;
             
             this.loadAllChannels().then(() => {
+                // Restore search filter if it was active
                 if (currentSearch) {
-                    // Reapply the search filter after loading
-                    this.filterChannels(currentSearch);
+                    this.filteredChannels = this.allChannels.filter(channel => 
+                        channel.name.toLowerCase().includes(currentSearch.toLowerCase()) ||
+                        (channel.group && channel.group.toLowerCase().includes(currentSearch.toLowerCase()))
+                    );
+                } else {
+                    this.filteredChannels = null;
                 }
+                
+                // Restore the previous page
+                this.currentPage = currentPage;
+                const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
+                
+                // If current page is beyond the new total, go to last page
+                if (this.currentPage > totalPages && totalPages > 0) {
+                    this.currentPage = totalPages;
+                } else if (totalPages === 0) {
+                    this.currentPage = 1;
+                }
+                
+                this.renderCurrentPage();
             });
         }, 5000);
     }
@@ -602,7 +744,8 @@ class KPTVAdmin {
         try {
             const channels = await this.apiCall('/api/channels');
             this.allChannels = channels;
-            this.renderAllChannels(channels);
+
+            this.renderCurrentPage();
             return channels;
         } catch (error) {
             document.getElementById('all-channels-list').innerHTML = 
@@ -619,8 +762,13 @@ class KPTVAdmin {
             return;
         }
 
-        container.innerHTML = channels.map(channel => `
-            <div class="channel-item ${channel.active ? '' : 'channel-inactive'} fade-in">
+        // Use document fragment for batch DOM insertion
+        const fragment = document.createDocumentFragment();
+        
+        channels.forEach(channel => {
+            const div = document.createElement('div');
+            div.className = `channel-item ${channel.active ? '' : 'channel-inactive'} fade-in`;
+            div.innerHTML = `
                 <div class="uk-flex uk-flex-between uk-flex-middle">
                     <div class="uk-flex-1">
                         <div class="channel-name">${this.escapeHtml(channel.name)}</div>
@@ -639,20 +787,30 @@ class KPTVAdmin {
                         </button>
                     </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+            fragment.appendChild(div);
+        });
+        
+        // Clear and append in one operation
+        container.innerHTML = '';
+        container.appendChild(fragment);
     }
     
 
     filterChannels(searchTerm) {
         if (!this.allChannels) return;
         
-        const filtered = this.allChannels.filter(channel => 
-            channel.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (channel.group && channel.group.toLowerCase().includes(searchTerm.toLowerCase()))
-        );
+        if (!searchTerm.trim()) {
+            this.filteredChannels = null;
+        } else {
+            this.filteredChannels = this.allChannels.filter(channel => 
+                channel.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (channel.group && channel.group.toLowerCase().includes(searchTerm.toLowerCase()))
+            );
+        }
         
-        this.renderAllChannels(filtered);
+        this.currentPage = 1; // Reset to first page when filtering
+        this.renderCurrentPage();
     }
 
     // Logs

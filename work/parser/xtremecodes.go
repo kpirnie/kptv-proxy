@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"time"
 
+	regexp "github.com/grafana/regexp"
 	"go.uber.org/ratelimit"
 )
 
@@ -79,14 +80,36 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 	// Initialize collection for aggregated streams from all endpoints
 	var allStreams []*types.Stream
 
+	// possible series and vod names
+	seriesRegex := regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
+	vodRegex := regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
+
 	// Fetch and process live television streams
 	if cfg.Debug {
 		logger.Printf("Fetching live streams from Xtreme Codes API: %s", utils.LogURL(cfg, source.URL))
 	}
 	liveStreams := fetchXCLiveStreams(httpClient, logger, cfg, source, rateLimiter)
 	for _, stream := range liveStreams {
+
 		// Construct live stream URL using Xtreme Codes format: /live/username/password/stream_id.ts
 		streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
+
+		// hold the default group
+		group := `live`
+
+		// we need to change the group if the series or vod regex matches
+		seriesNameMatch := seriesRegex.MatchString(stream.Name)
+		vodNameMatch := vodRegex.MatchString(stream.Name)
+		seriesURLMatch := seriesRegex.MatchString(streamURL)
+		vodURLMatch := vodRegex.MatchString(streamURL)
+
+		// if the either match
+		if seriesNameMatch || seriesURLMatch {
+			group = `series`
+		}
+		if vodNameMatch || vodURLMatch {
+			group = `vod`
+		}
 
 		// Create Stream object with live stream metadata and attributes
 		s := &types.Stream{
@@ -95,7 +118,7 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 			Source: source,
 			Attributes: map[string]string{
 				"tvg-name":    stream.Name,                        // Channel name for EPG integration
-				"group-title": "live",                             // Category identifier for playlist organization
+				"group-title": group,                              // Category identifier for playlist organization
 				"tvg-id":      fmt.Sprintf("%d", stream.StreamID), // Default stream ID for EPG matching
 				"category-id": stream.CategoryID,                  // Original category from API response
 			},
@@ -197,6 +220,7 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 // Returns:
 //   - []XCLiveStream: array of live stream objects from API response, or nil on error
 func fetchXCLiveStreams(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCLiveStream {
+
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
@@ -239,6 +263,7 @@ func fetchXCLiveStreams(httpClient *client.HeaderSettingClient, logger *log.Logg
 // Returns:
 //   - []XCSeries: array of series objects from API response, or nil on error
 func fetchXCSeries(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCSeries {
+
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
@@ -281,6 +306,7 @@ func fetchXCSeries(httpClient *client.HeaderSettingClient, logger *log.Logger, c
 // Returns:
 //   - []XCVODStream: array of VOD stream objects from API response, or nil on error
 func fetchXCVODStreams(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCVODStream {
+
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()

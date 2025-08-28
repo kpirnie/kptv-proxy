@@ -773,3 +773,63 @@ body, .uk-text-primary {
 .watcher-toggle-btn {
     min-width: 120px;
 }
+
+/* Add to admin.css */
+.uk-pagination {
+    margin: 0;
+}
+
+.uk-pagination li {
+    margin: 0 0.25rem;
+}
+
+.uk-pagination li a {
+    min-width: 2rem;
+    height: 2rem;
+    padding: 0 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.uk-pagination li span {
+    min-width: 2rem;
+    height: 2rem;
+    padding: 0 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--uk-primary);
+    color: white;
+    border-radius: 4px;
+}
+
+#channel-pagination-info {
+    white-space: nowrap;
+}
+/* Add to admin.css */
+#page-selector {
+    height: 2rem;
+    padding: 0 0.5rem;
+    margin: 0 0.5rem;
+}
+
+.uk-pagination li.uk-disabled a {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.uk-pagination li a:hover {
+    background-color: var(--uk-background-muted);
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    #page-selector {
+        min-width: 60px;
+    }
+    
+    .uk-pagination li {
+        margin: 0 0.1rem;
+    }
+}
