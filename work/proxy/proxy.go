@@ -712,6 +712,22 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 
 	// Integrate with stream watcher if enabled and stream is active
 	if sp.Config.WatcherEnabled && restreamer.Restreamer.Running.Load() {
+
+		// Get the correct stream index that will actually be used
+		preferredIndex := int(atomic.LoadInt32(&channel.PreferredStreamIndex))
+		currentIndex := int(atomic.LoadInt32(&restreamer.Restreamer.CurrentIndex))
+
+		// Use preferred index if it's valid, otherwise use current
+		actualIndex := preferredIndex
+		if preferredIndex < 0 || preferredIndex >= len(channel.Streams) {
+			actualIndex = currentIndex
+		}
+
+		if sp.Config.Debug {
+			sp.Logger.Printf("[WATCHER_DEBUG] Channel %s: Preferred=%d, Current=%d, Using=%d",
+				channel.Name, preferredIndex, currentIndex, actualIndex)
+		}
+
 		sp.WatcherManager.StartWatching(channel.Name, restreamer.Restreamer)
 	}
 

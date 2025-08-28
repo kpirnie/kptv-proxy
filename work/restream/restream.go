@@ -223,26 +223,29 @@ func (r *Restream) Stream() {
 	currentIndex := int(atomic.LoadInt32(&r.CurrentIndex))
 	preferredIndex := int(atomic.LoadInt32(&r.Channel.PreferredStreamIndex))
 
-	// Decide starting index:
-	// - If current index matches preferred, keep it
-	// - Otherwise reset to preferred or fallback to 0
+	// Decide starting index and set it immediately
+	var startingIndex int
 	if currentIndex >= 0 && currentIndex < streamCount && currentIndex == preferredIndex {
+		startingIndex = currentIndex
 		if r.Config.Debug {
 			r.Logger.Printf("[STREAM_START] Channel %s: Using manually set stream index %d", r.Channel.Name, currentIndex)
 		}
 	} else {
 		if preferredIndex >= 0 && preferredIndex < streamCount {
-			atomic.StoreInt32(&r.CurrentIndex, int32(preferredIndex))
+			startingIndex = preferredIndex
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_START] Channel %s: Starting with preferred stream index %d", r.Channel.Name, preferredIndex)
 			}
 		} else {
-			atomic.StoreInt32(&r.CurrentIndex, 0)
+			startingIndex = 0
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_START] Channel %s: Starting with default stream index 0", r.Channel.Name)
 			}
 		}
 	}
+
+	// Set the current index immediately so other components can read it correctly
+	atomic.StoreInt32(&r.CurrentIndex, int32(startingIndex))
 
 	// Retry configuration
 	maxTotalAttempts := streamCount * 2      // maximum attempts across streams
@@ -254,10 +257,14 @@ func (r *Restream) Stream() {
 	for totalAttempts < maxTotalAttempts {
 		select {
 		case <-r.Ctx.Done():
+			isManualSwitch := r.ManualSwitch.Load()
 
-			// Context cancelled → check if restart is needed
 			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_CONTEXT_CANCELLED] Channel %s: Context cancelled, checking for restart", r.Channel.Name)
+				if isManualSwitch {
+					r.Logger.Printf("[STREAM_MANUAL_SWITCH] Channel %s: Manual switch initiated", r.Channel.Name)
+				} else {
+					r.Logger.Printf("[STREAM_CONTEXT_CANCELLED] Channel %s: Context cancelled", r.Channel.Name)
+				}
 			}
 
 			// Count clients still connected
@@ -266,20 +273,41 @@ func (r *Restream) Stream() {
 				clientCount++
 				return true
 			})
+
+			// still have clients connected
 			if clientCount > 0 {
 				if r.Config.Debug {
-					r.Logger.Printf("[STREAM_RESTART_NEEDED] Channel %s: %d clients still connected, allowing restart", r.Channel.Name, clientCount)
+					r.Logger.Printf("[STREAM_RESTART_NEEDED] Channel %s: %d clients still connected, restarting immediately", r.Channel.Name, clientCount)
 				}
 
-				// Create fresh context and restart immediately
-				newCtx, newCancel := context.WithCancel(context.Background())
-				r.Ctx = newCtx
-				r.Cancel = newCancel
+				// Create fresh context for restart
+				r.Ctx, r.Cancel = context.WithCancel(context.Background())
+
+				// Reset running state and restart the streaming loop
+				r.Running.Store(false)
+
+				// Brief pause to allow cleanup
+				time.Sleep(100 * time.Millisecond)
+
+				// Set running again and continue the outer loop
 				r.Running.Store(true)
 
-				// Continue streaming with new context
+				// For manual switches, don't reset failure counters or attempt counts
+				if !isManualSwitch {
+
+					// Reset attempt counters for fresh start only on real failures
+					totalAttempts = 0
+					consecutiveFailures = make(map[int]int)
+				} else {
+					if r.Config.Debug {
+						r.Logger.Printf("[STREAM_MANUAL_RESTART] Channel %s: Restarting for manual switch to stream %d", r.Channel.Name, int(atomic.LoadInt32(&r.CurrentIndex)))
+					}
+				}
+
+				// Continue the main streaming loop
 				continue
 			}
+
 			return
 
 		default:
@@ -304,25 +332,36 @@ func (r *Restream) Stream() {
 		currentIdx := int(atomic.LoadInt32(&r.CurrentIndex))
 		totalAttempts++
 
+		// Reset manual switch flag for new stream attempt
+		r.ManualSwitch.Store(false)
+
 		// Reset buffer for new attempt
-		if r.Buffer != nil && !r.Buffer.IsDestroyed() {
-			r.Buffer.Reset()
-		} else {
-			bufferSize := r.Config.MaxBufferSize * 1024 * 1024
-			r.Buffer = buffer.NewRingBuffer(bufferSize)
-		}
+		r.resetBufferSafely()
 
 		// Attempt to stream from source
 		success, _ := r.StreamFromSource(currentIdx)
 
-		if success {
+		// Check if this was a manual switch success
+		isManualSwitch := r.ManualSwitch.Load()
 
-			// Reset failure count for successful stream
-			consecutiveFailures[currentIdx] = 0
-			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_SUCCESS] Channel %s: Stream %d succeeded, resetting failure count", r.Channel.Name, currentIdx)
+		if success {
+			if isManualSwitch {
+				// Manual switch succeeded - reset flag and continue to restart with new index
+				r.ManualSwitch.Store(false)
+				if r.Config.Debug {
+					newIdx := int(atomic.LoadInt32(&r.CurrentIndex))
+					r.Logger.Printf("[STREAM_MANUAL_SWITCH_RESTART] Channel %s: Manual switch succeeded, restarting with new stream %d", r.Channel.Name, newIdx)
+				}
+				// Don't return - continue the loop to start streaming the new index
+				continue
+			} else {
+				// Normal success - reset failure count and exit
+				consecutiveFailures[currentIdx] = 0
+				if r.Config.Debug {
+					r.Logger.Printf("[STREAM_SUCCESS] Channel %s: Stream %d succeeded, resetting failure count", r.Channel.Name, currentIdx)
+				}
+				return
 			}
-			return
 		}
 
 		// Increment consecutive failure count
@@ -699,8 +738,18 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 				return false, totalBytes
 			}
 
+			//if r.Config.Debug && totalBytes < 50*1024*1024 { // First 50MB only
+			//	r.Logger.Printf("[STREAM_PRE_DISTRIBUTE] Channel %s: About to distribute %d bytes", r.Channel.Name, n)
+			//}
+
 			activeClients := r.DistributeToClients(chunk)
 			totalBytes += int64(n)
+
+			// ADD THIS DEBUG LINE
+			if r.Config.Debug && totalBytes%(10*1024*1024) < int64(n) { // Every 10MB
+				r.Logger.Printf("[STREAM_DISTRIBUTE] Channel %s: Distributed %d bytes to %d clients (Total: %d MB)",
+					r.Channel.Name, n, activeClients, totalBytes/(1024*1024))
+			}
 
 			// UPDATE ACTIVITY EVERY 10 SECONDS
 			now := time.Now()
@@ -726,6 +775,17 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 				return true, totalBytes
 			}
 
+			// Check if this is a context cancellation due to manual switch
+			if r.Ctx.Err() != nil {
+				isManualSwitch := r.ManualSwitch.Load()
+				if isManualSwitch {
+					if r.Config.Debug {
+						r.Logger.Printf("[STREAM_MANUAL_SWITCH] Channel %s: Context canceled due to manual switch", r.Channel.Name)
+					}
+					return true, totalBytes // Return success for manual switches
+				}
+			}
+
 			if r.Config.Debug {
 				r.Logger.Printf("[STREAM_READ_ERROR] Channel %s: %v", r.Channel.Name, err)
 			}
@@ -742,10 +802,20 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 //
 // Returns:
 //   - int: number of active clients remaining after distribution
+//
+// DistributeToClients sends a chunk of stream data to all active clients.
+// Clients that fail to receive data are removed.
+//
+// Parameters:
+//   - data: TS/HLS chunk of stream data
+//
+// Returns:
+//   - int: number of active clients remaining after distribution
 func (r *Restream) DistributeToClients(data []byte) int {
 
 	// initial active clients
 	activeClients := 0
+	failedClients := 0
 
 	// Iterate over all connected clients
 	r.Clients.Range(func(key, value interface{}) bool {
@@ -761,6 +831,7 @@ func (r *Restream) DistributeToClients(data []byte) int {
 					r.Channel.Name, client.Id, err)
 			}
 			r.RemoveClient(client.Id)
+			failedClients++
 			return true
 		}
 
@@ -775,6 +846,12 @@ func (r *Restream) DistributeToClients(data []byte) int {
 
 		return true
 	})
+
+	// Add debug logging when clients fail
+	if r.Config.Debug && failedClients > 0 {
+		r.Logger.Printf("[DISTRIBUTE_FAILURES] Channel %s: %d clients failed, %d active remaining",
+			r.Channel.Name, failedClients, activeClients)
+	}
 
 	// return the active clients
 	return activeClients
@@ -791,9 +868,15 @@ func (r *Restream) DistributeToClients(data []byte) int {
 //   - bool: true if write succeeded, false if buffer closed/cancelled
 func (r *Restream) SafeBufferWrite(data []byte) bool {
 
-	// Abort if context cancelled
+	// Check if context cancelled due to manual switch - allow this to succeed
 	select {
 	case <-r.Ctx.Done():
+		if r.ManualSwitch.Load() {
+			if r.Config.Debug {
+				r.Logger.Printf("[BUFFER_MANUAL_SWITCH] Channel %s: Buffer write during manual switch, allowing success", r.Channel.Name)
+			}
+			return true // Don't treat manual switch cancellation as buffer failure
+		}
 		return false
 	default:
 	}
@@ -827,6 +910,9 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 		r.Logger.Printf("[FORCE_SWITCH] Channel %s: Switching to stream %d", r.Channel.Name, newIndex)
 	}
 
+	// Update preferred stream index on the channel
+	atomic.StoreInt32(&r.Channel.PreferredStreamIndex, int32(newIndex))
+
 	// Update current index
 	atomic.StoreInt32(&r.CurrentIndex, int32(newIndex))
 
@@ -835,6 +921,47 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 		return
 	}
 
-	// Cancel current context to trigger restart
+	// Count clients before switch
+	clientCount := 0
+	r.Clients.Range(func(_, _ interface{}) bool {
+		clientCount++
+		return true
+	})
+
+	if r.Config.Debug {
+		r.Logger.Printf("[FORCE_SWITCH] Channel %s: Forcing switch to stream %d with %d clients", r.Channel.Name, newIndex, clientCount)
+	}
+
+	// Mark this as a manual switch so context cancellation won't be treated as failure
+	r.ManualSwitch.Store(true)
+
+	// Cancel current context to trigger restart with new stream index
 	r.Cancel()
+}
+
+// resetBufferSafely resets the buffer while preserving client connections
+func (r *Restream) resetBufferSafely() {
+	if r.Buffer != nil && !r.Buffer.IsDestroyed() {
+		// Get all client IDs before reset
+		var clientIDs []string
+		r.Clients.Range(func(key, value interface{}) bool {
+			clientIDs = append(clientIDs, key.(string))
+			return true
+		})
+
+		// Reset buffer
+		r.Buffer.Reset()
+
+		if r.Config.Debug {
+			r.Logger.Printf("[BUFFER_RESET_SAFE] Channel %s: Buffer reset with %d clients", r.Channel.Name, len(clientIDs))
+		}
+	} else {
+		// Create new buffer if destroyed
+		bufferSize := r.Config.MaxBufferSize * 1024 * 1024
+		r.Buffer = buffer.NewRingBuffer(bufferSize)
+
+		if r.Config.Debug {
+			r.Logger.Printf("[BUFFER_RECREATED] Channel %s: New buffer created", r.Channel.Name)
+		}
+	}
 }

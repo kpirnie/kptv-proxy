@@ -92,6 +92,7 @@ type Restreamer struct {
 	HttpClient   *client.HeaderSettingClient // HTTP client with custom header support for source authentication
 	Config       *config.Config              // Application configuration reference for URL obfuscation and operational parameters
 	RateLimiter  ratelimit.Limiter
+	ManualSwitch atomic.Bool
 }
 
 // RestreamClient represents an individual client connection receiving streamed content

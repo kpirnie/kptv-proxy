@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -274,54 +273,26 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		// Update preferred stream index first
 		atomic.StoreInt32(&channel.PreferredStreamIndex, int32(request.StreamIndex))
 
-		// Handle active restreamer with proper client preservation
+		// Handle active restreamer with forced switch
 		if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
-			addLogEntry("info", fmt.Sprintf("Forcing stream restart for channel %s to index %d", channelName, request.StreamIndex))
+			addLogEntry("info", fmt.Sprintf("Forcing stream switch for channel %s to index %d", channelName, request.StreamIndex))
 
-			// Count clients before restart
+			// Verify client presence before switch
 			clientCount := 0
-			var clientList []interface{}
-			channel.Restreamer.Clients.Range(func(key, value interface{}) bool {
+			channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
 				clientCount++
-				clientList = append(clientList, map[string]interface{}{
-					"id":     key,
-					"client": value,
-				})
 				return true
 			})
 
 			if clientCount > 0 {
-				// Update current index immediately
+				// Use the ForceStreamSwitch method instead of manual restart
+				r := &restream.Restream{Restreamer: channel.Restreamer}
+				r.ForceStreamSwitch(request.StreamIndex)
+
+				addLogEntry("info", fmt.Sprintf("Stream switch initiated for channel %s to index %d with %d clients", channelName, request.StreamIndex, clientCount))
+			} else {
+				// Just update the index if no clients
 				atomic.StoreInt32(&channel.Restreamer.CurrentIndex, int32(request.StreamIndex))
-
-				// Gracefully stop current streaming
-				channel.Restreamer.Running.Store(false)
-				channel.Restreamer.Cancel()
-
-				// Allow brief cleanup period
-				time.Sleep(500 * time.Millisecond)
-
-				// Reset buffer for new stream
-				if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
-					channel.Restreamer.Buffer.Reset()
-				}
-
-				// Create fresh context for restart
-				ctx, cancel := context.WithCancel(context.Background())
-				channel.Restreamer.Ctx = ctx
-				channel.Restreamer.Cancel = cancel
-
-				// Restart streaming with new index
-				channel.Restreamer.Running.Store(true)
-				go func() {
-					defer func() {
-						channel.Restreamer.Running.Store(false)
-					}()
-					r := &restream.Restream{Restreamer: channel.Restreamer}
-					r.Stream()
-				}()
-
-				addLogEntry("info", fmt.Sprintf("Restarted streaming for channel %s at index %d with %d clients", channelName, request.StreamIndex, clientCount))
 			}
 		}
 
