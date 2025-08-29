@@ -209,6 +209,10 @@ func (r *Restream) Stream() {
 		metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(0)
 	}()
 
+	if r.Config.Debug {
+		r.Logger.Printf("[STREAM_LOOP_START] Channel %s: Starting streaming loop", r.Channel.Name)
+	}
+
 	// Lock channel to get stream count
 	r.Channel.Mu.RLock()
 	streamCount := len(r.Channel.Streams)
@@ -332,36 +336,81 @@ func (r *Restream) Stream() {
 		currentIdx := int(atomic.LoadInt32(&r.CurrentIndex))
 		totalAttempts++
 
+		// DON'T reset buffer during manual switch
+		if !r.ManualSwitch.Load() {
+			r.resetBufferSafely()
+		}
+
+		// Attempt to stream from source
+		if r.Config.Debug {
+			r.Logger.Printf("[STREAM_ATTEMPT_DEBUG] Channel %s: Attempting stream %d, manual switch flag: %t",
+				r.Channel.Name, currentIdx, r.ManualSwitch.Load())
+		}
+		success, _ := r.StreamFromSource(currentIdx)
+
+		// Check if this was a manual switch AFTER the stream attempt
+		wasManualSwitch := r.ManualSwitch.Load()
+		if r.Config.Debug {
+			r.Logger.Printf("[STREAM_RESULT_DEBUG] Channel %s: Stream %d success: %t, manual switch: %t",
+				r.Channel.Name, currentIdx, success, wasManualSwitch)
+		}
+
 		// Reset manual switch flag for new stream attempt
 		r.ManualSwitch.Store(false)
 
-		// Reset buffer for new attempt
-		r.resetBufferSafely()
-
-		// Attempt to stream from source
-		success, _ := r.StreamFromSource(currentIdx)
-
-		// Check if this was a manual switch success
-		isManualSwitch := r.ManualSwitch.Load()
-
+		// if the stream was successful
 		if success {
-			if isManualSwitch {
-				// Manual switch succeeded - reset flag and continue to restart with new index
+
+			// Reset failure count
+			consecutiveFailures[currentIdx] = 0
+			if r.Config.Debug {
+				r.Logger.Printf("[STREAM_SUCCESS] Channel %s: Stream %d succeeded, resetting failure count", r.Channel.Name, currentIdx)
+			}
+
+			// For manual switches, don't return - continue to stream the new index
+			if wasManualSwitch {
 				r.ManualSwitch.Store(false)
 				if r.Config.Debug {
 					newIdx := int(atomic.LoadInt32(&r.CurrentIndex))
-					r.Logger.Printf("[STREAM_MANUAL_SWITCH_RESTART] Channel %s: Manual switch succeeded, restarting with new stream %d", r.Channel.Name, newIdx)
+					r.Logger.Printf("[STREAM_MANUAL_SWITCH_RESTART] Channel %s: Manual switch succeeded, continuing with stream %d", r.Channel.Name, newIdx)
 				}
-				// Don't return - continue the loop to start streaming the new index
-				continue
-			} else {
-				// Normal success - reset failure count and exit
-				consecutiveFailures[currentIdx] = 0
+
+				// Reset attempt counters but keep going
+				totalAttempts = 0
+				consecutiveFailures = make(map[int]int)
+
+				// Add debug log to confirm we're continuing
 				if r.Config.Debug {
-					r.Logger.Printf("[STREAM_SUCCESS] Channel %s: Stream %d succeeded, resetting failure count", r.Channel.Name, currentIdx)
+					r.Logger.Printf("[STREAM_CONTINUING] Channel %s: Continuing streaming loop after manual switch", r.Channel.Name)
 				}
-				return
+
+				continue // This is the critical line - continue the loop to try the new stream
 			}
+
+			// Check if context was cancelled due to manual switch
+			if r.Ctx.Err() != nil {
+				isManualSwitch := r.ManualSwitch.Load()
+				if isManualSwitch {
+					if r.Config.Debug {
+						r.Logger.Printf("[STREAM_MANUAL_CONTINUE] Channel %s: Context cancelled due to manual switch, continuing", r.Channel.Name)
+					}
+
+					// Reset manual switch flag and continue the loop
+					r.ManualSwitch.Store(false)
+
+					// Add a small delay to allow context to reset
+					select {
+					case <-time.After(100 * time.Millisecond):
+					case <-r.Ctx.Done():
+						return
+					}
+
+					continue // Continue to try the new stream
+				}
+			}
+
+			// Normal success - exit
+			return
 		}
 
 		// Increment consecutive failure count
@@ -447,6 +496,10 @@ func (r *Restream) Stream() {
 //   - bool: whether the streaming attempt succeeded
 //   - int64: number of bytes successfully transferred
 func (r *Restream) StreamFromSource(index int) (bool, int64) {
+
+	if r.Config.Debug {
+		r.Logger.Printf("[STREAM_ATTEMPT] Channel %s: Attempting to stream from index %d", r.Channel.Name, index)
+	}
 
 	// Acquire read lock to access the channel’s stream list safely
 	r.Channel.Mu.RLock()
@@ -761,10 +814,10 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
 			metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(float64(activeClients))
 
-			if r.Config.Debug && totalBytes%(1024*1024) < int64(n) {
+			/*if r.Config.Debug && totalBytes%(1024*1024) < int64(n) {
 				r.Logger.Printf("[STREAM_PROGRESS] Channel %s: Streamed %d MB",
 					r.Channel.Name, totalBytes/(1024*1024))
-			}
+			}*/
 		}
 
 		if err != nil {
