@@ -455,6 +455,14 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
+		// Ensure FFmpeg arrays are initialized
+		if configFile.FFmpegPreInput == nil {
+			configFile.FFmpegPreInput = []string{}
+		}
+		if configFile.FFmpegPreOutput == nil {
+			configFile.FFmpegPreOutput = []string{}
+		}
+
 		// Atomic file write using temporary file
 		configPath := "/settings/config.json"
 		tempPath := "/settings/config.json.tmp"

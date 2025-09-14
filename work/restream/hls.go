@@ -131,6 +131,11 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		r.Logger.Printf("[HLS_STREAM] Starting HLS segment streaming for: %s", utils.LogURL(r.Config, playlistURL))
 	}
 
+	// Use FFmpeg for HLS if enabled
+	if r.Config.FFmpegMode {
+		return r.streamWithFFmpeg(playlistURL)
+	}
+
 	totalBytes := int64(0)
 
 	// IMPROVED: Use a circular buffer approach for segment tracking

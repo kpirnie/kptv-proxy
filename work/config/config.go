@@ -28,6 +28,9 @@ type Config struct {
 	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"`   // Maximum concurrent connections allowed to the app
 	Sources               []SourceConfig `json:"sources"`               // List of configured stream sources
 	WatcherEnabled        bool           `json:"watcherEnabled"`
+	FFmpegMode        	  bool           `json:"ffmpegMode"`        // Use FFmpeg instead of Go proxy/restreamer
+	FFmpegPreInput    	  []string       `json:"ffmpegPreInput"`    // FFmpeg arguments before -i
+	FFmpegPreOutput   	  []string       `json:"ffmpegPreOutput"`   // FFmpeg arguments before output URL
 }
 
 // SourceConfig represents the configuration for a single stream source.
@@ -74,6 +77,9 @@ type ConfigFile struct {
 	MaxConnectionsToApp   int                `json:"maxConnectionsToApp"`
 	Sources               []SourceConfigFile `json:"sources"`
 	WatcherEnabled        bool               `json:"watcherEnabled"`
+	FFmpegMode        bool     `json:"ffmpegMode"`
+	FFmpegPreInput    []string `json:"ffmpegPreInput"`
+	FFmpegPreOutput   []string `json:"ffmpegPreOutput"`
 }
 
 // SourceConfigFile represents the source configuration in JSON format.
@@ -206,6 +212,9 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		SortDirection:       cf.SortDirection,
 		MaxConnectionsToApp: cf.MaxConnectionsToApp,
 		WatcherEnabled:      cf.WatcherEnabled,
+		FFmpegMode:      false,
+		FFmpegPreInput:  []string{},
+		FFmpegPreOutput: []string{},
 	}
 
 	// Parse duration fields

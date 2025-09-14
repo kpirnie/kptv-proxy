@@ -321,6 +321,26 @@ class KPTVAdmin {
         if (watcherCheckbox && config.watcherEnabled !== undefined) {
             watcherCheckbox.checked = config.watcherEnabled;
         }
+
+        // Handle FFmpeg settings
+        if (config.ffmpegMode !== undefined) {
+            const ffmpegCheckbox = form.querySelector('input[name="ffmpegMode"]');
+            if (ffmpegCheckbox) ffmpegCheckbox.checked = config.ffmpegMode;
+        }
+        if (config.ffmpegPreInput) {
+            const ffmpegPreInput = form.querySelector('input[name="ffmpegPreInput"]');
+            if (ffmpegPreInput) {
+                ffmpegPreInput.value = Array.isArray(config.ffmpegPreInput) ? 
+                    config.ffmpegPreInput.join(' ') : config.ffmpegPreInput;
+            }
+        }
+        if (config.ffmpegPreOutput) {
+            const ffmpegPreOutput = form.querySelector('input[name="ffmpegPreOutput"]');
+            if (ffmpegPreOutput) {
+                ffmpegPreOutput.value = Array.isArray(config.ffmpegPreOutput) ? 
+                    config.ffmpegPreOutput.join(' ') : config.ffmpegPreOutput;
+            }
+        }
     }
 
     async saveGlobalSettings() {
@@ -345,6 +365,21 @@ class KPTVAdmin {
                 newConfig[checkbox.name] = false;
             }
         });
+
+        // Process FFmpeg arguments
+        const ffmpegPreInput = form.querySelector('input[name="ffmpegPreInput"]');
+        if (ffmpegPreInput && ffmpegPreInput.value) {
+            newConfig.ffmpegPreInput = ffmpegPreInput.value.split(' ').filter(arg => arg.length > 0);
+        } else {
+            newConfig.ffmpegPreInput = [];
+        }
+
+        const ffmpegPreOutput = form.querySelector('input[name="ffmpegPreOutput"]');
+        if (ffmpegPreOutput && ffmpegPreOutput.value) {
+            newConfig.ffmpegPreOutput = ffmpegPreOutput.value.split(' ').filter(arg => arg.length > 0);
+        } else {
+            newConfig.ffmpegPreOutput = [];
+        }
 
         try {
             // CRITICAL FIX: Get the current config first to preserve sources

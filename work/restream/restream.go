@@ -737,6 +737,11 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 		r.RateLimiter.Take()
 	}
 
+	// Check if FFmpeg mode is enabled
+	if r.Config.FFmpegMode {
+		return r.streamWithFFmpeg(url)
+	}
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		if r.Config.Debug {
