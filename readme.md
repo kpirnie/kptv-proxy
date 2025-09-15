@@ -676,6 +676,22 @@ Format: M3U8/HLS
 }
 ```
 
+## Supporting KPTV Proxy
+
+KPTV Proxy will always remain free and open-source for everyone to use and modify. However, if this project has enhanced your IPTV experience or saved you time, consider supporting its continued development. 
+
+Donations help fund server costs, testing equipment, and most importantly, the time needed to add new features, maintain compatibility, and provide community support: https://www.paypal.com/paypalme/kevinpirnie
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
+
+---
+
 ## Third-Party Software
 
 ### FFmpeg/FFprobe
@@ -690,14 +706,6 @@ This software uses code of [FFmpeg](http://ffmpeg.org) licensed under the [LGPLv
 
 **Patent Considerations:**
 FFmpeg may use patented algorithms for various multimedia codecs. Patent laws vary by jurisdiction. For commercial use, consult legal counsel regarding potential patent licensing requirements in your jurisdiction.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
 
 ## License
 
