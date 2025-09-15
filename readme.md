@@ -1,6 +1,6 @@
 # KPTV Proxy - IPTV Stream Aggregator & Proxy
 
-A high-performance Go-based IPTV proxy server that intelligently aggregates streams from multiple sources, provides automatic channel deduplication, failover capabilities, and serves them through a unified M3U8 playlist with advanced streaming options.
+A high-performance Go-based IPTV proxy server that intelligently aggregates streams from multiple sources, provides automatic channel deduplication, failover capabilities, and serves them through a unified M3U8 playlist with advanced streaming options including FFmpeg integration.
 
 ## Key Features
 
@@ -18,8 +18,9 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - **Ad-Insertion Handling**: Automatically resolves tracking URLs and beacon redirects
 - **Stream Validation**: Uses ffprobe to validate stream quality before serving
 
-### 🚀 **Restreaming Architecture** 
-- **Efficient Resource Usage**: Single upstream connection shared among multiple clients
+### 🚀 **Dual Streaming Architecture** 
+- **Go Restreaming Mode**: Single upstream connection shared among multiple clients
+- **FFmpeg Proxy Mode**: Hardware-accelerated streaming with advanced codec support
 - **Provider-Friendly**: Reduces load on upstream providers and prevents rate limiting
 - **Automatic Management**: Intelligent connection pooling and cleanup of inactive streams  
 - **Scalable**: Supports unlimited clients per channel with minimal resource overhead
@@ -47,6 +48,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - **URL obfuscation** for privacy and security
 - **Configurable timeouts and buffer sizes**
 - **Debug mode** with extensive logging
+- **FFmpeg integration** with custom pre-input and pre-output arguments
 
 ### 📊 **Monitoring & Metrics**
 - Prometheus metrics integration
@@ -57,6 +59,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 
 ### 🌐 **Web Admin Interface**
 - **Dark Mobile-Friendly Design**: Responsive web interface optimized for all devices
+- **Custom CSS Support**: Load custom styles from `/settings/custom.css` for personalized theming
 - **Real-Time Dashboard**: Live statistics, active channels, and system monitoring
 - **Configuration Management**: Edit global settings and per-source configurations through web UI
 - **Source Management**: Add, edit, delete, and reorder IPTV sources with full validation
@@ -79,9 +82,17 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - **State-Based Detection**: Monitors buffer health, activity timestamps, and connection status
 - **No Additional Network Load**: Uses existing connection state without extra requests
 - **Provider-Friendly**: Respects existing connection limits and reuses established connections
-- **Configurable Timing**: Adjustable monitoring intervals (default: 30 seconds, 3 consecutive failures)
+- **Configurable Timing**: Adjustable monitoring intervals (default: 30 seconds, 5 consecutive failures)
 - **Seamless Switching**: Automatic failover maintains client connections during stream transitions
 - **Integration with Existing Logic**: Leverages all existing stream management and failover mechanisms
+
+### 🎬 **FFmpeg Integration**
+- **Hardware Acceleration**: Support for GPU-accelerated encoding/decoding
+- **Advanced Codec Support**: Handle complex video formats and containers
+- **Custom Arguments**: Configurable pre-input and pre-output FFmpeg arguments
+- **Automatic Detection**: Intelligent stream format detection and processing
+- **Resource Optimization**: Efficient memory usage and CPU optimization
+- **Format Conversion**: Real-time transcoding and format adaptation
 
 ## Architecture Overview
 
@@ -107,6 +118,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                     │  • Web Admin Interface  │
                     │  • Dead Stream Mgmt     │
                     │  • Stream Watcher       │
+                    │  • FFmpeg Integration   │
                     └────────────┬────────────┘
                                  │
                     ┌────────────▼────────────┐
@@ -149,6 +161,10 @@ wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.
   "sortDirection": "asc",
   "streamTimeout": "10s",
   "maxConnectionsToApp": 100,
+  "watcherEnabled": true,
+  "ffmpegMode": false,
+  "ffmpegPreInput": [],
+  "ffmpegPreOutput": ["-c", "copy"],
   "sources": [
     {
       "name": "Primary IPTV Source",
@@ -163,20 +179,6 @@ wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.
       "userAgent": "VLC/3.0.18 LibVLC/3.0.18",
       "reqOrigin": "",
       "reqReferrer": ""
-    },
-    {
-      "name": "Backup IPTV Source",
-      "url": "http://provider2.com/playlist.m3u8",
-      "order": 2,
-      "maxConnections": 10,
-      "maxStreamTimeout": "45s",
-      "retryDelay": "10s",
-      "maxRetries": 2,
-      "maxFailuresBeforeBlock": 3,
-      "minDataSize": 1,
-      "userAgent": "Mozilla/5.0 (Smart TV; Linux)",
-      "reqOrigin": "https://provider2.com",
-      "reqReferrer": "https://provider2.com/player"
     }
   ]
 }
@@ -194,32 +196,81 @@ podman-compose up -d
 4. **Access your services:**
 ```
 Unified Playlist: http://your-server-ip:9500/playlist
-Group Filtered Playlist: http://your-server-ip:9500/{group}/playlist
+Group Filtered Playlist: http://your-server-ip:9500/playlist/{group}
 Admin Interface:  http://your-server-ip:9500/admin
 Stream Management: Use admin interface to activate/kill streams per channel
 ```
 
-5. **Monitor stream health:**
-```
-Stream Watcher: Automatic monitoring and failover (no configuration needed)
-Health Monitoring: Runs every 30 seconds, switches after 3 consecutive failures
-```
-
-**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover, per-source configuration, intelligent stream monitoring, and a powerful web-based admin interface.
+**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover, per-source configuration, intelligent stream monitoring, FFmpeg integration, and a powerful web-based admin interface.
 
 ## Web Admin Interface
 
 Access the admin interface at `http://your-server:port/admin` for comprehensive management:
 
+### Custom Styling
+
+You can customize the admin interface appearance by creating a custom CSS file at `/settings/custom.css`. This file will be automatically loaded by the admin interface.
+
+**Base Framework**: The admin interface uses UIKit 3. For comprehensive styling documentation, visit: https://getuikit.com/docs/introduction
+
+**Available Custom CSS Classes**:
+
+**Layout & Cards**:
+- `.stat-card` - Dashboard statistics cards
+- `.success-card` - Green success styling
+- `.warning-card` - Orange warning styling  
+- `.danger-card` - Red danger styling
+- `.loading-overlay` - Full-screen loading indicator
+
+**Channel & Source Management**:
+- `.channel-item` - Individual channel list items
+- `.channel-inactive` - Styling for inactive channels
+- `.source-item` - Individual source configuration items
+- `.source-actions` - Action buttons for source management
+
+**Status Indicators**:
+- `.status-indicator` - Base status dot styling
+- `.status-active` - Green active status
+- `.status-warning` - Orange warning status
+- `.status-error` - Red error status
+- `.connection-dot` - Animated connection indicators
+
+**Stream Management**:
+- `.dead-stream` - Styling for dead/blocked streams
+- `.stream-selector-current` - Currently active stream
+- `.stream-selector-preferred` - Preferred stream indicator
+- `.watcher-status` - Stream watcher status indicator
+
+**Logging & Debug**:
+- `.log-entry` - Base log entry styling
+- `.log-error` - Error level logs
+- `.log-warning` - Warning level logs
+- `.log-info` - Info level logs  
+- `.log-debug` - Debug level logs
+- `.log-timestamp` - Log timestamp styling
+
+**UI Elements**:
+- `.metric-row` - Statistics display rows
+- `.channel-details` - Channel metadata display
+- `.channel-name` - Channel name styling
+- `.channel-url` - URL display formatting
+
+**Utilities**:
+- `.text-truncate` - Text overflow handling
+- `.text-monospace` - Monospace font styling
+- `.fade-in` - Fade-in animation
+- `.loading` - Loading state styling
+
 ### Dashboard
 - **Real-Time Statistics**: Total channels, active streams, connected clients, memory usage
-- **System Status**: Server uptime, cache status, worker thread count
+- **System Status**: Server uptime, cache status, worker thread count, FFmpeg mode
 - **Traffic Metrics**: Connection counts, bytes transferred, stream errors
 - **Active Channels**: Live view of currently streaming channels with client counts
 - **Auto-Refresh**: Updates every 5 seconds for real-time monitoring
 
 ### Global Settings
 - Edit all configuration parameters through intuitive web forms
+- FFmpeg mode toggle and argument configuration
 - Validation and error handling for all settings
 - Save changes and trigger graceful restart to apply new configuration
 - Support for duration formats (30m, 1h, etc.) and all data types
@@ -252,6 +303,46 @@ Access the admin interface at `http://your-server:port/admin` for comprehensive 
 - **Touch Controls**: Finger-friendly buttons and controls
 - **Collapsible Navigation**: Adaptive interface for small screens
 
+## FFmpeg Integration
+
+KPTV Proxy supports two streaming modes:
+
+### Go Restreaming Mode (Default)
+- Pure Go implementation
+- Efficient memory usage
+- Fast startup times
+- Basic stream processing
+
+### FFmpeg Mode
+- Hardware acceleration support
+- Advanced codec handling
+- GPU utilization for encoding/decoding
+- Comprehensive format support
+
+**Configuration:**
+```json
+{
+  "ffmpegMode": true,
+  "ffmpegPreInput": ["-re", "-rtsp_transport", "tcp"],
+  "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"]
+}
+```
+
+**Common FFmpeg Arguments:**
+
+*Pre-Input Arguments*:
+- `"-re"` - Read input at native frame rate
+- `"-rtsp_transport", "tcp"` - Use TCP for RTSP
+- `"-fflags", "nobuffer"` - Disable input buffering
+- `"-thread_queue_size", "1024"` - Set thread queue size
+
+*Pre-Output Arguments*:
+- `"-c", "copy"` - Copy streams without re-encoding
+- `"-c:v", "libx264"` - H.264 video encoding
+- `"-c:a", "aac"` - AAC audio encoding
+- `"-f", "mpegts"` - MPEG-TS output format
+- `"-movflags", "frag_keyframe+empty_moov"` - Fragmented MP4
+
 ## Dead Stream Management
 
 The KPTV Proxy includes a sophisticated dead stream management system that allows you to mark problematic streams as "dead" and manage them through the web interface.
@@ -268,20 +359,7 @@ The KPTV Proxy includes a sophisticated dead stream management system that allow
    - **Activate Button** (▶️): Switch to this specific stream
    - **Kill Button** (🚫): Mark this stream as dead
 
-2. **Dead Stream Storage**: When a stream is marked as dead, its information is stored in `/settings/dead-streams.json`:
-   ```json
-   {
-     "deadStreams": [
-       {
-         "channel": "ESPN",
-         "streamIndex": 2,
-         "url": "http://provider.com/espn/stream3.m3u8",
-         "sourceName": "Backup Provider",
-         "timestamp": "2025-08-24T12:00:10Z"
-       }
-     ]
-   }
-   ```
+2. **Dead Stream Storage**: When a stream is marked as dead, its information is stored in `/settings/dead-streams.json`
 
 3. **Automatic Stream Selection**: During playback, the proxy will:
    - Skip dead streams during automatic failover
@@ -293,76 +371,34 @@ The KPTV Proxy includes a sophisticated dead stream management system that allow
    - Clicking the **Live Button** (🔄) next to the dead stream
    - The stream is removed from the dead streams list and becomes available again
 
-### Benefits
-- **Improved Reliability**: Eliminates time wasted on known bad streams
-- **Manual Override**: Allows administrators to control exactly which streams are used
-- **Flexible Management**: Dead streams can be easily revived when providers fix issues
-- **Historical Tracking**: Maintains a record of problematic streams with timestamps
-
-### File Location
-The dead streams configuration is stored at:
-```
-/settings/dead-streams.json
-```
-
-This file is automatically created and maintained by the admin interface.
-
 ## Stream Watcher - Automatic Monitoring
 
 The KPTV Proxy includes an intelligent stream monitoring system that automatically detects playback issues and switches to backup streams without interrupting client connections.
 
 ### How It Works
 
-The Stream Watcher runs as a background service that monitors active streams every 10 seconds without making additional network requests. It analyzes the existing stream state to detect problems:
+The Stream Watcher runs as a background service that monitors active streams every 15 seconds (debug mode) or 30 seconds (normal mode) without making additional network requests.
 
 **Monitored Conditions:**
 - **Buffer Health**: Detects destroyed or stale buffers
 - **Stream Activity**: Monitors data flow and timestamps  
 - **Context Status**: Detects cancelled or problematic connections
 - **Client Connections**: Tracks active client count
+- **FFprobe Analysis**: Deep content validation (when enabled)
 
 **Automatic Actions:**
 - **Health Assessment**: Evaluates stream conditions using existing state
-- **Consecutive Failure Tracking**: Requires 3 consecutive failures before switching (prevents false positives)
+- **Consecutive Failure Tracking**: Requires 5 consecutive failures before switching
 - **Intelligent Failover**: Automatically switches to next available healthy stream
 - **Seamless Transition**: Maintains client connections during stream changes
 - **Resource Respect**: Uses existing connection limits and stream management
-
-### Benefits
-
-- **Zero Configuration**: Works automatically with existing setup
-- **No Network Overhead**: Uses existing connection state only
-- **Provider Friendly**: Respects connection limits and doesn't create additional load
-- **Transparent Operation**: Clients experience seamless stream switching
-- **Integration**: Works with all existing features (dead streams, manual switching, admin interface)
-
-### Monitoring Logic
-
-```
-Stream Health Check (every 10s)
-├── Check Buffer Status
-├── Verify Recent Activity (<60s)  
-├── Validate Context State
-└── Assess Client Connections
-
-If Issues Detected:
-├── Increment Failure Counter
-├── Log Issue Details (debug mode)
-└── After 5 Consecutive Failures:
-    ├── Find Next Available Stream
-    ├── Switch to Backup Stream
-    ├── Reset Failure Counter
-    └── Continue Monitoring
-```
-
-The watcher intelligently skips blocked streams, respects source connection limits, and maintains all existing stream management functionality while providing automatic reliability improvements.
 
 ## API Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /playlist` | Unified playlist (all channels) |
-| `GET /{group}/playlist` | Group-filtered playlist |
+| `GET /playlist/{group}` | Group-filtered playlist |
 | `GET /stream/{channel}` | Stream proxy with automatic failover |
 | `GET /metrics` | Prometheus metrics |
 | `GET /admin` | Web admin interface |
@@ -378,6 +414,7 @@ The watcher intelligently skips blocked streams, respects source connection limi
 | `GET /api/logs` | Application logs |
 | `DELETE /api/logs` | Clear logs |
 | `POST /api/restart` | Graceful restart |
+| `POST /api/watcher/toggle` | Enable/disable stream watcher |
 
 ## Configuration Reference
 
@@ -399,6 +436,10 @@ All configuration is done via a JSON file mounted at `/settings/config.json` or 
 | `sortDirection` | `"asc"` | Sort direction: `asc` or `desc` |
 | `streamTimeout` | `"10s"` | Global timeout for stream validation |
 | `maxConnectionsToApp` | `100` | Maximum total connections to the application |
+| `watcherEnabled` | `true` | Enable automatic stream monitoring |
+| `ffmpegMode` | `false` | Use FFmpeg instead of Go streaming |
+| `ffmpegPreInput` | `[]` | FFmpeg arguments before `-i` |
+| `ffmpegPreOutput` | `[]` | FFmpeg arguments before output |
 
 ### Per-Source Settings
 Each source in the `sources` array supports these individual settings:
@@ -417,6 +458,8 @@ Each source in the `sources` array supports these individual settings:
 | `userAgent` | No | Custom User-Agent header | `"VLC/3.0.18 LibVLC/3.0.18"` |
 | `reqOrigin` | No | Custom Origin header | `"https://provider.com"` |
 | `reqReferrer` | No | Custom Referrer header | `"https://provider.com/player"` |
+| `username` | No | XC API username | `"user123"` |
+| `password` | No | XC API password | `"pass456"` |
 
 ### Example Docker Compose
 
@@ -430,6 +473,9 @@ services:
       - 9500:8080
     volumes:
       - ./settings:/settings  # Mount configuration directory
+    # if utilizing hardware accelleration for ffmpeg
+    #devices:
+      #- /dev/dri:/dev/dri
     
     # Health check
     healthcheck:
@@ -442,7 +488,22 @@ services:
 
 ## Advanced Configuration Examples
 
-**Note**: The Stream Watcher automatically monitors all active streams and provides failover without requiring additional configuration. It works seamlessly with all existing features including dead stream management, manual stream switching, and source-specific settings.
+### FFmpeg Hardware Acceleration
+```json
+{
+  "ffmpegMode": true,
+  "ffmpegPreInput": [
+    "-hwaccel", "vaapi",
+    "-hwaccel_device", "/dev/dri/renderD128",
+    "-re"
+  ],
+  "ffmpegPreOutput": [
+    "-c:v", "h264_vaapi",
+    "-c:a", "aac",
+    "-f", "mpegts"
+  ]
+}
+```
 
 ### High-Performance Multi-Provider Setup
 ```json
@@ -452,6 +513,8 @@ services:
   "bufferSizePerStream": 32,
   "workerThreads": 20,
   "maxConnectionsToApp": 500,
+  "ffmpegMode": true,
+  "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"],
   "sources": [
     {
       "name": "Premium Provider",
@@ -464,106 +527,49 @@ services:
       "maxFailuresBeforeBlock": 3,
       "minDataSize": 5,
       "userAgent": "PREMIUM_CLIENT/1.0"
-    },
-    {
-      "name": "Backup Provider 1",
-      "url": "http://backup1.iptv.com/playlist.m3u8", 
-      "order": 2,
-      "maxConnections": 8,
-      "maxStreamTimeout": "30s",
-      "retryDelay": "5s",
-      "maxRetries": 3,
-      "maxFailuresBeforeBlock": 5,
-      "minDataSize": 2,
-      "userAgent": "VLC/3.0.18 LibVLC/3.0.18"
-    },
-    {
-      "name": "Backup Provider 2",
-      "url": "http://backup2.iptv.com/playlist.m3u8",
-      "order": 3,
-      "maxConnections": 15,
-      "maxStreamTimeout": "45s", 
-      "retryDelay": "10s",
-      "maxRetries": 5,
-      "maxFailuresBeforeBlock": 8,
-      "minDataSize": 1,
-      "userAgent": "Mozilla/5.0 (Smart TV; Linux)",
-      "reqOrigin": "https://backup2.iptv.com",
-      "reqReferrer": "https://backup2.iptv.com/player"
     }
   ]
 }
 ```
 
-### Provider-Specific Headers Configuration
+### Xtreme Codes API Configuration
 ```json
 {
   "sources": [
     {
-      "name": "Provider with Custom Headers",
-      "url": "http://special-provider.com/list.m3u8",
+      "name": "XC Provider",
+      "url": "http://panel.provider.com",
+      "username": "your_username",
+      "password": "your_password",
       "order": 1,
-      "maxConnections": 5,
-      "userAgent": "SpecialClient/2.1 (Linux; Smart TV)",
-      "reqOrigin": "https://special-provider.com",
-      "reqReferrer": "https://special-provider.com/tv-guide"
-    },
-    {
-      "name": "Standard Provider",
-      "url": "http://standard-provider.com/playlist.m3u8",
-      "order": 2,
-      "maxConnections": 10,
-      "userAgent": "VLC/3.0.18 LibVLC/3.0.18"
+      "maxConnections": 5
     }
   ]
 }
 ```
 
-### Dead Stream Management Configuration
-The dead streams are automatically managed through the admin interface, but you can also manually edit the file:
-
-```json
-{
-  "deadStreams": [
-    {
-      "channel": "CNN",
-      "streamIndex": 1,
-      "url": "http://provider1.com/cnn/backup.m3u8",
-      "sourceName": "Backup Provider",
-      "timestamp": "2025-08-24T10:30:00Z"
-    },
-    {
-      "channel": "ESPN",
-      "streamIndex": 3,
-      "url": "http://provider2.com/espn/stream4.m3u8", 
-      "sourceName": "Premium Provider",
-      "timestamp": "2025-08-24T11:45:00Z"
-    }
-  ]
+### Custom CSS Example
+Create `/settings/custom.css`:
+```css
+/* Custom dark purple theme */
+.stat-card {
+    background: linear-gradient(135deg, #6a1b9a, #4a148c) !important;
 }
-```
 
-**Note**: It's recommended to use the web admin interface for dead stream management rather than manually editing the JSON file.
+.channel-item {
+    border-left-color: #9c27b0 !important;
+    background: #1a1a2e !important;
+}
 
-### Low-Resource Configuration
-```json
-{
-  "maxBufferSize": 64,
-  "bufferSizePerStream": 4,
-  "workerThreads": 2,
-  "maxConnectionsToApp": 50,
-  "sources": [
-    {
-      "name": "Single Provider",
-      "url": "http://provider.com/playlist.m3u8",
-      "order": 1,
-      "maxConnections": 2,
-      "maxStreamTimeout": "15s",
-      "retryDelay": "3s",
-      "maxRetries": 2,
-      "minDataSize": 1
-    }
-  ]
+.status-active {
+    background: #00e676 !important;
+    box-shadow: 0 0 10px rgba(0, 230, 118, 0.6) !important;
+}
+
+/* Custom brand colors */
+:root {
+    --uk-primary: #9c27b0 !important;
+    --uk-success: #00e676 !important;
 }
 ```
 
@@ -577,36 +583,19 @@ docker-compose ps
 # View real-time logs  
 docker-compose logs -f kptv-proxy
 
-# Check specific errors
-docker-compose logs kptv-proxy | grep ERROR
+# Check FFmpeg mode status
+docker-compose logs kptv-proxy | grep FFMPEG
 
-# View configuration loading
-docker-compose logs kptv-proxy | grep "Configuration loaded"
-```
-
-### Stream Watcher Monitoring
-```bash
-# Monitor watcher activity in logs
+# Monitor stream watcher activity
 docker-compose logs kptv-proxy | grep WATCHER
-
-# Check for automatic stream switches
-docker-compose logs kptv-proxy | grep "Switching channel"
-
-# View health check results (debug mode only)
-docker-compose logs kptv-proxy | grep "health check took"
 ```
-
-**Watcher Log Examples:**
-- `[WATCHER] Started watching channel ESPN` - Monitoring started
-- `[WATCHER] Channel ESPN: Health issue detected (consecutive failures: 2)` - Problem detected
-- `[WATCHER] Switching channel ESPN from stream 1 to stream 2` - Automatic failover
-- `[WATCHER] Stopped watching channel ESPN` - Monitoring stopped
 
 ### Key Metrics (Prometheus)
 - `iptv_proxy_active_connections` - Active connections per channel
 - `iptv_proxy_bytes_transferred` - Data transfer metrics
 - `iptv_proxy_stream_errors` - Error counts by type
 - `iptv_proxy_clients_connected` - Connected clients per channel
+- `iptv_proxy_stream_switches_total` - Stream switch events
 
 ### Common Issues & Solutions
 
@@ -616,48 +605,23 @@ docker-compose logs kptv-proxy | grep "health check took"
 - ✅ Verify file permissions: `ls -la settings/`
 - ✅ Check logs in admin interface or container logs
 
-**Problem**: No channels in playlist
-- ✅ Add sources through the web admin interface
-- ✅ Check source URLs are accessible in admin interface
-- ✅ Enable debug mode through admin interface
-- ✅ Verify M3U8 format is valid
-- ✅ Check connection limits aren't too restrictive
+**Problem**: FFmpeg not working
+- ✅ Verify FFmpeg is installed in container: `docker/podman exec -it kptv_proxy ffmpeg -version`
+- ✅ Check FFmpeg arguments in debug logs
+- ✅ Test with simple arguments first: `["-c", "copy"]`
+- ✅ Verify hardware acceleration support if using GPU
 
 **Problem**: Streams failing to play  
 - ✅ Monitor channel status in admin interface
+- ✅ Toggle between Go and FFmpeg modes in global settings
 - ✅ Check per-source retry settings in source management
-- ✅ Verify source-specific connection limits
-- ✅ Test custom headers through admin interface
-- ✅ Verify `baseURL` is accessible from clients
 - ✅ Use dead stream management to mark problematic streams
 
-**Problem**: Rate limiting (429 errors)
-- ✅ Reduce `maxConnections` for affected sources in admin interface
-- ✅ Increase `retryDelay` for affected sources
+**Problem**: High CPU usage
+- ✅ Disable FFmpeg mode if hardware acceleration unavailable
+- ✅ Use `-c copy` instead of transcoding in FFmpeg arguments
+- ✅ Reduce `maxConnections` per source in admin interface
 - ✅ Monitor active connections in dashboard
-- ✅ Check `maxConnectionsToApp` limit in global settings
-
-**Problem**: High memory usage
-- ✅ Reduce `maxBufferSize` and `bufferSizePerStream` in admin interface
-- ✅ Decrease `workerThreads` in global settings
-- ✅ Monitor memory usage in admin dashboard
-- ✅ Lower `maxConnections` per source
-
-**Problem**: Provider-specific authentication issues
-- ✅ Configure proper headers through source management interface
-- ✅ Test different User-Agent strings
-- ✅ Use custom Origin and Referrer headers
-
-**Problem**: Dead streams keep being selected
-- ✅ Use the admin interface to mark problematic streams as dead
-- ✅ Check `/settings/dead-streams.json` for proper entries
-- ✅ Verify dead streams show as "DEAD" in the stream selector
-
-**Problem**: Automatic stream switching too frequent
-- ✅ Monitor watcher logs to see what's triggering switches
-- ✅ Check buffer health and stream activity in debug logs
-- ✅ Adjust monitoring interval in watcher.go if needed (default: 30s)
-- ✅ Verify streams are actually stable before marking issues as false positives
 
 ## Client Configuration Examples
 
@@ -685,8 +649,8 @@ Format: M3U8/HLS
 - **Access Control**: Restrict admin interface access to trusted networks
 - **Source Privacy**: Enable `obfuscateUrls` to hide provider URLs in logs
 - **Container Security**: Runs as non-root user (UID 1000)
-- **HTTPS**: Use HTTPS sources when available
-- **Configuration Security**: Protect `/settings/config.json` and `/settings/dead-streams.json` with appropriate file permissions
+- **Custom CSS**: Validate custom CSS to prevent XSS attacks
+- **File Permissions**: Protect configuration files with appropriate permissions
 
 ## Performance Optimization
 
@@ -696,12 +660,8 @@ Format: M3U8/HLS
   "workerThreads": 20,
   "maxBufferSize": 1024,
   "maxConnectionsToApp": 500,
-  "sources": [
-    {
-      "maxConnections": 3,
-      "maxStreamTimeout": "15s"
-    }
-  ]
+  "ffmpegMode": true,
+  "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"]
 }
 ```
 
@@ -711,67 +671,10 @@ Format: M3U8/HLS
   "workerThreads": 2,
   "maxBufferSize": 64,
   "bufferSizePerStream": 4,
-  "maxConnectionsToApp": 50
+  "maxConnectionsToApp": 50,
+  "ffmpegMode": false
 }
 ```
-
-### For Provider-Specific Optimization
-```json
-{
-  "sources": [
-    {
-      "name": "Fast Provider",
-      "maxStreamTimeout": "10s",
-      "retryDelay": "2s",
-      "maxRetries": 2
-    },
-    {
-      "name": "Slow Provider", 
-      "maxStreamTimeout": "60s",
-      "retryDelay": "15s",
-      "maxRetries": 5
-    }
-  ]
-}
-```
-
-## Migration from Environment Variables
-
-If you're upgrading from a version that used environment variables, here's how to convert:
-
-**Old (Environment Variables):**
-```yaml
-environment:
-  - SOURCES=http://provider1.com/list.m3u8:5,http://provider2.com/list.m3u8:10
-  - USER_AGENT=VLC/3.0.18 LibVLC/3.0.18
-  - MAX_RETRIES=3
-```
-
-**New (JSON Configuration):**
-```json
-{
-  "sources": [
-    {
-      "name": "Provider 1",
-      "url": "http://provider1.com/list.m3u8",
-      "order": 1,
-      "maxConnections": 5,
-      "maxRetries": 3,
-      "userAgent": "VLC/3.0.18 LibVLC/3.0.18"
-    },
-    {
-      "name": "Provider 2", 
-      "url": "http://provider2.com/list.m3u8",
-      "order": 2,
-      "maxConnections": 10,
-      "maxRetries": 3,
-      "userAgent": "VLC/3.0.18 LibVLC/3.0.18"
-    }
-  ]
-}
-```
-
-**Alternatively, use the web admin interface to migrate configuration visually.**
 
 ## Third-Party Software
 
@@ -780,8 +683,8 @@ environment:
 This software uses code of [FFmpeg](http://ffmpeg.org) licensed under the [LGPLv2.1](http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html).
 
 **FFmpeg License Information:**
-- KPTV Proxy uses FFprobe (part of the FFmpeg project) for stream validation
-- FFprobe is used as an external binary (not linked/embedded)
+- KPTV Proxy uses FFmpeg and FFprobe for stream processing and validation
+- FFmpeg is used as an external binary and for stream proxying
 - FFmpeg source code can be downloaded from: [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
 - FFmpeg is licensed under LGPL v2.1 or later
 
@@ -805,7 +708,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 This project incorporates or uses the following third-party software:
 
 - **FFmpeg/FFprobe**: Licensed under LGPL v2.1 or later - [https://ffmpeg.org/legal.html](https://ffmpeg.org/legal.html)
+- **UIKit 3**: MIT License - [https://getuikit.com](https://getuikit.com)
 
 ---
 
-**Need Help?** Use the web admin interface at `http://your-server:port/admin` for easy configuration management, or enable debug mode and check the logs for detailed information about stream processing, connection attempts, and error details. The automatic Stream Watcher will help maintain stream reliability in the background.
+**Need Help?** Use the web admin interface at `http://your-server:port/admin` for easy configuration management, customize the appearance with `/settings/custom.css`, or enable debug mode and check the logs for detailed information about stream processing, connection attempts, and error details. The automatic Stream Watcher will help maintain stream reliability in the background, and FFmpeg integration provides advanced streaming capabilities for complex media formats.

@@ -33,8 +33,8 @@ Website: https://ffmpeg.org
 License URL: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
 Source Code: https://ffmpeg.org/download.html
 
-KPTV Proxy uses FFprobe (part of the FFmpeg project) as an external binary 
-for stream validation. FFprobe is not linked or embedded in the KPTV Proxy 
+KPTV Proxy uses FFprobe and FFmpeg (part of the FFmpeg project) as external binaries 
+for stream validation. FFprobe and FFmpeg are not linked or embedded in the KPTV Proxy 
 binary.
 
 Patent Notice: FFmpeg may use patented algorithms for various multimedia 
