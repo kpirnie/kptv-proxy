@@ -77,7 +77,7 @@ func main() {
 	router.HandleFunc("/playlist", handlers.HandlePlaylist(proxyInstance)).Methods("GET")
 
 	// Group-based playlist route
-	router.HandleFunc("/{group}/playlist", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
+	router.HandleFunc("/playlist/{group}", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
 
 	// Channel stream handler
 	router.HandleFunc("/stream/{channel}", handlers.HandleStream(proxyInstance)).Methods("GET")
