@@ -24,8 +24,8 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	r.Channel.Mu.RUnlock()
 
 	if r.Config.Debug {
-		r.Logger.Printf("[FFMPEG] Starting FFmpeg proxy for channel %s: %s", 
-			r.Channel.Name, streamURL)
+		r.Logger.Printf("[FFMPEG] Starting FFmpeg proxy for channel %s", 
+			r.Channel.Name)
 	}
 
 	// Build ffmpeg command
@@ -52,10 +52,6 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	
 	// Add output format and pipe
 	args = append(args, "-f", "mpegts", "-")
-	
-	if r.Config.Debug {
-		r.Logger.Printf("[FFMPEG] Command: ffmpeg %s", strings.Join(args, " "))
-	}
 
 	// Create ffmpeg process with context
 	ctx, cancel := context.WithCancel(r.Ctx)
