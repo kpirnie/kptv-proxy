@@ -651,6 +651,11 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	if sp.Config.Debug {
 		sp.Logger.Printf("[STREAM_REQUEST] Channel %s: URL: %s", channel.Name, channel.Name)
 		sp.Logger.Printf("[FOUND] Channel %s: Streams: %d", channel.Name, len(channel.Streams))
+		if sp.Config.FFmpegMode {
+			sp.Logger.Printf("Using FFMPEG mode for channel: %s", channel.Name)
+		} else {
+			sp.Logger.Printf("Using RESTREAMING mode for channel: %s", channel.Name)
+		}
 	}
 
 	// Initialize or reuse existing restreamer with thread-safe access

@@ -2,18 +2,27 @@ package restream
 
 import (
 	"context"
-	//"fmt"
+	"fmt"
 	"io"
+	"kptv-proxy/work/config"
 	"os/exec"
 	"strings"
-	//"sync/atomic"
 	"syscall"
 	"time"
 )
-
 // streamWithFFmpeg uses ffmpeg to proxy the stream instead of Go-based restreaming
-// It writes to the configured ring buffer and distributes to clients
 func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
+	// Find the source for this URL
+	var source *config.SourceConfig
+	r.Channel.Mu.RLock()
+	for _, stream := range r.Channel.Streams {
+		if stream.URL == streamURL || strings.Contains(streamURL, stream.Source.URL) {
+			source = stream.Source
+			break
+		}
+	}
+	r.Channel.Mu.RUnlock()
+
 	if r.Config.Debug {
 		r.Logger.Printf("[FFMPEG] Starting FFmpeg proxy for channel %s: %s", 
 			r.Channel.Name, streamURL)
@@ -24,6 +33,16 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	
 	// Add pre-input arguments
 	args = append(args, r.Config.FFmpegPreInput...)
+	
+	// Add user agent if source has one
+	if source != nil && source.UserAgent != "" {
+		args = append(args, "-user_agent", source.UserAgent)
+	}
+	
+	// Add headers if source has them
+	if source != nil && source.ReqReferrer != "" {
+		args = append(args, "-headers", fmt.Sprintf("Referer: %s\r\n", source.ReqReferrer))
+	}
 	
 	// Add input
 	args = append(args, "-i", streamURL)

@@ -499,6 +499,24 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 
 	if r.Config.Debug {
 		r.Logger.Printf("[STREAM_ATTEMPT] Channel %s: Attempting to stream from index %d", r.Channel.Name, index)
+		r.Logger.Printf("[FFMPEG_MODE] Channel %s: FFMPEG Mode: %v", r.Channel.Name, r.Config.FFmpegMode)
+	}
+
+	// CHECK FFMPEG MODE FIRST - BEFORE ANYTHING ELSE
+	if r.Config.FFmpegMode {
+		// Get the stream URL for FFmpeg
+		r.Channel.Mu.RLock()
+		if index >= len(r.Channel.Streams) {
+			r.Channel.Mu.RUnlock()
+			return false, 0
+		}
+		streamURL := r.Channel.Streams[index].URL
+		r.Channel.Mu.RUnlock()
+		
+		if r.Config.Debug {
+			r.Logger.Printf("[FFMPEG_MODE] Channel %s", r.Channel.Name)
+		}
+		return r.streamWithFFmpeg(streamURL)
 	}
 
 	// Acquire read lock to access the channel’s stream list safely
@@ -575,7 +593,6 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		return false, 0
 	}
 
-	// If single URL, stream directly
 	return r.streamFromURL(variants[0].URL, stream.Source)
 }
 
@@ -645,6 +662,11 @@ func (r *Restream) getStreamVariants(url string, source *config.SourceConfig) ([
 //   - bool: success flag
 //   - int64: number of bytes streamed
 func (r *Restream) testAndStreamVariant(variant parser.StreamVariant, source *config.SourceConfig) (bool, int64) {
+
+	// Use FFmpeg if enabled, bypassing all variant testing
+	if r.Config.FFmpegMode {
+		return r.streamWithFFmpeg(variant.URL)
+	}
 
 	// Build HTTP GET request for the variant
 	testReq, err := http.NewRequest("GET", variant.URL, nil)

@@ -212,9 +212,9 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		SortDirection:       cf.SortDirection,
 		MaxConnectionsToApp: cf.MaxConnectionsToApp,
 		WatcherEnabled:      cf.WatcherEnabled,
-		FFmpegMode:      false,
-		FFmpegPreInput:  []string{},
-		FFmpegPreOutput: []string{},
+		FFmpegMode:          cf.FFmpegMode,
+		FFmpegPreInput:      cf.FFmpegPreInput,
+		FFmpegPreOutput:     cf.FFmpegPreOutput,
 	}
 
 	// Parse duration fields

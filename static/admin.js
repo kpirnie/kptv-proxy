@@ -348,6 +348,7 @@ class KPTVAdmin {
         const formData = new FormData(form);
         const newConfig = {};
 
+        // Process all form fields
         for (let [key, value] of formData.entries()) {
             const input = form.querySelector(`[name="${key}"]`);
             if (input.type === 'checkbox') {
@@ -359,12 +360,18 @@ class KPTVAdmin {
             }
         }
 
-        // Add unchecked checkboxes
+        // Add unchecked checkboxes (including ffmpegMode)
         form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
             if (!formData.has(checkbox.name)) {
                 newConfig[checkbox.name] = false;
             }
         });
+
+        // EXPLICITLY HANDLE FFMPEG SETTINGS
+        const ffmpegModeCheckbox = form.querySelector('input[name="ffmpegMode"]');
+        if (ffmpegModeCheckbox) {
+            newConfig.ffmpegMode = ffmpegModeCheckbox.checked;
+        }
 
         // Process FFmpeg arguments
         const ffmpegPreInput = form.querySelector('input[name="ffmpegPreInput"]');
