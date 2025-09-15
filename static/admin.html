@@ -6,6 +6,7 @@
     <title>KPTV Proxy</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/uikit/3.17.11/css/uikit.min.css">
     <link rel="stylesheet" href="/static/admin.css">
+    <link rel="stylesheet" href="/settings/custom.css">
     <link rel="icon" type="image/png" href="https://cdn.kevp.us/tv/kptv-icon.png" />
 </head>
 <body>
@@ -171,10 +172,14 @@
                             <h3 class="uk-card-title">Global Configuration</h3>
                         </div>
                         <div class="uk-card-body">
-                            <div class="uk-grid-small" uk-grid>
+                            <div class="uk-grid-medium" uk-grid>
                                 <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Base URL</label>
                                     <input class="uk-input" type="url" name="baseURL" placeholder="http://localhost:8080">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Global Stream Timeout</label>
+                                    <input class="uk-input" type="text" name="streamTimeout" placeholder="30s">
                                 </div>
                                 <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Max Buffer Size (MB)</label>
@@ -185,10 +190,6 @@
                                     <input class="uk-input" type="number" name="bufferSizePerStream" min="1" max="256">
                                 </div>
                                 <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Global Stream Timeout</label>
-                                    <input class="uk-input" type="text" name="streamTimeout" placeholder="30s">
-                                </div>
-                                <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Worker Threads</label>
                                     <input class="uk-input" type="number" name="workerThreads" min="1" max="32">
                                 </div>
@@ -197,16 +198,12 @@
                                     <input class="uk-input" type="number" name="maxConnectionsToApp" min="1" max="1000">
                                 </div>
                                 <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Cache Settings</label>
-                                    <label><input class="uk-checkbox" type="checkbox" name="cacheEnabled"> Enable Cache</label>
+                                    <label class="uk-form-label">Import Refresh Interval</label>
+                                    <input class="uk-input" type="text" name="importRefreshInterval" placeholder="12h">
                                 </div>
                                 <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Cache Duration</label>
                                     <input class="uk-input" type="text" name="cacheDuration" placeholder="30m">
-                                </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Import Refresh Interval</label>
-                                    <input class="uk-input" type="text" name="importRefreshInterval" placeholder="12h">
                                 </div>
                                 <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Sort Field</label>
@@ -227,25 +224,27 @@
                                         <option value="desc">Descending</option>
                                     </select>
                                 </div>
-                                <div class="uk-width-1-1">
-                                    <label class="uk-form-label">System Settings</label>
-                                    <label><input class="uk-checkbox" type="checkbox" name="debug"> Debug Mode</label>
-                                    <label><input class="uk-checkbox" type="checkbox" name="obfuscateUrls"> Obfuscate URLs in Logs</label>
+                                <div class="uk-width-1-2@s">
+                                    <div class="uk-width-1-1 uk-margin-bottom">
+                                        <h4 class="uk-heading-divider">FFMPEG Settings</h4>
+                                        <label><input class="uk-checkbox" type="checkbox" name="ffmpegMode"> Use FFmpeg Proxy Mode</label>
+                                    </div>
+                                    <div class="uk-width-1-1 uk-margin-bottom">
+                                        <label class="uk-form-label">Pre-Input Arguments</label>
+                                        <input class="uk-input" type="text" name="ffmpegPreInput" placeholder="-re -rtsp_transport tcp">
+                                        <div class="uk-text-meta">Space-separated arguments before -i</div>
+                                    </div>
+                                    <div class="uk-width-1-1">
+                                        <label class="uk-form-label">Pre-Output Arguments</label>
+                                        <input class="uk-input" type="text" name="ffmpegPreOutput" placeholder="-c copy -movflags frag_keyframe+empty_moov">
+                                        <div class="uk-text-meta">Space-separated arguments before output</div>
+                                    </div>
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <h4 class="uk-heading-divider">System Settings</h4>
+                                    <label><input class="uk-checkbox" type="checkbox" name="debug"> Debug Mode</label><br />
+                                    <label><input class="uk-checkbox" type="checkbox" name="obfuscateUrls"> Obfuscate URLs in Logs</label><br />
                                     <label><input class="uk-checkbox" type="checkbox" name="watcherEnabled"> Enable Stream Watcher</label>
-                                </div>
-                                <div class="uk-width-1-1">
-                                    <label class="uk-form-label">FFmpeg Settings</label>
-                                    <label><input class="uk-checkbox" type="checkbox" name="ffmpegMode"> Use FFmpeg Proxy Mode</label>
-                                </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">FFmpeg Pre-Input Arguments</label>
-                                    <input class="uk-input" type="text" name="ffmpegPreInput" placeholder="-re -rtsp_transport tcp">
-                                    <div class="uk-text-meta">Space-separated arguments before -i</div>
-                                </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">FFmpeg Pre-Output Arguments</label>
-                                    <input class="uk-input" type="text" name="ffmpegPreOutput" placeholder="-c copy -movflags frag_keyframe+empty_moov">
-                                    <div class="uk-text-meta">Space-separated arguments before output</div>
                                 </div>
                             </div>
                         </div>

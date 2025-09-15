@@ -1,16 +1,16 @@
 /* KPTV Proxy Admin Interface Styles */
 
 :root {
-    --uk-background-primary: #1e1e1e;
-    --uk-background-secondary: #2d2d2d;
-    --uk-background-muted: #3a3a3a;
+    --uk-background-primary: #111;
+    --uk-background-secondary: #222;
+    --uk-background-muted: #232323;
     --uk-text-primary: #ffffff;
     --uk-text-muted: #b0b0b0;
     --uk-border-color: #4a4a4a;
-    --uk-success: #4caf50;
-    --uk-warning: #ff9800;
-    --uk-danger: #f44336;
-    --uk-primary: #2196f3;
+    --uk-success: #3e8a41;
+    --uk-warning: #b96f00;
+    --uk-danger: #a52d25;
+    --uk-primary: #1b639e;
 }
 
 body {
@@ -148,7 +148,7 @@ body {
 
 /* Statistics Cards */
 .stat-card {
-    background: linear-gradient(135deg, var(--uk-primary), #1976d2);
+    background: linear-gradient(135deg, var(--uk-primary), #12579b);
     color: white;
     border: none;
 }
@@ -166,15 +166,15 @@ body {
 }
 
 .success-card { 
-    background: linear-gradient(135deg, var(--uk-success), #388e3c); 
+    background: linear-gradient(135deg, var(--uk-success), #225825); 
 }
 
 .warning-card { 
-    background: linear-gradient(135deg, var(--uk-warning), #f57c00); 
+    background: linear-gradient(135deg, var(--uk-warning), #8c4600); 
 }
 
 .danger-card { 
-    background: linear-gradient(135deg, var(--uk-danger), #d32f2f); 
+    background: linear-gradient(135deg, var(--uk-danger), #711919); 
 }
 
 /* Channel and Source Items */
@@ -817,4 +817,10 @@ body, .uk-text-primary {
     .uk-pagination li {
         margin: 0 0.1rem;
     }
+}
+h4 {
+    color:#fff !important;
+}
+.uk-button-small{
+    padding: 5px 10px !important;
 }

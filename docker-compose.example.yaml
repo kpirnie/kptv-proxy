@@ -7,10 +7,13 @@ services:
       - 9500:8080
     volumes:
       - /home/kpirnie/Development/Go/kptv-proxy/settings/:/settings/
+    # for hardware accelleration with ffpmeg
+    #devices:
+    #  - /dev/dri:/dev/dri
 
     # Health check
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9500/playlist"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/playlist"]
       interval: 30s
       timeout: 10s
       retries: 3
