@@ -797,11 +797,17 @@ class KPTVAdmin {
         container.innerHTML = channels.map(channel => `
             <div class="channel-item fade-in">
                 <div class="uk-flex uk-flex-between uk-flex-middle">
-                    <div class="uk-flex-1">
-                        <div class="channel-name">${this.escapeHtml(channel.name)}</div>
-                        <div class="channel-details">
-                            <span class="connection-dot status-active"></span>
-                            ${channel.clients || 0} client(s) connected
+                    <div class="uk-flex uk-flex-middle">
+                        <img src="${channel.logoURL || 'https://cdn.kevp.us/tv/kptv-icon.png'}" 
+                            alt="${this.escapeHtml(channel.name)}" 
+                            style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
+                            onerror="this.src='https://cdn.kevp.us/tv/kptv-icon.png'">
+                        <div class="uk-flex-1">
+                            <div class="channel-name">${this.escapeHtml(channel.name)}</div>
+                            <div class="channel-details">
+                                <span class="connection-dot status-active"></span>
+                                ${channel.clients || 0} client(s) connected
+                            </div>
                         </div>
                     </div>
                     <div class="uk-text-right uk-text-small">
@@ -846,13 +852,19 @@ class KPTVAdmin {
             div.className = `channel-item ${channel.active ? '' : 'channel-inactive'} fade-in`;
             div.innerHTML = `
                 <div class="uk-flex uk-flex-between uk-flex-middle">
-                    <div class="uk-flex-1">
-                        <div class="channel-name">${this.escapeHtml(channel.name)}</div>
-                        <div class="channel-details">
-                            <div class="uk-text-small uk-text-muted">
-                                Group: ${channel.group || 'Uncategorized'} | 
-                                Sources: ${channel.sources || 0} | 
-                                Status: ${channel.active ? `Active (${channel.clients} clients)` : 'Inactive'}
+                    <div class="uk-flex uk-flex-middle">
+                        <img src="${channel.logoURL || 'https://cdn.kevp.us/tv/kptv-icon.png'}" 
+                            alt="${this.escapeHtml(channel.name)}" 
+                            style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
+                            onerror="this.src='https://cdn.kevp.us/tv/kptv-icon.png'">
+                        <div class="uk-flex-1">
+                            <div class="channel-name">${this.escapeHtml(channel.name)}</div>
+                            <div class="channel-details">
+                                <div class="uk-text-small uk-text-muted">
+                                    Group: ${channel.group || 'Uncategorized'} | 
+                                    Sources: ${channel.sources || 0} | 
+                                    Status: ${channel.active ? `Active (${channel.clients} clients)` : 'Inactive'}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -871,7 +883,6 @@ class KPTVAdmin {
         container.innerHTML = '';
         container.appendChild(fragment);
     }
-    
 
     filterChannels(searchTerm) {
         if (!this.allChannels) return;

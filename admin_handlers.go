@@ -58,6 +58,7 @@ type ChannelResponse struct {
 	Group            string `json:"group"`            // Channel category/group classification
 	Sources          int    `json:"sources"`          // Number of available stream sources for this channel
 	URL              string `json:"url"`              // Primary stream URL (optional, not currently populated)
+	LogoURL          string `json:"logoURL"`
 }
 
 // LogEntry represents individual log entries captured by the admin interface for
@@ -589,7 +590,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				isRunning = channel.Restreamer.Running.Load()
 			}
 
-			addLogEntry("debug", fmt.Sprintf("Channel '%s': hasRestreamer=%v, isRunning=%v", channelName, hasRestreamer, isRunning))
+			// addLogEntry("debug", fmt.Sprintf("Channel '%s': hasRestreamer=%v, isRunning=%v", channelName, hasRestreamer, isRunning))
 
 			// Calculate active status and client count
 			active := hasRestreamer && isRunning
@@ -603,11 +604,17 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 			// Extract group information from stream attributes
 			group := "Uncategorized"
+			logoURL := "https://cdn.kevp.us/tv/kptv-icon.png" // Default logo
 			if len(channel.Streams) > 0 {
 				if g, ok := channel.Streams[0].Attributes["group-title"]; ok && g != "" {
 					group = g
 				} else if g, ok := channel.Streams[0].Attributes["tvg-group"]; ok && g != "" {
 					group = g
+				}
+				
+				// Get logo URL
+				if logo, ok := channel.Streams[0].Attributes["tvg-logo"]; ok && logo != "" {
+					logoURL = logo
 				}
 			}
 
@@ -617,6 +624,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				Clients: clients,
 				Group:   group,
 				Sources: len(channel.Streams),
+				LogoURL: logoURL,
 			})
 
 			channel.Mu.RUnlock()
@@ -666,11 +674,20 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				// Estimate bytes transferred based on activity
 				activityTime := time.Since(time.Unix(channel.Restreamer.LastActivity.Load(), 0))
 				estimatedBytes := int64(0)
+				logoURL := "https://cdn.kevp.us/tv/kptv-icon.png" // Default logo
+
 				if activityTime < 60*time.Second && clients > 0 {
 					// Base estimation: 500KB per client plus variance
 					baseRate := int64(500 * 1024 * clients)
 					variance := int64(len(channelName) * 100 * 1024) // Simple variance calculation
 					estimatedBytes = baseRate + variance
+				}
+
+				// Get logo URL from first stream
+				if len(channel.Streams) > 0 {
+					if logo, ok := channel.Streams[0].Attributes["tvg-logo"]; ok && logo != "" {
+						logoURL = logo
+					}
 				}
 
 				channels = append(channels, ChannelResponse{
@@ -679,6 +696,7 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 					Clients:          clients,
 					CurrentSource:    currentSource,
 					BytesTransferred: estimatedBytes,
+					LogoURL:          logoURL, // Add this line
 				})
 			}
 

@@ -194,7 +194,7 @@ body {
 
 .channel-inactive {
     border-left-color: var(--uk-text-muted);
-    opacity: 0.7;
+    opacity: 0.9;
 }
 
 .source-item {
