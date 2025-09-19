@@ -604,7 +604,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 			// Extract group information from stream attributes
 			group := "Uncategorized"
-			logoURL := "https://cdn.kevp.us/tv/kptv-icon.png" // Default logo
+			logoURL := "https://cdn.wmkp.us/tv/kptv-icon.png" // Default logo
 			if len(channel.Streams) > 0 {
 				if g, ok := channel.Streams[0].Attributes["group-title"]; ok && g != "" {
 					group = g
@@ -674,7 +674,7 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				// Estimate bytes transferred based on activity
 				activityTime := time.Since(time.Unix(channel.Restreamer.LastActivity.Load(), 0))
 				estimatedBytes := int64(0)
-				logoURL := "https://cdn.kevp.us/tv/kptv-icon.png" // Default logo
+				logoURL := "https://cdn.wmkp.us/tv/kptv-icon.png" // Default logo
 
 				if activityTime < 60*time.Second && clients > 0 {
 					// Base estimation: 500KB per client plus variance

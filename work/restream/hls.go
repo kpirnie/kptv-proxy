@@ -144,7 +144,8 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	for {
 		select {
 		case <-r.Ctx.Done():
-			return totalBytes > 0, totalBytes
+			// Only consider it successful if substantial data was streamed
+			return totalBytes > 1024*1024, totalBytes
 		default:
 		}
 
@@ -211,7 +212,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		// Wait before next playlist refresh
 		select {
 		case <-r.Ctx.Done():
-			return totalBytes > 0, totalBytes
+			return totalBytes > 1024*1024, totalBytes
 		case <-time.After(2 * time.Second):
 			continue
 		}

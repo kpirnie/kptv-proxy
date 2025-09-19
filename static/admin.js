@@ -798,10 +798,10 @@ class KPTVAdmin {
             <div class="channel-item fade-in">
                 <div class="uk-flex uk-flex-between uk-flex-middle">
                     <div class="uk-flex uk-flex-middle">
-                        <img src="${channel.logoURL || 'https://cdn.kevp.us/tv/kptv-icon.png'}" 
+                        <img src="${channel.logoURL || 'https://cdn.wmkp.us/tv/kptv-icon.png'}" 
                             alt="${this.escapeHtml(channel.name)}" 
                             style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
-                            onerror="this.src='https://cdn.kevp.us/tv/kptv-icon.png'">
+                            onerror="this.src='https://cdn.wmkp.us/tv/kptv-icon.png'">
                         <div class="uk-flex-1">
                             <div class="channel-name">${this.escapeHtml(channel.name)}</div>
                             <div class="channel-details">
@@ -853,10 +853,10 @@ class KPTVAdmin {
             div.innerHTML = `
                 <div class="uk-flex uk-flex-between uk-flex-middle">
                     <div class="uk-flex uk-flex-middle">
-                        <img src="${channel.logoURL || 'https://cdn.kevp.us/tv/kptv-icon.png'}" 
+                        <img src="${channel.logoURL || 'https://cdn.wmkp.us/tv/kptv-icon.png'}" 
                             alt="${this.escapeHtml(channel.name)}" 
                             style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
-                            onerror="this.src='https://cdn.kevp.us/tv/kptv-icon.png'">
+                            onerror="this.src='https://cdn.wmkp.us/tv/kptv-icon.png'">
                         <div class="uk-flex-1">
                             <div class="channel-name">${this.escapeHtml(channel.name)}</div>
                             <div class="channel-details">

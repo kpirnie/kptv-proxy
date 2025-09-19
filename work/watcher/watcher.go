@@ -430,7 +430,8 @@ func (sw *StreamWatcher) checkStreamHealth() {
 // Returns:
 //   - bool: true if health issues detected, false if stream appears healthy
 func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
-	if time.Since(sw.lastStreamStart) < 60*time.Second {
+	// Increase grace period to 120 seconds
+	if time.Since(sw.lastStreamStart) < 120*time.Second {
 		if sw.restreamer.Config.Debug {
 			sw.logger.Printf("[WATCHER] Channel %s: In grace period, skipping health check", sw.channelName)
 		}
@@ -449,8 +450,8 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	lastActivity := sw.restreamer.LastActivity.Load()
 	timeSinceActivity := time.Now().Unix() - lastActivity
 
-	// CHANGED FROM 60 TO 300 SECONDS
-	if timeSinceActivity > 300 {
+	// Increase activity timeout to 600 seconds (10 minutes)
+	if timeSinceActivity > 600 {
 		if sw.restreamer.Config.Debug {
 			sw.logger.Printf("[WATCHER] Channel %s: No activity for %d seconds", sw.channelName, timeSinceActivity)
 		}
@@ -460,9 +461,10 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	if sw.restreamer.Running.Load() {
 		select {
 		case <-sw.restreamer.Ctx.Done():
-			if time.Since(sw.lastCheck) > 120*time.Second {
+			// Increase timeout to 300 seconds
+			if time.Since(sw.lastCheck) > 300*time.Second {
 				if sw.restreamer.Config.Debug {
-					sw.logger.Printf("[WATCHER] Channel %s: Context cancelled and running for >120s", sw.channelName)
+					sw.logger.Printf("[WATCHER] Channel %s: Context cancelled and running for >300s", sw.channelName)
 				}
 				hasIssues = true
 			}
@@ -470,7 +472,7 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 		}
 	}
 
-	// FFPROBE CHECK EVERY 5TH HEALTH CHECK (LESS FREQUENT)
+	// Reduce frequency of FFprobe checks
 	if sw.shouldRunFFProbeCheck() {
 		streamHealth := sw.analyzeStreamWithFFProbe()
 		if sw.evaluateFFProbeResults(streamHealth) {
