@@ -9,6 +9,7 @@ import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
+	"kptv-proxy/work/streamorder"
 	"log"
 	"net/http"
 	"sort"
@@ -455,19 +456,51 @@ func ParseEXTINF(line string) map[string]string {
 //   - cfg: application configuration containing sort field and direction preferences
 //   - channelName: channel name for debug logging context
 func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string) {
-
-	// Log initial stream order for debugging comparison
 	if cfg.Debug && len(streams) > 1 {
-		log.Printf("[SORT_BEFORE] Channel %s: Sorting %d streams by source order, then by %s (%s)",
-			channelName, len(streams), cfg.SortField, cfg.SortDirection)
-		for i, stream := range streams {
-			log.Printf("[SORT_BEFORE] Channel %s: Stream %d: Source order=%d, %s=%s, URL=%s",
-				channelName, i, stream.Source.Order, cfg.SortField, stream.Attributes[cfg.SortField],
-				utils.LogURL(cfg, stream.URL))
+		log.Printf("[SORT_BEFORE] Channel %s: Sorting %d streams", channelName, len(streams))
+	}
+
+	// Check if there's a custom order for this channel
+	customOrder, err := streamorder.GetChannelStreamOrder(channelName)
+	if err == nil && customOrder != nil && len(customOrder) == len(streams) {
+		// Validate that all indices in customOrder are valid
+		valid := true
+		usedIndices := make(map[int]bool)
+		for _, idx := range customOrder {
+			if idx < 0 || idx >= len(streams) || usedIndices[idx] {
+				valid = false
+				break
+			}
+			usedIndices[idx] = true
+		}
+		
+		if valid {
+			if cfg.Debug {
+				log.Printf("[SORT_CUSTOM] Channel %s: Applying custom order %v", channelName, customOrder)
+			}
+			
+			// Create a new slice with the custom order
+			orderedStreams := make([]*types.Stream, len(streams))
+			for newPosition, originalIndex := range customOrder {
+				orderedStreams[newPosition] = streams[originalIndex]
+				orderedStreams[newPosition].CustomOrder = newPosition
+			}
+			
+			// Copy back to original slice
+			copy(streams, orderedStreams)
+			
+			if cfg.Debug {
+				log.Printf("[SORT_AFTER] Channel %s: Applied custom ordering", channelName)
+			}
+			return
+		} else {
+			if cfg.Debug {
+				log.Printf("[SORT_CUSTOM] Channel %s: Invalid custom order, falling back to default", channelName)
+			}
 		}
 	}
 
-	// Perform stable sort with two-tier comparison logic
+	// ORIGINAL DEFAULT SORTING LOGIC - UNCHANGED
 	sort.SliceStable(streams, func(i, j int) bool {
 		stream1 := streams[i]
 		stream2 := streams[j]
@@ -487,13 +520,12 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 		return val1 < val2
 	})
 
-	// Log final stream order for debugging verification
+	// Set custom order based on final position after default sorting
+	for i, stream := range streams {
+		stream.CustomOrder = i
+	}
+
 	if cfg.Debug && len(streams) > 1 {
-		log.Printf("[SORT_AFTER] Channel %s: Streams sorted:", channelName)
-		for i, stream := range streams {
-			log.Printf("[SORT_AFTER] Channel %s: Stream %d: Source order=%d, %s=%s, URL=%s",
-				channelName, i, stream.Source.Order, cfg.SortField, stream.Attributes[cfg.SortField],
-				utils.LogURL(cfg, stream.URL))
-		}
+		log.Printf("[SORT_AFTER] Channel %s: Applied default sorting", channelName)
 	}
 }

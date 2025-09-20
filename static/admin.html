@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,6 +10,7 @@
     <link rel="stylesheet" href="/settings/custom.css">
     <link rel="icon" type="image/png" href="https://cdn.wmkp.us/tv/kptv-icon.png" />
 </head>
+
 <body>
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="loading-overlay uk-hidden">
@@ -175,7 +177,8 @@
                             <div class="uk-grid-medium" uk-grid>
                                 <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Base URL</label>
-                                    <input class="uk-input" type="url" name="baseURL" placeholder="http://localhost:8080">
+                                    <input class="uk-input" type="url" name="baseURL"
+                                        placeholder="http://localhost:8080">
                                 </div>
                                 <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Global Stream Timeout</label>
@@ -227,24 +230,30 @@
                                 <div class="uk-width-1-2@s">
                                     <div class="uk-width-1-1 uk-margin-bottom">
                                         <h4 class="uk-heading-divider">FFMPEG Settings</h4>
-                                        <label><input class="uk-checkbox" type="checkbox" name="ffmpegMode"> Use FFmpeg Proxy Mode</label>
+                                        <label><input class="uk-checkbox" type="checkbox" name="ffmpegMode"> Use FFmpeg
+                                            Proxy Mode</label>
                                     </div>
                                     <div class="uk-width-1-1 uk-margin-bottom">
                                         <label class="uk-form-label">Pre-Input Arguments</label>
-                                        <input class="uk-input" type="text" name="ffmpegPreInput" placeholder="-re -rtsp_transport tcp">
+                                        <input class="uk-input" type="text" name="ffmpegPreInput"
+                                            placeholder="-re -rtsp_transport tcp">
                                         <div class="uk-text-meta">Space-separated arguments before -i</div>
                                     </div>
                                     <div class="uk-width-1-1">
                                         <label class="uk-form-label">Pre-Output Arguments</label>
-                                        <input class="uk-input" type="text" name="ffmpegPreOutput" placeholder="-c copy -movflags frag_keyframe+empty_moov">
+                                        <input class="uk-input" type="text" name="ffmpegPreOutput"
+                                            placeholder="-c copy -movflags frag_keyframe+empty_moov">
                                         <div class="uk-text-meta">Space-separated arguments before output</div>
                                     </div>
                                 </div>
                                 <div class="uk-width-1-2@s">
                                     <h4 class="uk-heading-divider">System Settings</h4>
-                                    <label><input class="uk-checkbox" type="checkbox" name="debug"> Debug Mode</label><br />
-                                    <label><input class="uk-checkbox" type="checkbox" name="obfuscateUrls"> Obfuscate URLs in Logs</label><br />
-                                    <label><input class="uk-checkbox" type="checkbox" name="watcherEnabled"> Enable Stream Watcher</label>
+                                    <label><input class="uk-checkbox" type="checkbox" name="debug"> Debug
+                                        Mode</label><br />
+                                    <label><input class="uk-checkbox" type="checkbox" name="obfuscateUrls"> Obfuscate
+                                        URLs in Logs</label><br />
+                                    <label><input class="uk-checkbox" type="checkbox" name="watcherEnabled"> Enable
+                                        Stream Watcher</label>
                                 </div>
                             </div>
                         </div>
@@ -252,7 +261,8 @@
                             <button class="uk-button uk-button-primary" type="submit">
                                 <span uk-icon="check"></span> Save & Restart
                             </button>
-                            <button class="uk-button uk-button-secondary uk-margin-small-left" type="button" id="load-global-settings">
+                            <button class="uk-button uk-button-secondary uk-margin-small-left" type="button"
+                                id="load-global-settings">
                                 <span uk-icon="refresh"></span> Load Current
                             </button>
                         </div>
@@ -279,8 +289,10 @@
                     <div class="uk-card-header">
                         <h3 class="uk-card-title">All Channels</h3>
                         <div class="uk-flex uk-flex-middle">
-                            <input class="uk-input uk-form-width-medium" type="text" placeholder="Search channels..." id="channel-search">
-                            <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left" id="refresh-all-channels" style="padding:5px 10px;">
+                            <input class="uk-input uk-form-width-medium" type="text" placeholder="Search channels..."
+                                id="channel-search">
+                            <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left"
+                                id="refresh-all-channels" style="padding:5px 10px;">
                                 <span uk-icon="refresh"></span>
                             </button>
                         </div>
@@ -293,20 +305,25 @@
                             </div>
                             <div class="uk-flex uk-flex-middle">
                                 <ul class="uk-pagination uk-flex-nowrap uk-margin-remove" id="channel-pagination">
-                                    <li><a href="#" id="first-page" uk-tooltip="First page"><span uk-icon="chevron-double-left"></span></a></li>
-                                    <li><a href="#" id="prev-page" uk-tooltip="Previous page"><span uk-pagination-previous></span></a></li>
+                                    <li><a href="#" id="first-page" uk-tooltip="First page"><span
+                                                uk-icon="chevron-double-left"></span></a></li>
+                                    <li><a href="#" id="prev-page" uk-tooltip="Previous page"><span
+                                                uk-pagination-previous></span></a></li>
                                     <li class="uk-visible@s">
-                                        <select class="uk-select uk-form-width-small" id="page-selector" style="min-width: 80px;">
+                                        <select class="uk-select uk-form-width-small" id="page-selector"
+                                            style="min-width: 80px;">
                                             <option>1</option>
                                         </select>
                                     </li>
                                     <li class="uk-hidden@s"><span id="current-page">1</span></li>
-                                    <li><a href="#" id="next-page" uk-tooltip="Next page"><span uk-pagination-next></span></a></li>
-                                    <li><a href="#" id="last-page" uk-tooltip="Last page"><span uk-icon="chevron-double-right"></span></a></li>
+                                    <li><a href="#" id="next-page" uk-tooltip="Next page"><span
+                                                uk-pagination-next></span></a></li>
+                                    <li><a href="#" id="last-page" uk-tooltip="Last page"><span
+                                                uk-icon="chevron-double-right"></span></a></li>
                                 </ul>
                             </div>
                         </div>
-                        
+
                         <div id="all-channels-list">
                             <div class="uk-text-center uk-margin">
                                 <div uk-spinner></div>
@@ -330,16 +347,19 @@
                                 <option value="info">Info</option>
                                 <option value="debug">Debug</option>
                             </select>
-                            <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left" id="refresh-logs">
+                            <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left"
+                                id="refresh-logs">
                                 <span uk-icon="refresh"></span>
                             </button>
-                            <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-left" id="clear-logs">
+                            <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-left"
+                                id="clear-logs">
                                 <span uk-icon="trash"></span>
                             </button>
                         </div>
                     </div>
                     <div class="uk-card-body">
-                        <div id="logs-container" style="height: 500px; overflow-y: auto; background: #1a1a1a; padding: 1rem; font-family: monospace; font-size: 0.875rem;">
+                        <div id="logs-container"
+                            style="height: 500px; overflow-y: auto; background: #1a1a1a; padding: 1rem; font-family: monospace; font-size: 0.875rem;">
                             <div class="uk-text-center uk-margin">
                                 <div uk-spinner></div>
                                 <div class="uk-margin-small-top">Loading logs...</div>
@@ -361,14 +381,14 @@
             <div class="uk-modal-body uk-padding-remove-top">
                 <form id="source-form">
                     <input type="hidden" id="source-index" value="">
-                    
+
                     <!-- Tab navigation -->
                     <ul uk-tab>
                         <li><a href="#">Basic Settings</a></li>
                         <li><a href="#">Content Filtering</a></li>
                         <li><a href="#">HTTP Headers</a></li>
                     </ul>
-                    
+
                     <!-- Tab content -->
                     <ul class="uk-switcher uk-margin">
                         <!-- Basic Settings Tab -->
@@ -379,7 +399,8 @@
                             </div>
                             <div class="uk-margin">
                                 <label class="uk-form-label">URL/XC Domain</label>
-                                <input class="uk-input" type="url" id="source-url" placeholder="http://example.com/playlist.m3u8" required>
+                                <input class="uk-input" type="url" id="source-url"
+                                    placeholder="http://example.com/playlist.m3u8" required>
                             </div>
                             <div class="uk-grid-small" uk-grid>
                                 <div class="uk-width-1-2">
@@ -400,7 +421,8 @@
                                 </div>
                                 <div class="uk-width-1-2">
                                     <label class="uk-form-label">Max Stream Timeout</label>
-                                    <input class="uk-input" type="text" id="source-max-stream-timeout" placeholder="30s">
+                                    <input class="uk-input" type="text" id="source-max-stream-timeout"
+                                        placeholder="30s">
                                 </div>
                                 <div class="uk-width-1-2">
                                     <label class="uk-form-label">Retry Delay</label>
@@ -420,54 +442,63 @@
                                 </div>
                             </div>
                         </li>
-                        
+
                         <!-- Content Filtering Tab -->
                         <li>
                             <div class="uk-grid-small" uk-grid>
                                 <div class="uk-width-1-2">
                                     <label class="uk-form-label">Live Include Regex</label>
-                                    <input class="uk-input" type="text" id="source-live-include-regex" placeholder=".*live.*">
+                                    <input class="uk-input" type="text" id="source-live-include-regex"
+                                        placeholder=".*live.*">
                                 </div>
                                 <div class="uk-width-1-2">
                                     <label class="uk-form-label">Live Exclude Regex</label>
-                                    <input class="uk-input" type="text" id="source-live-exclude-regex" placeholder=".*adult.*">
+                                    <input class="uk-input" type="text" id="source-live-exclude-regex"
+                                        placeholder=".*adult.*">
                                 </div>
                                 <div class="uk-width-1-2">
                                     <label class="uk-form-label">Series Include Regex</label>
-                                    <input class="uk-input" type="text" id="source-series-include-regex" placeholder=".*series.*">
+                                    <input class="uk-input" type="text" id="source-series-include-regex"
+                                        placeholder=".*series.*">
                                 </div>
                                 <div class="uk-width-1-2">
                                     <label class="uk-form-label">Series Exclude Regex</label>
-                                    <input class="uk-input" type="text" id="source-series-exclude-regex" placeholder=".*adult.*">
+                                    <input class="uk-input" type="text" id="source-series-exclude-regex"
+                                        placeholder=".*adult.*">
                                 </div>
                                 <div class="uk-width-1-2">
                                     <label class="uk-form-label">VOD Include Regex</label>
-                                    <input class="uk-input" type="text" id="source-vod-include-regex" placeholder=".*movie.*">
+                                    <input class="uk-input" type="text" id="source-vod-include-regex"
+                                        placeholder=".*movie.*">
                                 </div>
                                 <div class="uk-width-1-2">
                                     <label class="uk-form-label">VOD Exclude Regex</label>
-                                    <input class="uk-input" type="text" id="source-vod-exclude-regex" placeholder=".*adult.*">
+                                    <input class="uk-input" type="text" id="source-vod-exclude-regex"
+                                        placeholder=".*adult.*">
                                 </div>
                             </div>
                         </li>
 
                         <!-- Headers -->
-                         <li>
+                        <li>
                             <div class="uk-grid-small" uk-grid>
                                 <div class="uk-width-1-1">
                                     <label class="uk-form-label">User Agent</label>
-                                    <input class="uk-input" type="text" id="source-user-agent" placeholder="VLC/3.0.18 LibVLC/3.0.18">
+                                    <input class="uk-input" type="text" id="source-user-agent"
+                                        placeholder="VLC/3.0.18 LibVLC/3.0.18">
                                 </div>
                                 <div class="uk-width-1-1">
                                     <label class="uk-form-label">Origin</label>
-                                    <input class="uk-input" type="text" id="source-origin" placeholder="https://example.com">
+                                    <input class="uk-input" type="text" id="source-origin"
+                                        placeholder="https://example.com">
                                 </div>
                                 <div class="uk-width-1-1">
                                     <label class="uk-form-label">Referrer</label>
-                                    <input class="uk-input" type="text" id="source-referrer" placeholder="https://example.com/player">
+                                    <input class="uk-input" type="text" id="source-referrer"
+                                        placeholder="https://example.com/player">
                                 </div>
                             </div>
-                         </li>
+                        </li>
                     </ul>
                 </form>
             </div>
@@ -500,17 +531,24 @@
     </div>
 
     <!-- Footer -->
-    <footer class="uk-section uk-section-small uk-text-center" style="margin-top: 2rem; border-top: 1px solid var(--uk-border-color);">
+    <footer class="uk-section uk-section-small uk-text-center"
+        style="margin-top: 2rem; border-top: 1px solid var(--uk-border-color);">
         <div class="uk-container">
             <p class="uk-text-muted uk-margin-remove">
-                &copy; <script>document.write(new Date().getFullYear());</script> <a href="https://kevinpirnie.com" target="_blank">Kevin C. Pirnie</a> Licensed under MIT License. All Rights Reserved<br />
-                Visit <a href="https://www.westernmasshosting.com" target="_blank">Western Mass Hosting</a> for premier fully managed web hosting solutions.<br />
-                <small>Visit <a href="https://github.com/kpirnie/kptv-proxy" target="_blank">GitHub</a> for updates</small>
+                &copy;
+                <script>document.write(new Date().getFullYear());</script> <a href="https://kevinpirnie.com"
+                    target="_blank">Kevin C. Pirnie</a> Licensed under MIT License. All Rights Reserved<br />
+                Visit <a href="https://www.westernmasshosting.com" target="_blank">Western Mass Hosting</a> for premier
+                fully managed web hosting solutions.<br />
+                <small>Visit <a href="https://github.com/kpirnie/kptv-proxy" target="_blank">GitHub</a> for
+                    updates</small>
             </p>
         </div>
     </footer>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/uikit/3.17.11/js/uikit.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/uikit/3.17.11/js/uikit-icons.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <script src="/static/admin.js"></script>
 </body>
+
 </html>

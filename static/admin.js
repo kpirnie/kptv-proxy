@@ -160,11 +160,11 @@ class KPTVAdmin {
     renderCurrentPage() {
         const channels = this.filteredChannels || this.allChannels;
         if (!channels) return;
-        
+
         const startIndex = (this.currentPage - 1) * this.pageSize;
         const endIndex = startIndex + this.pageSize;
         const pageChannels = channels.slice(startIndex, endIndex);
-        
+
         this.renderAllChannels(pageChannels);
         this.updatePaginationInfo();
     }
@@ -175,18 +175,18 @@ class KPTVAdmin {
         const totalPages = Math.ceil(totalChannels / this.pageSize);
         const startIndex = (this.currentPage - 1) * this.pageSize + 1;
         const endIndex = Math.min(startIndex + this.pageSize - 1, totalChannels);
-        
-        document.getElementById('channel-pagination-info').textContent = 
+
+        document.getElementById('channel-pagination-info').textContent =
             `Showing ${startIndex}-${endIndex} of ${totalChannels} channels`;
-        
+
         document.getElementById('current-page').textContent = this.currentPage;
-        
+
         // Update page selector dropdown
         const pageSelector = document.getElementById('page-selector');
         if (pageSelector) {
             // Save current value to restore after update
             const currentValue = pageSelector.value;
-            
+
             // Clear and rebuild options
             pageSelector.innerHTML = '';
             for (let i = 1; i <= totalPages; i++) {
@@ -196,13 +196,13 @@ class KPTVAdmin {
                 option.selected = i === this.currentPage;
                 pageSelector.appendChild(option);
             }
-            
+
             // If current page wasn't in the options (shouldn't happen), select it
             if (pageSelector.value !== this.currentPage.toString()) {
                 pageSelector.value = this.currentPage;
             }
         }
-        
+
         // Update button states
         document.getElementById('first-page').parentElement.classList.toggle('uk-disabled', this.currentPage === 1);
         document.getElementById('prev-page').parentElement.classList.toggle('uk-disabled', this.currentPage === 1);
@@ -215,34 +215,34 @@ class KPTVAdmin {
         this.refreshInterval = setInterval(() => {
             this.loadStats();
             this.loadActiveChannels();
-            
+
             // Preserve current page, search state, and page selector
             const searchInput = document.getElementById('channel-search');
             const currentSearch = searchInput ? searchInput.value.trim() : '';
             const currentPage = this.currentPage;
-            
+
             this.loadAllChannels().then(() => {
                 // Restore search filter if it was active
                 if (currentSearch) {
-                    this.filteredChannels = this.allChannels.filter(channel => 
+                    this.filteredChannels = this.allChannels.filter(channel =>
                         channel.name.toLowerCase().includes(currentSearch.toLowerCase()) ||
                         (channel.group && channel.group.toLowerCase().includes(currentSearch.toLowerCase()))
                     );
                 } else {
                     this.filteredChannels = null;
                 }
-                
+
                 // Restore the previous page
                 this.currentPage = currentPage;
                 const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
-                
+
                 // If current page is beyond the new total, go to last page
                 if (this.currentPage > totalPages && totalPages > 0) {
                     this.currentPage = totalPages;
                 } else if (totalPages === 0) {
                     this.currentPage = 1;
                 }
-                
+
                 this.renderCurrentPage();
             });
         }, 5000);
@@ -330,14 +330,14 @@ class KPTVAdmin {
         if (config.ffmpegPreInput) {
             const ffmpegPreInput = form.querySelector('input[name="ffmpegPreInput"]');
             if (ffmpegPreInput) {
-                ffmpegPreInput.value = Array.isArray(config.ffmpegPreInput) ? 
+                ffmpegPreInput.value = Array.isArray(config.ffmpegPreInput) ?
                     config.ffmpegPreInput.join(' ') : config.ffmpegPreInput;
             }
         }
         if (config.ffmpegPreOutput) {
             const ffmpegPreOutput = form.querySelector('input[name="ffmpegPreOutput"]');
             if (ffmpegPreOutput) {
-                ffmpegPreOutput.value = Array.isArray(config.ffmpegPreOutput) ? 
+                ffmpegPreOutput.value = Array.isArray(config.ffmpegPreOutput) ?
                     config.ffmpegPreOutput.join(' ') : config.ffmpegPreOutput;
             }
         }
@@ -391,13 +391,13 @@ class KPTVAdmin {
         try {
             // CRITICAL FIX: Get the current config first to preserve sources
             const currentConfig = await this.apiCall('/api/config');
-            
+
             // Merge the new global settings with existing config (preserving sources)
             const mergedConfig = {
                 ...currentConfig,  // Start with existing config
                 ...newConfig       // Override with new global settings
             };
-            
+
             // Ensure sources array is preserved
             if (currentConfig.sources) {
                 mergedConfig.sources = currentConfig.sources;
@@ -409,7 +409,7 @@ class KPTVAdmin {
             });
 
             this.showNotification('Global settings saved successfully!', 'success');
-            
+
             // Restart the service
             setTimeout(() => {
                 this.restartService();
@@ -418,21 +418,21 @@ class KPTVAdmin {
             this.showNotification('Failed to save global settings: ' + error.message, 'danger');
         }
     }
-    
+
     // Sources Management
     async loadSources() {
         try {
             const config = await this.apiCall('/api/config');
             this.renderSources(config.sources || []);
         } catch (error) {
-            document.getElementById('sources-container').innerHTML = 
+            document.getElementById('sources-container').innerHTML =
                 '<div class="uk-alert uk-alert-danger">Failed to load sources</div>';
         }
     }
 
     renderSources(sources) {
         const container = document.getElementById('sources-container');
-        
+
         if (sources.length === 0) {
             container.innerHTML = '<div class="uk-alert uk-alert-warning">No sources configured</div>';
             return;
@@ -521,7 +521,7 @@ class KPTVAdmin {
     showSourceModal(sourceIndex = null) {
         const modal = UIkit.modal('#source-modal');
         const title = document.getElementById('source-modal-title');
-        
+
         if (sourceIndex !== null) {
             title.textContent = 'Edit Source';
             if (this.config && this.config.sources && this.config.sources[sourceIndex]) {
@@ -534,7 +534,7 @@ class KPTVAdmin {
             title.textContent = 'Add Source';
             this.clearSourceForm();
         }
-        
+
         modal.show();
     }
 
@@ -585,13 +585,13 @@ class KPTVAdmin {
 
     async saveSource() {
         console.log('saveSource function called');
-        
+
         try {
             const form = document.getElementById('source-form');
             const index = document.getElementById('source-index').value;
-            
+
             console.log('Form found, index:', index);
-            
+
             const source = {
                 name: document.getElementById('source-name').value,
                 url: document.getElementById('source-url').value,
@@ -627,19 +627,19 @@ class KPTVAdmin {
             console.log('About to get config...');
             const response = await fetch('/api/config');
             console.log('Config response status:', response.status);
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
+
             const config = await response.json();
             console.log('Got config:', config);
-            
+
             // Ensure sources array exists
             if (!config.sources) {
                 config.sources = [];
             }
-            
+
             if (index === '') {
                 config.sources.push(source);
                 console.log('Added new source');
@@ -656,9 +656,9 @@ class KPTVAdmin {
                 },
                 body: JSON.stringify(config)
             });
-            
+
             console.log('Save response status:', saveResponse.status);
-            
+
             if (!saveResponse.ok) {
                 const errorText = await saveResponse.text();
                 console.error('Save error response:', errorText);
@@ -669,13 +669,13 @@ class KPTVAdmin {
             UIkit.modal('#source-modal').hide();
             this.showNotification('Source saved successfully!', 'success');
             this.loadSources();
-            
+
         } catch (error) {
             console.error('Detailed error:', error);
             this.showNotification('Failed to save source: ' + error.message, 'danger');
         }
     }
-    
+
 
     editSource(index) {
         this.showSourceModal(index);
@@ -689,7 +689,7 @@ class KPTVAdmin {
         try {
             const config = await this.apiCall('/api/config');
             config.sources.splice(index, 1);
-            
+
             await this.apiCall('/api/config', {
                 method: 'POST',
                 body: JSON.stringify(config)
@@ -697,7 +697,7 @@ class KPTVAdmin {
 
             this.showNotification('Source deleted successfully!', 'success');
             this.loadSources();
-            
+
             // Restart the service
             setTimeout(() => {
                 this.restartService();
@@ -748,7 +748,7 @@ class KPTVAdmin {
         const uptimeEl = document.getElementById('uptime');
         const memoryUsageEl = document.getElementById('memory-usage');
         const cacheStatusEl = document.getElementById('cache-status');
-        
+
         if (uptimeEl) uptimeEl.textContent = stats.uptime || '0m';
         if (memoryUsageEl) memoryUsageEl.textContent = stats.memoryUsage || '0 MB';
         if (cacheStatusEl) cacheStatusEl.textContent = stats.cacheStatus || 'Unknown';
@@ -781,14 +781,14 @@ class KPTVAdmin {
             const channels = await this.apiCall('/api/channels/active');
             this.renderActiveChannels(channels);
         } catch (error) {
-            document.getElementById('active-channels-list').innerHTML = 
+            document.getElementById('active-channels-list').innerHTML =
                 '<div class="uk-alert uk-alert-warning">No active channels or failed to load</div>';
         }
     }
 
     renderActiveChannels(channels) {
         const container = document.getElementById('active-channels-list');
-        
+
         if (channels.length === 0) {
             container.innerHTML = '<div class="uk-alert uk-alert-warning">No active channels</div>';
             return;
@@ -830,7 +830,7 @@ class KPTVAdmin {
             this.renderCurrentPage();
             return channels;
         } catch (error) {
-            document.getElementById('all-channels-list').innerHTML = 
+            document.getElementById('all-channels-list').innerHTML =
                 '<div class="uk-alert uk-alert-danger">Failed to load channels</div>';
             throw error;
         }
@@ -838,7 +838,7 @@ class KPTVAdmin {
 
     renderAllChannels(channels) {
         const container = document.getElementById('all-channels-list');
-        
+
         if (channels.length === 0) {
             container.innerHTML = '<div class="uk-alert uk-alert-warning">No channels found</div>';
             return;
@@ -846,7 +846,7 @@ class KPTVAdmin {
 
         // Use document fragment for batch DOM insertion
         const fragment = document.createDocumentFragment();
-        
+
         channels.forEach(channel => {
             const div = document.createElement('div');
             div.className = `channel-item ${channel.active ? '' : 'channel-inactive'} fade-in`;
@@ -878,7 +878,7 @@ class KPTVAdmin {
             `;
             fragment.appendChild(div);
         });
-        
+
         // Clear and append in one operation
         container.innerHTML = '';
         container.appendChild(fragment);
@@ -886,16 +886,16 @@ class KPTVAdmin {
 
     filterChannels(searchTerm) {
         if (!this.allChannels) return;
-        
+
         if (!searchTerm.trim()) {
             this.filteredChannels = null;
         } else {
-            this.filteredChannels = this.allChannels.filter(channel => 
+            this.filteredChannels = this.allChannels.filter(channel =>
                 channel.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (channel.group && channel.group.toLowerCase().includes(searchTerm.toLowerCase()))
             );
         }
-        
+
         this.currentPage = 1; // Reset to first page when filtering
         this.renderCurrentPage();
     }
@@ -907,14 +907,14 @@ class KPTVAdmin {
             this.allLogs = logs;
             this.renderLogs(logs);
         } catch (error) {
-            document.getElementById('logs-container').innerHTML = 
+            document.getElementById('logs-container').innerHTML =
                 '<div class="uk-alert uk-alert-danger">Failed to load logs</div>';
         }
     }
 
     renderLogs(logs) {
         const container = document.getElementById('logs-container');
-        
+
         if (logs.length === 0) {
             container.innerHTML = '<div class="uk-text-center uk-text-muted">No logs available</div>';
             return;
@@ -926,14 +926,14 @@ class KPTVAdmin {
                 [${log.level.toUpperCase()}] ${this.escapeHtml(log.message)}
             </div>
         `).join('');
-        
+
         // Auto-scroll to bottom
         container.scrollTop = container.scrollHeight;
     }
 
     filterLogs(level) {
         if (!this.allLogs) return;
-        
+
         if (level === 'all') {
             this.renderLogs(this.allLogs);
         } else {
@@ -967,11 +967,11 @@ class KPTVAdmin {
 
         try {
             const result = await this.apiCall('/api/restart', { method: 'POST' });
-            
+
             this.hideLoadingOverlay();
             this.showNotification(result.message || 'Restart request sent successfully!', 'warning');
             this.startAutoRefresh();
-            
+
             // Reload data after restart
             setTimeout(() => {
                 this.loadGlobalSettings();
@@ -1017,7 +1017,7 @@ class KPTVAdmin {
 
     obfuscateUrl(url) {
         if (!url) return '';
-        
+
         try {
             const urlObj = new URL(url);
             let result = urlObj.protocol + '//' + urlObj.hostname;
@@ -1035,11 +1035,11 @@ class KPTVAdmin {
 
     formatBytes(bytes) {
         if (bytes === 0) return '0 B';
-        
+
         const k = 1024;
         const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
-        
+
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
@@ -1057,58 +1057,95 @@ class KPTVAdmin {
 
     renderStreamSelector(data) {
         document.getElementById('stream-selector-title').textContent = `Select Stream - ${data.channelName}`;
-        
+
         const container = document.getElementById('stream-selector-content');
-        
+
         if (data.streams.length === 0) {
             container.innerHTML = '<div class="uk-alert uk-alert-warning">No streams found</div>';
             return;
         }
-        
-        container.innerHTML = data.streams.map((stream, index) => {
+
+        // Store original data for ordering operations
+        this.currentChannelName = data.channelName;
+        this.currentStreamData = data.streams;
+        this.originalStreamOrder = data.streams.map((_, index) => index);
+
+        container.innerHTML = `
+            <div class="uk-margin-bottom">
+                <button class="uk-button uk-button-secondary uk-button-small" id="save-stream-order" style="display: none;">
+                    <span uk-icon="check"></span> Save Order
+                </button>
+                <span class="uk-text-small uk-text-muted uk-margin-left">Drag streams to reorder</span>
+            </div>
+            <div id="sortable-streams">
+                ${this.renderStreamCards(data)}
+            </div>
+        `;
+
+        // Initialize Sortable
+        const sortableContainer = document.getElementById('sortable-streams');
+        if (sortableContainer) {
+            const sortable = Sortable.create(sortableContainer, {
+                handle: '[uk-icon="menu"]',
+                animation: 150,
+                ghostClass: 'uk-sortable-ghost',
+                chosenClass: 'uk-sortable-chosen',
+                dragClass: 'uk-sortable-drag',
+                onEnd: (evt) => {
+                    this.onStreamOrderChanged();
+                }
+            });
+        }
+    }
+
+    renderStreamCards(data) {
+        return data.streams.map((stream, index) => {
             const isDead = stream.attributes['dead'] === 'true';
             const deadReason = stream.attributes['dead_reason'] || 'unknown';
-            const reasonText = deadReason === 'manual' ? 'Manually Killed' : 
-                            deadReason === 'auto_blocked' ? 'Auto-Blocked (Too Many Failures)' : 
-                            'Dead';
-            const cardClass = index === data.currentStreamIndex ? 'uk-card-primary' : 
-                            isDead ? 'uk-card-secondary' : 'uk-card-default';
-            
+            const reasonText = deadReason === 'manual' ? 'Manually Killed' :
+                deadReason === 'auto_blocked' ? 'Auto-Blocked (Too Many Failures)' :
+                    'Dead';
+            const cardClass = index === data.currentStreamIndex ? 'uk-card-primary' :
+                isDead ? 'uk-card-secondary' : 'uk-card-default';
+
             return `
-                <div class="uk-card ${cardClass} uk-margin-small ${isDead ? 'dead-stream' : ''}">
+                <div class="uk-card ${cardClass} uk-margin-small stream-card ${isDead ? 'dead-stream' : ''}" data-original-index="${index}">
                     <div class="uk-card-body uk-padding-small">
                         <div class="uk-flex uk-flex-between uk-flex-middle">
-                            <div class="uk-flex-1">
-                                <div class="uk-text-bold">
-                                    Stream ${index + 1} 
-                                    ${index === data.preferredStreamIndex ? '<span class="uk-label uk-label-success uk-margin-small-left">Preferred</span>' : ''}
-                                    ${index === data.currentStreamIndex ? '<span class="uk-label uk-label-primary uk-margin-small-left">Current</span>' : ''}
-                                    ${isDead ? `<span class="uk-label uk-label-danger uk-margin-small-left" uk-tooltip="${reasonText}">DEAD</span>` : ''}
-                                </div>
-                                <div class="uk-text-small uk-text-muted">
-                                    Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
-                                </div>
-                                <div class="uk-text-small uk-text-muted text-truncate">
-                                    ${stream.url}
-                                </div>
-                                ${stream.attributes['tvg-name'] ? `
-                                    <div class="uk-text-small">
-                                        Name: ${this.escapeHtml(stream.attributes['tvg-name'])}
+                            <div class="uk-flex uk-flex-middle">
+                                <span uk-icon="menu" class="uk-margin-small-right" style="cursor: grab;"></span>
+                                <div class="uk-flex-1">
+                                    <div class="uk-text-bold">
+                                        Stream ${index + 1} 
+                                        ${index === data.preferredStreamIndex ? '<span class="uk-label uk-label-success uk-margin-small-left">Preferred</span>' : ''}
+                                        ${index === data.currentStreamIndex ? '<span class="uk-label uk-label-primary uk-margin-small-left">Current</span>' : ''}
+                                        ${isDead ? `<span class="uk-label uk-label-danger uk-margin-small-left" uk-tooltip="${reasonText}">DEAD</span>` : ''}
                                     </div>
-                                ` : ''}
-                                ${stream.attributes['group-title'] ? `
-                                    <div class="uk-text-small">
-                                        Group: ${this.escapeHtml(stream.attributes['group-title'])}
+                                    <div class="uk-text-small uk-text-muted">
+                                        Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
                                     </div>
-                                ` : ''}
+                                    <div class="uk-text-small uk-text-muted text-truncate">
+                                        ${stream.url}
+                                    </div>
+                                    ${stream.attributes['tvg-name'] ? `
+                                        <div class="uk-text-small">
+                                            Name: ${this.escapeHtml(stream.attributes['tvg-name'])}
+                                        </div>
+                                    ` : ''}
+                                    ${stream.attributes['group-title'] ? `
+                                        <div class="uk-text-small">
+                                            Group: ${this.escapeHtml(stream.attributes['group-title'])}
+                                        </div>
+                                    ` : ''}
+                                </div>
                             </div>
                             <div class="uk-text-right uk-flex uk-flex-middle">
                                 <div class="uk-flex uk-flex-middle">
-                                    ${isDead ? 
-                                        `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${data.channelName}', ${index}); return false;"></a>` :
-                                        `<a href="#" class="uk-icon-link uk-text-primary uk-margin-small-right" uk-icon="play" uk-tooltip="Activate Stream" onclick="kptvAdmin.selectStream('${data.channelName}', ${index}); return false;"></a>
+                                    ${isDead ?
+                    `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${data.channelName}', ${index}); return false;"></a>` :
+                    `<a href="#" class="uk-icon-link uk-text-primary uk-margin-small-right" uk-icon="play" uk-tooltip="Activate Stream" onclick="kptvAdmin.selectStream('${data.channelName}', ${index}); return false;"></a>
                                         <a href="#" class="uk-icon-link uk-text-danger" uk-icon="ban" uk-tooltip="Mark as Dead" onclick="kptvAdmin.killStream('${data.channelName}', ${index}); return false;"></a>`
-                                    }
+                }
                                 </div>
                             </div>
                         </div>
@@ -1118,6 +1155,45 @@ class KPTVAdmin {
         }).join('');
     }
 
+    onStreamOrderChanged() {
+        const saveButton = document.getElementById('save-stream-order');
+        if (saveButton) {
+            saveButton.style.display = 'inline-block';
+
+            // Remove existing event listener and add new one
+            saveButton.onclick = () => this.saveStreamOrder();
+        }
+    }
+
+    async saveStreamOrder() {
+        const streamCards = document.querySelectorAll('.stream-card');
+        const newOrder = Array.from(streamCards).map(card =>
+            parseInt(card.getAttribute('data-original-index'))
+        );
+
+        try {
+            const encodedChannelName = encodeURIComponent(this.currentChannelName);
+            const result = await this.apiCall(`/api/channels/${encodedChannelName}/order`, {
+                method: 'POST',
+                body: JSON.stringify({ streamOrder: newOrder })
+            });
+
+            this.showNotification('Stream order saved successfully! Changes will apply on next restart.', 'success');
+
+            // Hide save button
+            const saveButton = document.getElementById('save-stream-order');
+            if (saveButton) {
+                saveButton.style.display = 'none';
+            }
+
+            // Update original order
+            this.originalStreamOrder = newOrder;
+
+        } catch (error) {
+            this.showNotification('Failed to save stream order: ' + error.message, 'danger');
+        }
+    }
+
     async selectStream(channelName, streamIndex) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -1125,14 +1201,14 @@ class KPTVAdmin {
                 method: 'POST',
                 body: JSON.stringify({ streamIndex: streamIndex })
             });
-            
+
             this.showNotification(`Stream changed to index ${streamIndex} for ${channelName}`, 'success');
-            
+
             // Wait a moment then refresh the stream selector
             setTimeout(() => {
                 this.showStreamSelector(channelName);
             }, 2000);
-            
+
             // Refresh active channels to show updated status
             this.loadActiveChannels();
         } catch (error) {
@@ -1151,14 +1227,14 @@ class KPTVAdmin {
                 method: 'POST',
                 body: JSON.stringify({ streamIndex: streamIndex })
             });
-            
+
             this.showNotification(`Stream ${streamIndex + 1} marked as dead for ${channelName}`, 'warning');
-            
+
             // Refresh the stream selector
             setTimeout(() => {
                 this.showStreamSelector(channelName);
             }, 1000);
-            
+
         } catch (error) {
             this.showNotification('Failed to mark stream as dead', 'danger');
         }
@@ -1171,14 +1247,14 @@ class KPTVAdmin {
                 method: 'POST',
                 body: JSON.stringify({ streamIndex: streamIndex })
             });
-            
+
             this.showNotification(`Stream ${streamIndex + 1} revived for ${channelName}`, 'success');
-            
+
             // Refresh the stream selector
             setTimeout(() => {
                 this.showStreamSelector(channelName);
             }, 1000);
-            
+
         } catch (error) {
             this.showNotification('Failed to revive stream', 'danger');
         }
@@ -1194,26 +1270,26 @@ class KPTVAdmin {
 
             const status = enable ? 'enabled' : 'disabled';
             this.showNotification(`Stream watcher ${status} successfully!`, 'success');
-            
+
             // Update the checkbox to reflect the change
             const checkbox = document.querySelector('input[name="watcherEnabled"]');
             if (checkbox) {
                 checkbox.checked = enable;
             }
-            
+
             // Reload stats to update the display
             this.loadStats();
-            
+
             return result;
         } catch (error) {
             this.showNotification(`Failed to ${enable ? 'enable' : 'disable'} watcher: ` + error.message, 'danger');
-            
+
             // Revert checkbox state on error
             const checkbox = document.querySelector('input[name="watcherEnabled"]');
             if (checkbox) {
                 checkbox.checked = !enable;
             }
-            
+
             throw error;
         }
     }

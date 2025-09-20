@@ -20,6 +20,7 @@ import (
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
+	"kptv-proxy/work/streamorder"
 
 	"github.com/gorilla/mux"
 )
@@ -123,6 +124,7 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 	router.HandleFunc("/api/channels/{channel}/stream", corsMiddleware(handleSetChannelStream(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/kill-stream", corsMiddleware(handleKillStream(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/revive-stream", corsMiddleware(handleReviveStream(proxyInstance))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/order", corsMiddleware(handleSetChannelOrder(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/logs", corsMiddleware(handleGetLogs)).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/logs", corsMiddleware(handleClearLogs)).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/api/restart", corsMiddleware(handleRestart)).Methods("POST", "OPTIONS")
@@ -153,6 +155,43 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// Continue to actual handler
 		next(w, r)
+	}
+}
+
+func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		vars := mux.Vars(r)
+		channelName, err := url.QueryUnescape(vars["channel"])
+		if err != nil {
+			http.Error(w, "Invalid channel name", http.StatusBadRequest)
+			return
+		}
+
+		var request struct {
+			StreamOrder []int `json:"streamOrder"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		err = streamorder.SetChannelStreamOrder(channelName, request.StreamOrder)
+		if err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to save stream order: %v", err))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		addLogEntry("info", fmt.Sprintf("Stream order updated for channel %s", channelName))
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "success",
+			"message": "Stream order updated",
+		})
 	}
 }
 

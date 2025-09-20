@@ -50,6 +50,7 @@ type Stream struct {
 	StreamType  StreamType           // Content type classification for specialized processing logic
 	ResolvedURL string               // For HLS master playlists, contains the selected variant URL
 	LastChecked time.Time            // Timestamp of most recent stream validation or health check
+	CustomOrder int                  // Custom user-defined ordering for drag/drop
 }
 
 // Channel represents a logical grouping of streams that provide the same content
