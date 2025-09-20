@@ -1091,9 +1091,36 @@ class KPTVAdmin {
                 ghostClass: 'uk-sortable-ghost',
                 chosenClass: 'uk-sortable-chosen',
                 dragClass: 'uk-sortable-drag',
-                onEnd: (evt) => {
+                fallbackClass: 'sortable-fallback',
+                forceFallback: false,
+                fallbackTolerance: 0,
+                touchStartThreshold: 0,
+                delay: 0,
+                delayOnTouchStart: false,
+                scroll: true,
+                scrollSensitivity: 30,
+                scrollSpeed: 10,
+                bubbleScroll: true,
+                dragoverBubble: false,
+                removeCloneOnHide: true,
+                emptyInsertThreshold: 5,
+                setData: function (dataTransfer, dragEl) {
+                    // Prevent default drag image
+                    const emptyImg = new Image();
+                    emptyImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
+                    dataTransfer.setDragImage(emptyImg, 0, 0);
+                },
+                onStart: function (evt) {
+                    // Disable hover effects during drag
+                    document.body.classList.add('dragging');
+                    evt.item.style.pointerEvents = 'none';
+                },
+                onEnd: function (evt) {
+                    // Re-enable hover effects
+                    document.body.classList.remove('dragging');
+                    evt.item.style.pointerEvents = '';
                     this.onStreamOrderChanged();
-                }
+                }.bind(this)
             });
         }
     }
