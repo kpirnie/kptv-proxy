@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/types"
@@ -74,7 +73,7 @@ type XCVODStream struct {
 //   - []*types.Stream: aggregated collection of streams from all three API endpoints
 func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []*types.Stream {
 	if cfg.Debug {
-		logger.Printf("Parsing Xtreme Codes API from %s with early filtering", utils.LogURL(cfg, source.URL))
+		logger.Printf("Parsing Xtreme Codes API from %s with optimized processing", utils.LogURL(cfg, source.URL))
 	}
 
 	// Pre-compile regex patterns for efficiency
@@ -122,7 +121,6 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 	seriesRegex := regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
 	vodRegex := regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
 
-	// Initialize collection for filtered streams
 	var allStreams []*types.Stream
 	filteredCount := 0
 	skippedCount := 0
@@ -130,154 +128,174 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 	// Helper function to check if a name passes include/exclude filters
 	checkFilters := func(name string, include, exclude *regexp.Regexp) bool {
 		if include != nil && !include.MatchString(name) {
-			return false // Doesn't match required include pattern
+			return false
 		}
 		if exclude != nil && exclude.MatchString(name) {
-			return false // Matches exclude pattern
+			return false
 		}
-		return true // Passed all filters
+		return true
 	}
 
-	// Process live streams with early filtering
+	// Process live streams
 	if cfg.Debug {
-		logger.Printf("Fetching and filtering live streams from XC API")
+		logger.Printf("Fetching live streams from XC API")
 	}
 	
 	liveStreams := fetchXCLiveStreams(httpClient, logger, cfg, source, rateLimiter)
-	for _, stream := range liveStreams {
-		// Apply early filtering BEFORE creating Stream objects
-		if !checkFilters(stream.Name, liveInclude, liveExclude) {
-			skippedCount++
-			continue
-		}
-
-		// Only create Stream object if it passes filters
-		streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
+	if len(liveStreams) > 0 {
+		liveFiltered := make([]*types.Stream, 0, len(liveStreams)/10)
 		
-		// Determine group classification
-		group := "live"
-		if seriesRegex.MatchString(stream.Name) || seriesRegex.MatchString(streamURL) {
-			group = "series"
-		} else if vodRegex.MatchString(stream.Name) || vodRegex.MatchString(streamURL) {
-			group = "vod"
-		}
+		for i, stream := range liveStreams {
+			if cfg.Debug && i > 0 && i%10000 == 0 {
+				logger.Printf("Live streams processing: %d/%d processed, %d kept", i, len(liveStreams), len(liveFiltered))
+			}
+			
+			if !checkFilters(stream.Name, liveInclude, liveExclude) {
+				skippedCount++
+				continue
+			}
 
-		s := &types.Stream{
-			URL:    streamURL,
-			Name:   stream.Name,
-			Source: source,
-			Attributes: map[string]string{
-				"tvg-name":    stream.Name,
-				"group-title": group,
-				"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
-				"category-id": stream.CategoryID,
-			},
-		}
+			streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
+			
+			group := "live"
+			if seriesRegex.MatchString(stream.Name) || seriesRegex.MatchString(streamURL) {
+				group = "series"
+			} else if vodRegex.MatchString(stream.Name) || vodRegex.MatchString(streamURL) {
+				group = "vod"
+			}
 
-		if stream.StreamIcon != "" {
-			s.Attributes["tvg-logo"] = stream.StreamIcon
-		}
-		if stream.EpgChannelID != "" {
-			s.Attributes["tvg-id"] = stream.EpgChannelID
-		}
+			s := &types.Stream{
+				URL:    streamURL,
+				Name:   stream.Name,
+				Source: source,
+				Attributes: map[string]string{
+					"tvg-name":    stream.Name,
+					"group-title": group,
+					"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
+					"category-id": stream.CategoryID,
+				},
+			}
 
-		allStreams = append(allStreams, s)
-		filteredCount++
+			if stream.StreamIcon != "" {
+				s.Attributes["tvg-logo"] = stream.StreamIcon
+			}
+			if stream.EpgChannelID != "" {
+				s.Attributes["tvg-id"] = stream.EpgChannelID
+			}
+
+			liveFiltered = append(liveFiltered, s)
+		}
+		
+		allStreams = append(allStreams, liveFiltered...)
+		filteredCount += len(liveFiltered)
+		
+		if cfg.Debug {
+			logger.Printf("Live streams completed: %d kept, %d filtered out", len(liveFiltered), len(liveStreams)-len(liveFiltered))
+		}
 	}
 
+	// Process series
 	if cfg.Debug {
-		logger.Printf("Live streams: %d kept, %d filtered out", filteredCount, skippedCount)
+		logger.Printf("Fetching series from XC API")
 	}
-
-	// Process series with early filtering
-	if cfg.Debug {
-		logger.Printf("Fetching and filtering series from XC API")
-	}
-	
-	seriesFiltered := 0
-	seriesSkipped := 0
 	
 	series := fetchXCSeries(httpClient, logger, cfg, source, rateLimiter)
-	for _, serie := range series {
-		// Apply early filtering
-		if !checkFilters(serie.Name, seriesInclude, seriesExclude) {
-			seriesSkipped++
-			continue
-		}
-
-		streamURL := fmt.Sprintf("%s/series/%s/%s/%d.ts", source.URL, source.Username, source.Password, serie.SeriesID)
+	if len(series) > 0 {
+		seriesFiltered := make([]*types.Stream, 0, len(series)/10)
 		
-		s := &types.Stream{
-			URL:    streamURL,
-			Name:   serie.Name,
-			Source: source,
-			Attributes: map[string]string{
-				"tvg-name":    serie.Name,
-				"group-title": "series",
-				"tvg-id":      fmt.Sprintf("%d", serie.SeriesID),
-				"category-id": serie.CategoryID,
-			},
+		for i, serie := range series {
+			if cfg.Debug && i > 0 && i%10000 == 0 {
+				logger.Printf("Series processing: %d/%d processed, %d kept", i, len(series), len(seriesFiltered))
+			}
+			
+			if !checkFilters(serie.Name, seriesInclude, seriesExclude) {
+				skippedCount++
+				continue
+			}
+
+			streamURL := fmt.Sprintf("%s/series/%s/%s/%d.ts", source.URL, source.Username, source.Password, serie.SeriesID)
+			
+			s := &types.Stream{
+				URL:    streamURL,
+				Name:   serie.Name,
+				Source: source,
+				Attributes: map[string]string{
+					"tvg-name":    serie.Name,
+					"group-title": "series",
+					"tvg-id":      fmt.Sprintf("%d", serie.SeriesID),
+					"category-id": serie.CategoryID,
+				},
+			}
+
+			if serie.Cover != "" {
+				s.Attributes["tvg-logo"] = serie.Cover
+			}
+
+			seriesFiltered = append(seriesFiltered, s)
 		}
-
-		if serie.Cover != "" {
-			s.Attributes["tvg-logo"] = serie.Cover
+		
+		allStreams = append(allStreams, seriesFiltered...)
+		filteredCount += len(seriesFiltered)
+		
+		if cfg.Debug {
+			logger.Printf("Series completed: %d kept, %d filtered out", len(seriesFiltered), len(series)-len(seriesFiltered))
 		}
-
-		allStreams = append(allStreams, s)
-		seriesFiltered++
 	}
 
+	/*// Process VOD streams
 	if cfg.Debug {
-		logger.Printf("Series: %d kept, %d filtered out", seriesFiltered, seriesSkipped)
+		logger.Printf("Fetching VOD streams from XC API")
 	}
 
-	// Process VOD streams with early filtering
-	if cfg.Debug {
-		logger.Printf("Fetching and filtering VOD streams from XC API")
-	}
-	
-	vodFiltered := 0
-	vodSkipped := 0
-	
 	vodStreams := fetchXCVODStreams(httpClient, logger, cfg, source, rateLimiter)
-	for _, stream := range vodStreams {
-		// Apply early filtering
-		if !checkFilters(stream.Name, vodInclude, vodExclude) {
-			vodSkipped++
-			continue
-		}
-
-		streamURL := fmt.Sprintf("%s/movie/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
+	if len(vodStreams) > 0 {
+		vodFiltered := make([]*types.Stream, 0, len(vodStreams)/10)
 		
-		s := &types.Stream{
-			URL:    streamURL,
-			Name:   stream.Name,
-			Source: source,
-			Attributes: map[string]string{
-				"tvg-name":    stream.Name,
-				"group-title": "vod",
-				"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
-				"category-id": stream.CategoryID,
-			},
-		}
+		for i, stream := range vodStreams {
+			if cfg.Debug && i > 0 && i%10000 == 0 {
+				logger.Printf("VOD processing: %d/%d processed, %d kept", i, len(vodStreams), len(vodFiltered))
+			}
+			
+			if !checkFilters(stream.Name, vodInclude, vodExclude) {
+				skippedCount++
+				continue
+			}
 
-		if stream.StreamIcon != "" {
-			s.Attributes["tvg-logo"] = stream.StreamIcon
-		}
+			streamURL := fmt.Sprintf("%s/movie/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
+			
+			s := &types.Stream{
+				URL:    streamURL,
+				Name:   stream.Name,
+				Source: source,
+				Attributes: map[string]string{
+					"tvg-name":    stream.Name,
+					"group-title": "vod",
+					"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
+					"category-id": stream.CategoryID,
+				},
+			}
 
-		allStreams = append(allStreams, s)
-		vodFiltered++
-	}
+			if stream.StreamIcon != "" {
+				s.Attributes["tvg-logo"] = stream.StreamIcon
+			}
+
+			vodFiltered = append(vodFiltered, s)
+		}
+		
+		allStreams = append(allStreams, vodFiltered...)
+		filteredCount += len(vodFiltered)
+		
+		if cfg.Debug {
+			logger.Printf("VOD completed: %d kept, %d filtered out", len(vodFiltered), len(vodStreams)-len(vodFiltered))
+		}
+	}*/
 
 	if cfg.Debug {
-		logger.Printf("VOD streams: %d kept, %d filtered out", vodFiltered, vodSkipped)
-		logger.Printf("XC API filtering complete: %d total streams kept, %d filtered out", 
-			len(allStreams), skippedCount+seriesSkipped+vodSkipped)
+		logger.Printf("XC API parsing complete: %d total streams kept, %d filtered out", filteredCount, skippedCount)
 	}
 
 	return allStreams
 }
-
 
 // fetchXCLiveStreams retrieves live television stream data from the Xtreme Codes API
 // get_live_streams endpoint, implementing proper rate limiting, error handling, and
@@ -430,12 +448,9 @@ func fetchXCVODStreams(httpClient *client.HeaderSettingClient, logger *log.Logge
 //   - []T: array of parsed response objects of the specified type
 //   - error: non-nil if request fails, HTTP error occurs, or JSON parsing fails
 func fetchXCData[T any](httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, url string) ([]T, error) {
-
-	// Create context with reasonable timeout for API requests to prevent hanging
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	// Build HTTP GET request for the specified API endpoint
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		if cfg.Debug {
@@ -444,11 +459,9 @@ func fetchXCData[T any](httpClient *client.HeaderSettingClient, logger *log.Logg
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Apply timeout context to prevent hanging on unresponsive servers
 	req = req.WithContext(ctx)
+	req.Header.Set("Connection", "keep-alive")
 
-	// Execute HTTP request with source-specific headers (User-Agent, Origin, Referer)
-	// Note: Username and password are in URL parameters, not HTTP Basic Auth
 	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		if cfg.Debug {
@@ -457,7 +470,6 @@ func fetchXCData[T any](httpClient *client.HeaderSettingClient, logger *log.Logg
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 
-	// Ensure response body is always closed to prevent connection leaks
 	defer func() {
 		resp.Body.Close()
 		if cfg.Debug {
@@ -465,7 +477,6 @@ func fetchXCData[T any](httpClient *client.HeaderSettingClient, logger *log.Logg
 		}
 	}()
 
-	// Validate HTTP status code before attempting to parse response body
 	if resp.StatusCode != http.StatusOK {
 		if cfg.Debug {
 			logger.Printf("XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
@@ -473,38 +484,16 @@ func fetchXCData[T any](httpClient *client.HeaderSettingClient, logger *log.Logg
 		return nil, fmt.Errorf("API returned HTTP %d", resp.StatusCode)
 	}
 
-	// Read complete response body for JSON parsing
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to read XC API response body: %v", err)
-		}
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Log response size for debugging and monitoring purposes
-	if cfg.Debug {
-		logger.Printf("XC API response size: %d bytes", len(body))
-	}
-
-	// Parse JSON response into the specified generic type array
+	decoder := json.NewDecoder(resp.Body)
 	var data []T
-	if err := json.Unmarshal(body, &data); err != nil {
+	
+	if err := decoder.Decode(&data); err != nil {
 		if cfg.Debug {
 			logger.Printf("Failed to parse XC API JSON response: %v", err)
-			// Log first 200 characters of response for debugging malformed JSON
-			if len(body) > 0 {
-				preview := string(body)
-				if len(preview) > 200 {
-					preview = preview[:200] + "..."
-				}
-				logger.Printf("XC API response preview: %s", preview)
-			}
 		}
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
-	// Log successful parsing result for debugging and monitoring
 	if cfg.Debug {
 		logger.Printf("Successfully parsed %d items from XC API response", len(data))
 	}
