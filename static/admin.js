@@ -1082,7 +1082,7 @@ class KPTVAdmin {
             </div>
         `;
 
-        // Initialize Sortable
+        // Initialize Sortable with different settings
         const sortableContainer = document.getElementById('sortable-streams');
         if (sortableContainer) {
             const sortable = Sortable.create(sortableContainer, {
@@ -1091,34 +1091,20 @@ class KPTVAdmin {
                 ghostClass: 'uk-sortable-ghost',
                 chosenClass: 'uk-sortable-chosen',
                 dragClass: 'uk-sortable-drag',
+                forceFallback: true, // Force HTML5 fallback
                 fallbackClass: 'sortable-fallback',
-                forceFallback: false,
-                fallbackTolerance: 0,
+                fallbackOnBody: true,
+                swapThreshold: 0.65,
+                invertSwap: false,
+                direction: 'vertical',
                 touchStartThreshold: 0,
-                delay: 0,
-                delayOnTouchStart: false,
-                scroll: true,
-                scrollSensitivity: 30,
-                scrollSpeed: 10,
-                bubbleScroll: true,
-                dragoverBubble: false,
-                removeCloneOnHide: true,
-                emptyInsertThreshold: 5,
-                setData: function (dataTransfer, dragEl) {
-                    // Prevent default drag image
-                    const emptyImg = new Image();
-                    emptyImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
-                    dataTransfer.setDragImage(emptyImg, 0, 0);
-                },
                 onStart: function (evt) {
-                    // Disable hover effects during drag
+                    evt.item.style.opacity = '0.5';
                     document.body.classList.add('dragging');
-                    evt.item.style.pointerEvents = 'none';
                 },
                 onEnd: function (evt) {
-                    // Re-enable hover effects
+                    evt.item.style.opacity = '';
                     document.body.classList.remove('dragging');
-                    evt.item.style.pointerEvents = '';
                     this.onStreamOrderChanged();
                 }.bind(this)
             });
