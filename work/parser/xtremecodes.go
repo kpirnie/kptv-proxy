@@ -76,6 +76,10 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 		logger.Printf("Parsing Xtreme Codes API from %s with optimized processing", utils.LogURL(cfg, source.URL))
 	}
 
+	// Create a context with timeout for the entire parsing operation
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
 	// Pre-compile regex patterns for efficiency
 	var liveInclude, liveExclude, seriesInclude, seriesExclude, vodInclude, vodExclude *regexp.Regexp
 	var err error
@@ -138,16 +142,32 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 
 	// Process live streams
 	if cfg.Debug {
-		logger.Printf("Fetching live streams from XC API")
+		logger.Printf("[XC_DEBUG] Starting live streams fetch")
 	}
 	
 	liveStreams := fetchXCLiveStreams(httpClient, logger, cfg, source, rateLimiter)
+	if cfg.Debug {
+		logger.Printf("[XC_DEBUG] Fetched %d live streams", len(liveStreams))
+	}
+
 	if len(liveStreams) > 0 {
 		liveFiltered := make([]*types.Stream, 0, len(liveStreams)/10)
 		
 		for i, stream := range liveStreams {
-			if cfg.Debug && i > 0 && i%10000 == 0 {
-				logger.Printf("Live streams processing: %d/%d processed, %d kept", i, len(liveStreams), len(liveFiltered))
+			// Aggressive cancellation check every 100 items
+			if i%100 == 0 {
+				select {
+				case <-ctx.Done():
+					if cfg.Debug {
+						logger.Printf("[XC_DEBUG] Live streams processing cancelled at item %d", i)
+					}
+					return allStreams
+				default:
+				}
+			}
+
+			if cfg.Debug && i > 0 && i%5000 == 0 {
+				logger.Printf("[XC_DEBUG] Live streams processing: %d/%d processed, %d kept", i, len(liveStreams), len(liveFiltered))
 			}
 			
 			if !checkFilters(stream.Name, liveInclude, liveExclude) {
@@ -190,22 +210,48 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 		filteredCount += len(liveFiltered)
 		
 		if cfg.Debug {
-			logger.Printf("Live streams completed: %d kept, %d filtered out", len(liveFiltered), len(liveStreams)-len(liveFiltered))
+			logger.Printf("[XC_DEBUG] Live streams completed: %d kept, %d filtered out", len(liveFiltered), len(liveStreams)-len(liveFiltered))
 		}
+	}
+
+	// Check if cancelled before proceeding to series
+	select {
+	case <-ctx.Done():
+		if cfg.Debug {
+			logger.Printf("[XC_DEBUG] Context cancelled after live streams")
+		}
+		return allStreams
+	default:
 	}
 
 	// Process series
 	if cfg.Debug {
-		logger.Printf("Fetching series from XC API")
+		logger.Printf("[XC_DEBUG] Starting series fetch")
 	}
 	
 	series := fetchXCSeries(httpClient, logger, cfg, source, rateLimiter)
+	if cfg.Debug {
+		logger.Printf("[XC_DEBUG] Fetched %d series", len(series))
+	}
+
 	if len(series) > 0 {
 		seriesFiltered := make([]*types.Stream, 0, len(series)/10)
 		
 		for i, serie := range series {
-			if cfg.Debug && i > 0 && i%10000 == 0 {
-				logger.Printf("Series processing: %d/%d processed, %d kept", i, len(series), len(seriesFiltered))
+			// Aggressive cancellation check every 100 items
+			if i%100 == 0 {
+				select {
+				case <-ctx.Done():
+					if cfg.Debug {
+						logger.Printf("[XC_DEBUG] Series processing cancelled at item %d", i)
+					}
+					return allStreams
+				default:
+				}
+			}
+
+			if cfg.Debug && i > 0 && i%5000 == 0 {
+				logger.Printf("[XC_DEBUG] Series processing: %d/%d processed, %d kept", i, len(series), len(seriesFiltered))
 			}
 			
 			if !checkFilters(serie.Name, seriesInclude, seriesExclude) {
@@ -238,63 +284,125 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 		filteredCount += len(seriesFiltered)
 		
 		if cfg.Debug {
-			logger.Printf("Series completed: %d kept, %d filtered out", len(seriesFiltered), len(series)-len(seriesFiltered))
+			logger.Printf("[XC_DEBUG] Series completed: %d kept, %d filtered out", len(seriesFiltered), len(series)-len(seriesFiltered))
 		}
 	}
 
-	/*// Process VOD streams
 	if cfg.Debug {
-		logger.Printf("Fetching VOD streams from XC API")
-	}
-
-	vodStreams := fetchXCVODStreams(httpClient, logger, cfg, source, rateLimiter)
-	if len(vodStreams) > 0 {
-		vodFiltered := make([]*types.Stream, 0, len(vodStreams)/10)
-		
-		for i, stream := range vodStreams {
-			if cfg.Debug && i > 0 && i%10000 == 0 {
-				logger.Printf("VOD processing: %d/%d processed, %d kept", i, len(vodStreams), len(vodFiltered))
-			}
-			
-			if !checkFilters(stream.Name, vodInclude, vodExclude) {
-				skippedCount++
-				continue
-			}
-
-			streamURL := fmt.Sprintf("%s/movie/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
-			
-			s := &types.Stream{
-				URL:    streamURL,
-				Name:   stream.Name,
-				Source: source,
-				Attributes: map[string]string{
-					"tvg-name":    stream.Name,
-					"group-title": "vod",
-					"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
-					"category-id": stream.CategoryID,
-				},
-			}
-
-			if stream.StreamIcon != "" {
-				s.Attributes["tvg-logo"] = stream.StreamIcon
-			}
-
-			vodFiltered = append(vodFiltered, s)
-		}
-		
-		allStreams = append(allStreams, vodFiltered...)
-		filteredCount += len(vodFiltered)
-		
-		if cfg.Debug {
-			logger.Printf("VOD completed: %d kept, %d filtered out", len(vodFiltered), len(vodStreams)-len(vodFiltered))
-		}
-	}*/
-
-	if cfg.Debug {
-		logger.Printf("XC API parsing complete: %d total streams kept, %d filtered out", filteredCount, skippedCount)
+		logger.Printf("[XC_DEBUG] XC API parsing complete: %d total streams kept, %d filtered out", filteredCount, skippedCount)
 	}
 
 	return allStreams
+}
+
+// fetchXCLiveStreamsWithContext retrieves live television stream data with context support
+func fetchXCLiveStreamsWithContext(ctx context.Context, httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCLiveStream {
+	// Apply rate limiting before making API request to prevent server overload
+	if rateLimiter != nil {
+		rateLimiter.Take()
+		if cfg.Debug {
+			logger.Printf("Applied rate limit for XC live streams request: %s", source.Name)
+		}
+	}
+
+	// Construct API URL for live streams endpoint with authentication parameters
+	url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_live_streams", source.URL, source.Username, source.Password)
+
+	// Execute generic API data fetching with proper error handling
+	streams, err := fetchXCDataWithContext[XCLiveStream](ctx, httpClient, logger, cfg, source, url)
+	if err != nil {
+		if cfg.Debug {
+			logger.Printf("Failed to fetch XC live streams from %s: %v", utils.LogURL(cfg, source.URL), err)
+		}
+		return nil
+	}
+
+	if cfg.Debug {
+		logger.Printf("Successfully fetched %d live streams from XC API", len(streams))
+	}
+
+	return streams
+}
+
+// fetchXCSeriesWithContext retrieves television series data with context support
+func fetchXCSeriesWithContext(ctx context.Context, httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCSeries {
+	// Apply rate limiting before making API request to prevent server overload
+	if rateLimiter != nil {
+		rateLimiter.Take()
+		if cfg.Debug {
+			logger.Printf("Applied rate limit for XC series request: %s", source.Name)
+		}
+	}
+
+	// Construct API URL for series endpoint with authentication parameters
+	url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_series", source.URL, source.Username, source.Password)
+
+	// Execute generic API data fetching with proper error handling
+	series, err := fetchXCDataWithContext[XCSeries](ctx, httpClient, logger, cfg, source, url)
+	if err != nil {
+		if cfg.Debug {
+			logger.Printf("Failed to fetch XC series from %s: %v", utils.LogURL(cfg, source.URL), err)
+		}
+		return nil
+	}
+
+	if cfg.Debug {
+		logger.Printf("Successfully fetched %d series from XC API", len(series))
+	}
+
+	return series
+}
+
+// fetchXCDataWithContext implements context-aware HTTP request handler for Xtreme Codes API endpoints
+func fetchXCDataWithContext[T any](ctx context.Context, httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, url string) ([]T, error) {
+	// Create request with the provided context
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		if cfg.Debug {
+			logger.Printf("Failed to create XC API request: %v", err)
+		}
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Connection", "keep-alive")
+
+	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
+	if err != nil {
+		if cfg.Debug {
+			logger.Printf("XC API request failed: %v", err)
+		}
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+
+	defer func() {
+		resp.Body.Close()
+		if cfg.Debug {
+			logger.Printf("Closed XC API connection for: %s", utils.LogURL(cfg, source.URL))
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		if cfg.Debug {
+			logger.Printf("XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
+		}
+		return nil, fmt.Errorf("API returned HTTP %d", resp.StatusCode)
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	var data []T
+	
+	if err := decoder.Decode(&data); err != nil {
+		if cfg.Debug {
+			logger.Printf("Failed to parse XC API JSON response: %v", err)
+		}
+		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	if cfg.Debug {
+		logger.Printf("Successfully parsed %d items from XC API response", len(data))
+	}
+
+	return data, nil
 }
 
 // fetchXCLiveStreams retrieves live television stream data from the Xtreme Codes API
