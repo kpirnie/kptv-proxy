@@ -178,14 +178,47 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		err = streamorder.SetChannelStreamOrder(channelName, request.StreamOrder)
-		if err != nil {
-			addLogEntry("error", fmt.Sprintf("Failed to save stream order: %v", err))
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Validate the stream order array
+		value, exists := sp.Channels.Load(channelName)
+		if !exists {
+			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
 
-		addLogEntry("info", fmt.Sprintf("Stream order updated for channel %s", channelName))
+		channel := value.(*types.Channel)
+		channel.Mu.RLock()
+		streamCount := len(channel.Streams)
+		channel.Mu.RUnlock()
+
+		if len(request.StreamOrder) != streamCount {
+			http.Error(w, "Stream order length mismatch", http.StatusBadRequest)
+			return
+		}
+
+		// Only save if order is different from default [0,1,2,3...]
+		isDefault := true
+		for i, idx := range request.StreamOrder {
+			if idx != i {
+				isDefault = false
+				break
+			}
+		}
+
+		if isDefault {
+			// Remove custom order if it's back to default
+			if sp.Config.Debug {
+				addLogEntry("info", fmt.Sprintf("Removing custom order for channel %s (back to default)", channelName))
+			}
+			// You might want to implement a remove function in streamorder package
+		} else {
+			err = streamorder.SetChannelStreamOrder(channelName, request.StreamOrder)
+			if err != nil {
+				addLogEntry("error", fmt.Sprintf("Failed to save stream order: %v", err))
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			addLogEntry("info", fmt.Sprintf("Stream order updated for channel %s: %v", channelName, request.StreamOrder))
+		}
 
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -202,7 +235,6 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		// Extract and validate channel name from URL parameters
 		vars := mux.Vars(r)
 		channelName, err := url.QueryUnescape(vars["channel"])
 		if err != nil {
@@ -210,7 +242,6 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		// Locate channel in proxy's channel store
 		value, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
@@ -220,37 +251,33 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 		channel := value.(*types.Channel)
 		channel.Mu.RLock()
 
-		// Build comprehensive stream information array
+		// Always build streams in original order first
 		streams := make([]StreamInfo, len(channel.Streams))
 		for i, stream := range channel.Streams {
 			streams[i] = StreamInfo{
-				Index:       i,
+				Index:       i, // This is the original index
 				URL:         utils.LogURL(sp.Config, stream.URL),
 				SourceName:  stream.Source.Name,
 				SourceOrder: stream.Source.Order,
 				Attributes:  make(map[string]string),
 			}
 
-			// Copy existing stream attributes
 			for k, v := range stream.Attributes {
 				streams[i].Attributes[k] = v
 			}
 
-			// Add dead stream status information
 			if deadstreams.IsStreamDead(channelName, i) {
 				streams[i].Attributes["dead"] = "true"
 				streams[i].Attributes["dead_reason"] = deadstreams.GetDeadStreamReason(channelName, i)
 			}
 		}
 
-		// Determine current and preferred stream indexes
 		currentIndex := 0
 		preferredIndex := int(atomic.LoadInt32(&channel.PreferredStreamIndex))
 		if channel.Restreamer != nil {
 			currentIndex = int(atomic.LoadInt32(&channel.Restreamer.CurrentIndex))
 		}
 
-		// Build response structure
 		response := ChannelStreamsResponse{
 			ChannelName:          channelName,
 			CurrentStreamIndex:   currentIndex,
@@ -259,7 +286,6 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		channel.Mu.RUnlock()
-
 		json.NewEncoder(w).Encode(response)
 	}
 }

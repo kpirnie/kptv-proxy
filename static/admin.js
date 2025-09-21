@@ -1112,26 +1112,32 @@ class KPTVAdmin {
     }
 
     renderStreamCards(data) {
-        return data.streams.map((stream, index) => {
+        // Get custom order if it exists
+        const customOrder = this.getCustomOrder(data.channelName) || data.streams.map((_, i) => i);
+
+        // Reorder streams based on custom order
+        const orderedStreams = customOrder.map(originalIndex => data.streams[originalIndex]);
+
+        return orderedStreams.map((stream, displayIndex) => {
+            const originalIndex = stream.index; // Use the original index from the stream data
             const isDead = stream.attributes['dead'] === 'true';
             const deadReason = stream.attributes['dead_reason'] || 'unknown';
             const reasonText = deadReason === 'manual' ? 'Manually Killed' :
-                deadReason === 'auto_blocked' ? 'Auto-Blocked (Too Many Failures)' :
-                    'Dead';
-            const cardClass = index === data.currentStreamIndex ? 'uk-card-primary' :
+                deadReason === 'auto_blocked' ? 'Auto-Blocked (Too Many Failures)' : 'Dead';
+            const cardClass = originalIndex === data.currentStreamIndex ? 'uk-card-primary' :
                 isDead ? 'uk-card-secondary' : 'uk-card-default';
 
             return `
-                <div class="uk-card ${cardClass} uk-margin-small stream-card ${isDead ? 'dead-stream' : ''}" data-original-index="${index}">
+                <div class="uk-card ${cardClass} uk-margin-small stream-card ${isDead ? 'dead-stream' : ''}" data-original-index="${originalIndex}">
                     <div class="uk-card-body uk-padding-small">
                         <div class="uk-flex uk-flex-between uk-flex-middle">
                             <div class="uk-flex uk-flex-middle">
                                 <span uk-icon="menu" class="uk-margin-small-right" style="cursor: grab;"></span>
                                 <div class="uk-flex-1">
                                     <div class="uk-text-bold">
-                                        Stream ${index + 1} 
-                                        ${index === data.preferredStreamIndex ? '<span class="uk-label uk-label-success uk-margin-small-left">Preferred</span>' : ''}
-                                        ${index === data.currentStreamIndex ? '<span class="uk-label uk-label-primary uk-margin-small-left">Current</span>' : ''}
+                                        Stream ${displayIndex + 1} 
+                                        ${originalIndex === data.preferredStreamIndex ? '<span class="uk-label uk-label-success uk-margin-small-left">Preferred</span>' : ''}
+                                        ${originalIndex === data.currentStreamIndex ? '<span class="uk-label uk-label-primary uk-margin-small-left">Current</span>' : ''}
                                         ${isDead ? `<span class="uk-label uk-label-danger uk-margin-small-left" uk-tooltip="${reasonText}">DEAD</span>` : ''}
                                     </div>
                                     <div class="uk-text-small uk-text-muted">
@@ -1155,9 +1161,9 @@ class KPTVAdmin {
                             <div class="uk-text-right uk-flex uk-flex-middle">
                                 <div class="uk-flex uk-flex-middle">
                                     ${isDead ?
-                    `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${data.channelName}', ${index}); return false;"></a>` :
-                    `<a href="#" class="uk-icon-link uk-text-primary uk-margin-small-right" uk-icon="play" uk-tooltip="Activate Stream" onclick="kptvAdmin.selectStream('${data.channelName}', ${index}); return false;"></a>
-                                        <a href="#" class="uk-icon-link uk-text-danger" uk-icon="ban" uk-tooltip="Mark as Dead" onclick="kptvAdmin.killStream('${data.channelName}', ${index}); return false;"></a>`
+                    `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${data.channelName}', ${originalIndex}); return false;"></a>` :
+                    `<a href="#" class="uk-icon-link uk-text-primary uk-margin-small-right" uk-icon="play" uk-tooltip="Activate Stream" onclick="kptvAdmin.selectStream('${data.channelName}', ${originalIndex}); return false;"></a>
+                                        <a href="#" class="uk-icon-link uk-text-danger" uk-icon="ban" uk-tooltip="Mark as Dead" onclick="kptvAdmin.killStream('${data.channelName}', ${originalIndex}); return false;"></a>`
                 }
                                 </div>
                             </div>
@@ -1168,21 +1174,29 @@ class KPTVAdmin {
         }).join('');
     }
 
+    getCustomOrder(channelName) {
+        // This would need to be stored when the order is saved
+        // For now, return null to use default order
+        return null;
+    }
+
     onStreamOrderChanged() {
         const saveButton = document.getElementById('save-stream-order');
         if (saveButton) {
             saveButton.style.display = 'inline-block';
-
-            // Remove existing event listener and add new one
             saveButton.onclick = () => this.saveStreamOrder();
         }
     }
 
     async saveStreamOrder() {
         const streamCards = document.querySelectorAll('.stream-card');
-        const newOrder = Array.from(streamCards).map(card =>
-            parseInt(card.getAttribute('data-original-index'))
-        );
+        const newOrder = [];
+
+        // Get the current display order and map back to original indexes
+        streamCards.forEach(card => {
+            const originalIndex = parseInt(card.getAttribute('data-original-index'));
+            newOrder.push(originalIndex);
+        });
 
         try {
             const encodedChannelName = encodeURIComponent(this.currentChannelName);
@@ -1193,14 +1207,10 @@ class KPTVAdmin {
 
             this.showNotification('Stream order saved successfully! Changes will apply on next restart.', 'success');
 
-            // Hide save button
             const saveButton = document.getElementById('save-stream-order');
             if (saveButton) {
                 saveButton.style.display = 'none';
             }
-
-            // Update original order
-            this.originalStreamOrder = newOrder;
 
         } catch (error) {
             this.showNotification('Failed to save stream order: ' + error.message, 'danger');

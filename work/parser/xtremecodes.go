@@ -74,136 +74,210 @@ type XCVODStream struct {
 //   - []*types.Stream: aggregated collection of streams from all three API endpoints
 func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []*types.Stream {
 	if cfg.Debug {
-		logger.Printf("Parsing Xtreme Codes API from %s", utils.LogURL(cfg, source.URL))
+		logger.Printf("Parsing Xtreme Codes API from %s with early filtering", utils.LogURL(cfg, source.URL))
 	}
 
-	// Initialize collection for aggregated streams from all endpoints
-	var allStreams []*types.Stream
+	// Pre-compile regex patterns for efficiency
+	var liveInclude, liveExclude, seriesInclude, seriesExclude, vodInclude, vodExclude *regexp.Regexp
+	var err error
 
-	// possible series and vod names
+	if source.LiveIncludeRegex != "" {
+		liveInclude, err = regexp.Compile(source.LiveIncludeRegex)
+		if err != nil && cfg.Debug {
+			logger.Printf("Invalid LiveIncludeRegex: %v", err)
+		}
+	}
+	if source.LiveExcludeRegex != "" {
+		liveExclude, err = regexp.Compile(source.LiveExcludeRegex)
+		if err != nil && cfg.Debug {
+			logger.Printf("Invalid LiveExcludeRegex: %v", err)
+		}
+	}
+	if source.SeriesIncludeRegex != "" {
+		seriesInclude, err = regexp.Compile(source.SeriesIncludeRegex)
+		if err != nil && cfg.Debug {
+			logger.Printf("Invalid SeriesIncludeRegex: %v", err)
+		}
+	}
+	if source.SeriesExcludeRegex != "" {
+		seriesExclude, err = regexp.Compile(source.SeriesExcludeRegex)
+		if err != nil && cfg.Debug {
+			logger.Printf("Invalid SeriesExcludeRegex: %v", err)
+		}
+	}
+	if source.VODIncludeRegex != "" {
+		vodInclude, err = regexp.Compile(source.VODIncludeRegex)
+		if err != nil && cfg.Debug {
+			logger.Printf("Invalid VODIncludeRegex: %v", err)
+		}
+	}
+	if source.VODExcludeRegex != "" {
+		vodExclude, err = regexp.Compile(source.VODExcludeRegex)
+		if err != nil && cfg.Debug {
+			logger.Printf("Invalid VODExcludeRegex: %v", err)
+		}
+	}
+
+	// Content type detection regexes
 	seriesRegex := regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
 	vodRegex := regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
 
-	// Fetch and process live television streams
-	if cfg.Debug {
-		logger.Printf("Fetching live streams from Xtreme Codes API: %s", utils.LogURL(cfg, source.URL))
+	// Initialize collection for filtered streams
+	var allStreams []*types.Stream
+	filteredCount := 0
+	skippedCount := 0
+
+	// Helper function to check if a name passes include/exclude filters
+	checkFilters := func(name string, include, exclude *regexp.Regexp) bool {
+		if include != nil && !include.MatchString(name) {
+			return false // Doesn't match required include pattern
+		}
+		if exclude != nil && exclude.MatchString(name) {
+			return false // Matches exclude pattern
+		}
+		return true // Passed all filters
 	}
+
+	// Process live streams with early filtering
+	if cfg.Debug {
+		logger.Printf("Fetching and filtering live streams from XC API")
+	}
+	
 	liveStreams := fetchXCLiveStreams(httpClient, logger, cfg, source, rateLimiter)
 	for _, stream := range liveStreams {
+		// Apply early filtering BEFORE creating Stream objects
+		if !checkFilters(stream.Name, liveInclude, liveExclude) {
+			skippedCount++
+			continue
+		}
 
-		// Construct live stream URL using Xtreme Codes format: /live/username/password/stream_id.ts
+		// Only create Stream object if it passes filters
 		streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
-
-		// hold the default group
-		group := `live`
-
-		// we need to change the group if the series or vod regex matches
-		seriesNameMatch := seriesRegex.MatchString(stream.Name)
-		vodNameMatch := vodRegex.MatchString(stream.Name)
-		seriesURLMatch := seriesRegex.MatchString(streamURL)
-		vodURLMatch := vodRegex.MatchString(streamURL)
-
-		// if the either match
-		if seriesNameMatch || seriesURLMatch {
-			group = `series`
-		}
-		if vodNameMatch || vodURLMatch {
-			group = `vod`
+		
+		// Determine group classification
+		group := "live"
+		if seriesRegex.MatchString(stream.Name) || seriesRegex.MatchString(streamURL) {
+			group = "series"
+		} else if vodRegex.MatchString(stream.Name) || vodRegex.MatchString(streamURL) {
+			group = "vod"
 		}
 
-		// Create Stream object with live stream metadata and attributes
 		s := &types.Stream{
 			URL:    streamURL,
 			Name:   stream.Name,
 			Source: source,
 			Attributes: map[string]string{
-				"tvg-name":    stream.Name,                        // Channel name for EPG integration
-				"group-title": group,                              // Category identifier for playlist organization
-				"tvg-id":      fmt.Sprintf("%d", stream.StreamID), // Default stream ID for EPG matching
-				"category-id": stream.CategoryID,                  // Original category from API response
+				"tvg-name":    stream.Name,
+				"group-title": group,
+				"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
+				"category-id": stream.CategoryID,
 			},
 		}
 
-		// Add optional metadata attributes when available in API response
 		if stream.StreamIcon != "" {
-			s.Attributes["tvg-logo"] = stream.StreamIcon // Channel logo URL for display
+			s.Attributes["tvg-logo"] = stream.StreamIcon
 		}
 		if stream.EpgChannelID != "" {
-
-			// Override default tvg-id with proper EPG channel ID when available
 			s.Attributes["tvg-id"] = stream.EpgChannelID
 		}
 
 		allStreams = append(allStreams, s)
+		filteredCount++
 	}
 
-	// Fetch and process television series content
 	if cfg.Debug {
-		logger.Printf("Fetching series from Xtreme Codes API: %s", utils.LogURL(cfg, source.URL))
+		logger.Printf("Live streams: %d kept, %d filtered out", filteredCount, skippedCount)
 	}
+
+	// Process series with early filtering
+	if cfg.Debug {
+		logger.Printf("Fetching and filtering series from XC API")
+	}
+	
+	seriesFiltered := 0
+	seriesSkipped := 0
+	
 	series := fetchXCSeries(httpClient, logger, cfg, source, rateLimiter)
 	for _, serie := range series {
-		// Construct series stream URL using Xtreme Codes format: /series/username/password/series_id.ts
-		streamURL := fmt.Sprintf("%s/series/%s/%s/%d.ts", source.URL, source.Username, source.Password, serie.SeriesID)
+		// Apply early filtering
+		if !checkFilters(serie.Name, seriesInclude, seriesExclude) {
+			seriesSkipped++
+			continue
+		}
 
-		// Create Stream object with series metadata and attributes
+		streamURL := fmt.Sprintf("%s/series/%s/%s/%d.ts", source.URL, source.Username, source.Password, serie.SeriesID)
+		
 		s := &types.Stream{
 			URL:    streamURL,
 			Name:   serie.Name,
 			Source: source,
 			Attributes: map[string]string{
-				"tvg-name":    serie.Name,                        // Series name for display purposes
-				"group-title": "series",                          // Category identifier for playlist organization
-				"tvg-id":      fmt.Sprintf("%d", serie.SeriesID), // Series ID for identification
-				"category-id": serie.CategoryID,                  // Original category from API response
+				"tvg-name":    serie.Name,
+				"group-title": "series",
+				"tvg-id":      fmt.Sprintf("%d", serie.SeriesID),
+				"category-id": serie.CategoryID,
 			},
 		}
 
-		// Add series cover artwork URL when available in API response
 		if serie.Cover != "" {
-			s.Attributes["tvg-logo"] = serie.Cover // Series poster/cover image for display
+			s.Attributes["tvg-logo"] = serie.Cover
 		}
 
 		allStreams = append(allStreams, s)
+		seriesFiltered++
 	}
 
-	// Fetch and process video-on-demand content
 	if cfg.Debug {
-		logger.Printf("Fetching VOD streams from Xtreme Codes API: %s", utils.LogURL(cfg, source.URL))
+		logger.Printf("Series: %d kept, %d filtered out", seriesFiltered, seriesSkipped)
 	}
+
+	// Process VOD streams with early filtering
+	if cfg.Debug {
+		logger.Printf("Fetching and filtering VOD streams from XC API")
+	}
+	
+	vodFiltered := 0
+	vodSkipped := 0
+	
 	vodStreams := fetchXCVODStreams(httpClient, logger, cfg, source, rateLimiter)
 	for _, stream := range vodStreams {
-		// Construct VOD stream URL using Xtreme Codes format: /movie/username/password/stream_id.ts
-		streamURL := fmt.Sprintf("%s/movie/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
+		// Apply early filtering
+		if !checkFilters(stream.Name, vodInclude, vodExclude) {
+			vodSkipped++
+			continue
+		}
 
-		// Create Stream object with VOD metadata and attributes
+		streamURL := fmt.Sprintf("%s/movie/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
+		
 		s := &types.Stream{
 			URL:    streamURL,
 			Name:   stream.Name,
 			Source: source,
 			Attributes: map[string]string{
-				"tvg-name":    stream.Name,                        // Video title for display purposes
-				"group-title": "vod",                              // Category identifier for playlist organization
-				"tvg-id":      fmt.Sprintf("%d", stream.StreamID), // Stream ID for identification
-				"category-id": stream.CategoryID,                  // Original category from API response
+				"tvg-name":    stream.Name,
+				"group-title": "vod",
+				"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
+				"category-id": stream.CategoryID,
 			},
 		}
 
-		// Add video thumbnail/poster URL when available in API response
 		if stream.StreamIcon != "" {
-			s.Attributes["tvg-logo"] = stream.StreamIcon // Video poster/thumbnail image for display
+			s.Attributes["tvg-logo"] = stream.StreamIcon
 		}
 
 		allStreams = append(allStreams, s)
+		vodFiltered++
 	}
 
-	// Log final aggregated stream count for debugging and monitoring
 	if cfg.Debug {
-		logger.Printf("Xtreme Codes API found %d total streams from %s", len(allStreams), utils.LogURL(cfg, source.URL))
+		logger.Printf("VOD streams: %d kept, %d filtered out", vodFiltered, vodSkipped)
+		logger.Printf("XC API filtering complete: %d total streams kept, %d filtered out", 
+			len(allStreams), skippedCount+seriesSkipped+vodSkipped)
 	}
 
 	return allStreams
 }
+
 
 // fetchXCLiveStreams retrieves live television stream data from the Xtreme Codes API
 // get_live_streams endpoint, implementing proper rate limiting, error handling, and
