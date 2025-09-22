@@ -80,8 +80,8 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	// Pre-compile regex patterns for efficiency
-	var liveInclude, liveExclude, seriesInclude, seriesExclude, vodInclude, vodExclude *regexp.Regexp
+	// Pre-compile regex patterns for efficiency: add vodInclude vodInclude
+	var liveInclude, liveExclude, seriesInclude, seriesExclude *regexp.Regexp
 	var err error
 
 	if source.LiveIncludeRegex != "" {
@@ -108,7 +108,7 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 			logger.Printf("Invalid SeriesExcludeRegex: %v", err)
 		}
 	}
-	if source.VODIncludeRegex != "" {
+	/*if source.VODIncludeRegex != "" {
 		vodInclude, err = regexp.Compile(source.VODIncludeRegex)
 		if err != nil && cfg.Debug {
 			logger.Printf("Invalid VODIncludeRegex: %v", err)
@@ -119,11 +119,11 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 		if err != nil && cfg.Debug {
 			logger.Printf("Invalid VODExcludeRegex: %v", err)
 		}
-	}
+	}*/
 
 	// Content type detection regexes
 	seriesRegex := regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
-	vodRegex := regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
+	//vodRegex := regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
 
 	var allStreams []*types.Stream
 	filteredCount := 0
