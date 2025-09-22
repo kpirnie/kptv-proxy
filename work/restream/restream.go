@@ -489,6 +489,18 @@ func (r *Restream) Stream() {
 			}
 		}
 	}
+
+	// Start fallback video if we still have clients
+	clientCount := 0
+	r.Clients.Range(func(_, _ interface{}) bool {
+		clientCount++
+		return true
+	})
+
+	if clientCount > 0 {
+		r.streamFallbackVideo()
+	}
+	
 }
 
 // StreamFromSource attempts to stream from a specific source index.
@@ -1067,4 +1079,113 @@ func (r *Restream) resetBufferSafely() {
 // trackStreamStart records when a stream begins for duration tracking
 func (r *Restream) trackStreamStart() time.Time {
 	return time.Now()
+}
+
+// streamFallbackVideo streams the offline video in a loop when all streams fail
+func (r *Restream) streamFallbackVideo() {
+	fallbackURL := "https://cdn.kevp.us/tv/loading.mkv"
+	
+	if r.Config.Debug {
+		r.Logger.Printf("[FALLBACK] Channel %s: Starting fallback video loop", r.Channel.Name)
+	}
+
+	for {
+		select {
+		case <-r.Ctx.Done():
+			if r.Config.Debug {
+				r.Logger.Printf("[FALLBACK] Channel %s: Context cancelled", r.Channel.Name)
+			}
+			return
+		default:
+		}
+
+		// Check if we still have clients
+		clientCount := 0
+		r.Clients.Range(func(_, _ interface{}) bool {
+			clientCount++
+			return true
+		})
+
+		if clientCount == 0 {
+			if r.Config.Debug {
+				r.Logger.Printf("[FALLBACK] Channel %s: No clients remaining", r.Channel.Name)
+			}
+			return
+		}
+
+		if r.Config.Debug {
+			r.Logger.Printf("[FALLBACK] Channel %s: Starting fallback video playback for %d clients", r.Channel.Name, clientCount)
+		}
+
+		// Stream the fallback video
+		r.streamSingleFallbackLoop(fallbackURL)
+
+		// Brief pause before restarting loop
+		select {
+		case <-r.Ctx.Done():
+			return
+		case <-time.After(1 * time.Second):
+			continue
+		}
+	}
+}
+
+// streamSingleFallbackLoop streams the fallback video once
+func (r *Restream) streamSingleFallbackLoop(url string) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return
+	}
+
+	req = req.WithContext(r.Ctx)
+
+	resp, err := r.HttpClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	buf := make([]byte, 32*1024)
+	lastActivityUpdate := time.Now()
+
+	for {
+		select {
+		case <-r.Ctx.Done():
+			return
+		default:
+		}
+
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+
+			if !r.SafeBufferWrite(chunk) {
+				return
+			}
+
+			activeClients := r.DistributeToClients(chunk)
+			if activeClients == 0 {
+				return
+			}
+
+			// Update activity timestamp periodically
+			now := time.Now()
+			if now.Sub(lastActivityUpdate) > 10*time.Second {
+				r.LastActivity.Store(now.Unix())
+				lastActivityUpdate = now
+			}
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				// Video finished, return to restart loop
+				return
+			}
+			return
+		}
+	}
 }
