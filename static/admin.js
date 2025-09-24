@@ -287,7 +287,7 @@ class KPTVAdmin {
             // Fallback to default values if API fails
             this.populateGlobalSettingsForm({
                 baseURL: "http://localhost:8080",
-                maxBufferSize: 256,
+                //maxBufferSize: 256,
                 bufferSizePerStream: 16,
                 cacheEnabled: true,
                 cacheDuration: "30m",

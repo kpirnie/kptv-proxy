@@ -536,7 +536,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 						lastSeen := client.LastSeen.Load()
 
 						// Remove clients inactive for more than 5 minutes
-						if now-lastSeen > 300 {
+						if now-lastSeen > 600 {
 							if sp.Config.Debug {
 								sp.Logger.Printf("Removing inactive client: %s (last seen %d seconds ago)", ckey.(string), now-lastSeen)
 							}
@@ -558,7 +558,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 					// Stop restreamer if no active clients remain
 					if clientCount == 0 && channel.Restreamer.Running.Load() {
 						lastActivity := channel.Restreamer.LastActivity.Load()
-						if now-lastActivity > 60 {
+						if now-lastActivity > 120 {
 							if sp.Config.Debug {
 								sp.Logger.Printf("No active clients found, stopping restreamer for: %s", channel.Name)
 							}
@@ -672,7 +672,7 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 		if sp.Config.Debug {
 			sp.Logger.Printf("[RESTREAM_NEW] Channel %s: Creating new restreamer with rate limiting", channel.Name)
 		}
-		restreamer = restream.NewRestreamer(channel, (sp.Config.MaxBufferSize * 1024 * 1024), sp.Logger, sp.HttpClient, sp.Config, rateLimiter)
+		restreamer = restream.NewRestreamer(channel, (sp.Config.BufferSizePerStream  * 1024 * 1024), sp.Logger, sp.HttpClient, sp.Config, rateLimiter)
 		channel.Restreamer = restreamer.Restreamer
 	} else {
 		restreamer = &restream.Restream{Restreamer: channel.Restreamer}

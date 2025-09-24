@@ -96,7 +96,7 @@ func main() {
 	logger.Printf("  - Base URL: %s", cfg.BaseURL)
 	logger.Printf("  - Worker Threads: %d", cfg.WorkerThreads)
 	logger.Printf("  - Sources: %d", len(cfg.Sources))
-	logger.Printf("  - Max. Buffer Size: %s", utils.FormatBytes(cfg.MaxBufferSize*1024*1024))
+	//logger.Printf("  - Max. Buffer Size: %s", utils.FormatBytes(cfg.MaxBufferSize*1024*1024))
 	logger.Printf("  - Pre-Stream Buffer Size: %s", utils.FormatBytes(cfg.BufferSizePerStream*1024*1024))
 	logger.Printf("  - Cache Enabled: %v", cfg.CacheEnabled)
 	logger.Printf("  - Cache Duration: %s", cfg.CacheDuration)

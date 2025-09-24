@@ -149,7 +149,6 @@ wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.
 ```json
 {
   "baseURL": "http://your-server-ip:9500",
-  "maxBufferSize": 256,
   "bufferSizePerStream": 16,
   "cacheEnabled": true,
   "cacheDuration": "30m",
@@ -424,7 +423,6 @@ All configuration is done via a JSON file mounted at `/settings/config.json` or 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `baseURL` | `"http://localhost:8080"` | Base URL for generated stream links |
-| `maxBufferSize` | `256` | Total buffer size in MB |
 | `bufferSizePerStream` | `16` | Per-stream buffer size in MB |
 | `cacheEnabled` | `true` | Enable playlist caching |
 | `cacheDuration` | `"30m"` | Cache lifetime (e.g., "30m", "1h") |
@@ -509,7 +507,6 @@ services:
 ```json
 {
   "baseURL": "http://your-server:9500",
-  "maxBufferSize": 512,
   "bufferSizePerStream": 32,
   "workerThreads": 20,
   "maxConnectionsToApp": 500,
@@ -658,7 +655,6 @@ Format: M3U8/HLS
 ```json
 {
   "workerThreads": 20,
-  "maxBufferSize": 1024,
   "maxConnectionsToApp": 500,
   "ffmpegMode": true,
   "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"]
@@ -669,7 +665,6 @@ Format: M3U8/HLS
 ```json
 {
   "workerThreads": 2,
-  "maxBufferSize": 64,
   "bufferSizePerStream": 4,
   "maxConnectionsToApp": 50,
   "ffmpegMode": false

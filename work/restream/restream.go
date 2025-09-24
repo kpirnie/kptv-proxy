@@ -1052,26 +1052,16 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 // resetBufferSafely resets the buffer while preserving client connections
 func (r *Restream) resetBufferSafely() {
 	if r.Buffer != nil && !r.Buffer.IsDestroyed() {
-		// Get all client IDs before reset
-		var clientIDs []string
-		r.Clients.Range(func(key, value interface{}) bool {
-			clientIDs = append(clientIDs, key.(string))
-			return true
-		})
-
-		// Reset buffer
 		r.Buffer.Reset()
-
 		if r.Config.Debug {
-			r.Logger.Printf("[BUFFER_RESET_SAFE] Channel %s: Buffer reset with %d clients", r.Channel.Name, len(clientIDs))
+			r.Logger.Printf("[BUFFER_RESET_SAFE] Channel %s: Buffer reset", r.Channel.Name)
 		}
 	} else {
-		// Create new buffer if destroyed
-		bufferSize := r.Config.MaxBufferSize * 1024 * 1024
+		// Use BufferSizePerStream instead of MaxBufferSize
+		bufferSize := r.Config.BufferSizePerStream * 1024 * 1024
 		r.Buffer = buffer.NewRingBuffer(bufferSize)
-
 		if r.Config.Debug {
-			r.Logger.Printf("[BUFFER_RECREATED] Channel %s: New buffer created", r.Channel.Name)
+			r.Logger.Printf("[BUFFER_RECREATED] Channel %s: New buffer created (%d MB)", r.Channel.Name, r.Config.BufferSizePerStream)
 		}
 	}
 }

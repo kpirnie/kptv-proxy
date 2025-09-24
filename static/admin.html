@@ -185,12 +185,12 @@
                                     <input class="uk-input" type="text" name="streamTimeout" placeholder="30s">
                                 </div>
                                 <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Max Buffer Size (MB)</label>
-                                    <input class="uk-input" type="number" name="maxBufferSize" min="1" max="2048">
-                                </div>
-                                <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Buffer Size Per Stream (MB)</label>
                                     <input class="uk-input" type="number" name="bufferSizePerStream" min="1" max="256">
+                                </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Cache Duration</label>
+                                    <input class="uk-input" type="text" name="cacheDuration" placeholder="30m">
                                 </div>
                                 <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Worker Threads</label>
@@ -199,14 +199,6 @@
                                 <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Max Connections to App</label>
                                     <input class="uk-input" type="number" name="maxConnectionsToApp" min="1" max="1000">
-                                </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Import Refresh Interval</label>
-                                    <input class="uk-input" type="text" name="importRefreshInterval" placeholder="12h">
-                                </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Cache Duration</label>
-                                    <input class="uk-input" type="text" name="cacheDuration" placeholder="30m">
                                 </div>
                                 <div class="uk-width-1-2@s">
                                     <label class="uk-form-label">Sort Field</label>
@@ -227,6 +219,11 @@
                                         <option value="desc">Descending</option>
                                     </select>
                                 </div>
+                                <div class="uk-width-1-2@s">
+                                    <label class="uk-form-label">Import Refresh Interval</label>
+                                    <input class="uk-input" type="text" name="importRefreshInterval" placeholder="12h">
+                                </div>
+                                <div class="uk-width-1-2@s">&nbsp;</div>
                                 <div class="uk-width-1-2@s">
                                     <div class="uk-width-1-1 uk-margin-bottom">
                                         <h4 class="uk-heading-divider">FFMPEG Settings</h4>

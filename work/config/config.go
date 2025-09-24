@@ -14,7 +14,7 @@ import (
 // It includes settings for buffering, caching, streaming, and multiple source configurations.
 type Config struct {
 	BaseURL               string         `json:"baseURL"`               // Base URL for the application (used for API and links)
-	MaxBufferSize         int64          `json:"maxBufferSize"`         // Maximum total buffer size in MB (all streams combined)
+	//MaxBufferSize         int64          `json:"maxBufferSize"`         // Maximum total buffer size in MB (all streams combined)
 	BufferSizePerStream   int64          `json:"bufferSizePerStream"`   // Buffer size per individual stream in MB
 	CacheEnabled          bool           `json:"cacheEnabled"`          // Whether caching is enabled globally
 	CacheDuration         time.Duration  `json:"cacheDuration"`         // Duration before cache entries expire
@@ -63,7 +63,7 @@ type SourceConfig struct {
 // String duration fields (e.g., "30m") are parsed into time.Duration values.
 type ConfigFile struct {
 	BaseURL               string             `json:"baseURL"`
-	MaxBufferSize         int64              `json:"maxBufferSize"`
+	//MaxBufferSize         int64              `json:"maxBufferSize"`
 	BufferSizePerStream   int64              `json:"bufferSizePerStream"`
 	CacheEnabled          bool               `json:"cacheEnabled"`
 	CacheDuration         string             `json:"cacheDuration"`         // Duration as string (e.g., "30m")
@@ -202,7 +202,7 @@ func loadFromFile(path string) (*Config, error) {
 func convertFromFile(cf *ConfigFile) (*Config, error) {
 	config := &Config{
 		BaseURL:             cf.BaseURL,
-		MaxBufferSize:       cf.MaxBufferSize,
+		//MaxBufferSize:       cf.MaxBufferSize,
 		BufferSizePerStream: cf.BufferSizePerStream,
 		//CacheEnabled:        cf.CacheEnabled,
 		CacheEnabled:        true,
@@ -270,7 +270,7 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 func getDefaultConfig() *Config {
 	return &Config{
 		BaseURL:               "http://localhost:8080",
-		MaxBufferSize:         16,               // Default: 16 MB total buffer
+		//MaxBufferSize:         16,               // Default: 16 MB total buffer
 		BufferSizePerStream:   1,                // Default: 1 MB per stream
 		CacheEnabled:          true,             // Enable caching
 		CacheDuration:         30 * time.Minute, // Default 30 min expiration
@@ -293,9 +293,9 @@ func validateAndSetDefaults(config *Config) {
 	if config.BaseURL == "" {
 		config.BaseURL = "http://localhost:8080"
 	}
-	if config.MaxBufferSize <= 0 {
+	/*if config.MaxBufferSize <= 0 {
 		config.MaxBufferSize = 16
-	}
+	}*/
 	if config.BufferSizePerStream <= 0 {
 		config.BufferSizePerStream = 1
 	}
@@ -398,7 +398,7 @@ func (c *Config) GetSourcesByOrder() []SourceConfig {
 func CreateExampleConfig(path string) error {
 	example := ConfigFile{
 		BaseURL:               "http://localhost:8080",
-		MaxBufferSize:         256,
+		//MaxBufferSize:         256,
 		BufferSizePerStream:   16,
 		CacheEnabled:          true,
 		CacheDuration:         "30m",
