@@ -245,6 +245,10 @@ func (r *Restream) Stream() {
 			isManualSwitch := r.ManualSwitch.Load()
 
 			if r.Config.Debug {
+
+				r.Logger.Printf("[STREAM_CONTEXT_CHECK] Channel %s: Context done, manual=%v, attempts=%d/%d", 
+					r.Channel.Name, isManualSwitch, totalAttempts, maxTotalAttempts)
+
 				if isManualSwitch {
 					r.Logger.Printf("[STREAM_MANUAL_SWITCH] Channel %s: Manual switch initiated", r.Channel.Name)
 				} else {
@@ -450,12 +454,46 @@ func (r *Restream) Stream() {
 		// Sleep briefly before retry
 		select {
 		case <-r.Ctx.Done():
+			isManualSwitch := r.ManualSwitch.Load()
+			
 			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_CONTEXT_CANCELLED_LOOP] Channel %s: Context cancelled during retry", r.Channel.Name)
+				if isManualSwitch {
+					r.Logger.Printf("[STREAM_RETRY_MANUAL_SWITCH] Channel %s: Manual switch during retry delay", r.Channel.Name)
+				} else {
+					r.Logger.Printf("[STREAM_RETRY_CONTEXT_CANCELLED] Channel %s: Context cancelled during retry", r.Channel.Name)
+				}
 			}
+			
+			// Count clients
+			clientCount := 0
+			r.Clients.Range(func(_, _ interface{}) bool {
+				clientCount++
+				return true
+			})
+			
+			// If we have clients, restart the loop
+			if clientCount > 0 {
+				if r.Config.Debug {
+					r.Logger.Printf("[STREAM_RETRY_RESTART] Channel %s: %d clients connected, continuing failover", r.Channel.Name, clientCount)
+				}
+				
+				// Create fresh context
+				r.Ctx, r.Cancel = context.WithCancel(context.Background())
+				
+				// For manual switches, reset the flag
+				if isManualSwitch {
+					r.ManualSwitch.Store(false)
+				}
+				
+				// Brief pause then continue
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			
 			return
-		case <-time.After(2 * time.Second):
+		case <-time.After(500 * time.Millisecond): // only .5 seconds
 		}
+		
 	}
 
 	// If we reached here, all streams failed
@@ -1083,7 +1121,7 @@ func (r *Restream) trackStreamStart() time.Time {
 
 // streamFallbackVideo streams the offline video in a loop when all streams fail
 func (r *Restream) streamFallbackVideo() {
-	fallbackURL := "https://cdn.kevp.us/tv/loading.mkv"
+	fallbackURL := "https://cdn.kcp.im/tv/loading.mkv"
 	
 	if r.Config.Debug {
 		r.Logger.Printf("[FALLBACK] Channel %s: Starting fallback video loop", r.Channel.Name)

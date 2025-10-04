@@ -929,3 +929,23 @@ body.dragging .stream-card {
 body.dragging .stream-card:hover {
     transform: none !important;
 }
+
+/* admin.css - Add after existing badge styles (around line 300) */
+.stream-stats-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+.stat-badge {
+    background: #000 !important;
+    color: var(--uk-text-primary) !important;
+    font-size: 0.7rem;
+    padding: 3px 7px 2px 7px;
+    border: 1px solid var(--uk-border-color);
+}
+
+.stream-stats-badges .uk-text-meta {
+    font-size: 0.75rem;
+}

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/uikit/3.17.11/css/uikit.min.css">
     <link rel="stylesheet" href="/static/admin.css">
     <link rel="stylesheet" href="/settings/custom.css">
-    <link rel="icon" type="image/png" href="https://cdn.wmkp.us/tv/kptv-icon.png" />
+    <link rel="icon" type="image/png" href="https://cdn.kcp.im/tv/kptv-icon.png" />
 </head>
 
 <body>
@@ -24,7 +24,7 @@
     <nav class="uk-navbar uk-navbar-container" uk-navbar>
         <div class="uk-navbar-left">
             <a class="uk-navbar-item uk-logo" href="#">
-                <img src="https://cdn.wmkp.us/tv/kptv-icon.svg" alt="KPTV" style="height: 100px; width: 100px;">
+                <img src="https://cdn.kcp.im/tv/kptv-icon.svg" alt="KPTV" style="height: 100px; width: 100px;">
                 <span>KPTV Proxy</span>
             </a>
         </div>
@@ -143,23 +143,31 @@
                             </div>
                         </div>
                     </div>
-                    <div class="uk-width-1-3@m uk-margin-top">
+                    <div class="uk-width-1-3@m">
                         <div class="uk-card uk-card-default">
                             <div class="uk-card-header">
-                                <h3 class="uk-card-title">Connection Statistics</h3>
+                                <h3 class="uk-card-title">Connection Stats</h3>
                             </div>
                             <div class="uk-card-body">
                                 <div class="metric-row">
-                                    <span>Clients Connected to Proxy</span>
+                                    <span>Clients Connected</span>
                                     <span id="proxy-clients">-</span>
                                 </div>
                                 <div class="metric-row">
-                                    <span>Upstream Connections to Providers</span>
+                                    <span>Upstream Connections</span>
                                     <span id="upstream-connections">-</span>
                                 </div>
                                 <div class="metric-row">
                                     <span>Connection Efficiency</span>
                                     <span id="connection-efficiency">-</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Active Channels</span>
+                                    <span id="active-channels-stat">-</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Avg Clients per Stream</span>
+                                    <span id="avg-clients-per-stream">-</span>
                                 </div>
                             </div>
                         </div>
@@ -544,67 +552,6 @@
             </div>
             <div class="uk-modal-footer uk-text-right">
                 <button class="uk-button uk-button-secondary uk-modal-close" type="button">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Stream Stats Modal -->
-    <div id="stream-stats-container" class="uk-margin-top" style="display: none;">
-        <div class="uk-card uk-card-default">
-            <div class="uk-card-header">
-                <h4 class="uk-card-title">Live Stream Statistics</h4>
-            </div>
-            <div class="uk-card-body">
-                <div class="uk-grid-small" uk-grid>
-                    <div class="uk-width-1-2@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Container</div>
-                            <div id="stat-container">-</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Stream Type</div>
-                            <div id="stat-stream-type">-</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Video Codec</div>
-                            <div id="stat-video-codec">-</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Resolution</div>
-                            <div id="stat-resolution">-</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">FPS</div>
-                            <div id="stat-fps">-</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Bitrate</div>
-                            <div id="stat-bitrate">-</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Audio Codec</div>
-                            <div id="stat-audio-codec">-</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Audio Channels</div>
-                            <div id="stat-audio-channels">-</div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>

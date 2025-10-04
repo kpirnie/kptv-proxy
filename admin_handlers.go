@@ -45,6 +45,8 @@ type StatsResponse struct {
 	ResponseTime        string `json:"responseTime"`
 	WatcherEnabled      bool   `json:"watcherEnabled"`
 	UpstreamConnections int    `json:"upstreamConnections"`
+	ActiveChannels      int    `json:"activeChannels"`        
+	AvgClientsPerStream float64 `json:"avgClientsPerStream"`
 }
 
 // ChannelResponse provides comprehensive channel information for admin interface display,
@@ -621,6 +623,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 		connectedClients := 0
 		activeRestreamers := 0
 		upstreamConnections := 0
+		activeChannels := 0  // NEW
 
 		sp.Channels.Range(func(key, value interface{}) bool {
 			totalChannels++
@@ -630,6 +633,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 				activeStreams++
 				activeRestreamers++
 				upstreamConnections++
+				activeChannels++  // NEW - count active channels
 				channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
 					connectedClients++
 					return true
@@ -651,6 +655,12 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			cacheStatus = "Enabled"
 		}
 
+		// Calculate average clients per stream  // NEW
+		avgClientsPerStream := 0.0
+		if upstreamConnections > 0 {
+			avgClientsPerStream = float64(connectedClients) / float64(upstreamConnections)
+		}
+
 		stats := StatsResponse{
 			TotalChannels:       totalChannels,
 			ActiveStreams:       activeStreams,
@@ -667,6 +677,8 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			ResponseTime:        "< 1ms",
 			WatcherEnabled:      sp.Config.WatcherEnabled,
 			UpstreamConnections: upstreamConnections,
+			ActiveChannels:      activeChannels,        // NEW
+			AvgClientsPerStream: avgClientsPerStream,   // NEW
 		}
 
 		if err := json.NewEncoder(w).Encode(stats); err != nil {
@@ -712,7 +724,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 			// Extract group information from stream attributes
 			group := "Uncategorized"
-			logoURL := "https://cdn.wmkp.us/tv/kptv-icon.png" // Default logo
+			logoURL := "https://cdn.kcp.im/tv/kptv-icon.png" // Default logo
 			if len(channel.Streams) > 0 {
 				if g, ok := channel.Streams[0].Attributes["group-title"]; ok && g != "" {
 					group = g
@@ -782,7 +794,7 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				// Estimate bytes transferred based on activity
 				activityTime := time.Since(time.Unix(channel.Restreamer.LastActivity.Load(), 0))
 				estimatedBytes := int64(0)
-				logoURL := "https://cdn.wmkp.us/tv/kptv-icon.png" // Default logo
+				logoURL := "https://cdn.kcp.im/tv/kptv-icon.png" // Default logo
 
 				if activityTime < 60*time.Second && clients > 0 {
 					// Base estimation: 500KB per client plus variance

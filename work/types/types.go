@@ -132,7 +132,7 @@ type StreamHealthData struct {
 	Valid      bool    // Overall validity flag indicating successful analysis and usable stream characteristics
 }
 
-
+// StreamStats contains comprehensive data about the stream being played
 type StreamStats struct {
 	Container      string  `json:"container"`
 	VideoCodec     string  `json:"videoCodec"`

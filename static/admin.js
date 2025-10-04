@@ -732,6 +732,7 @@ class KPTVAdmin {
         }
     }
 
+    // admin.js - Update updateStatsDisplay function (around line 285)
     updateStatsDisplay(stats) {
         const totalChannelsEl = document.getElementById('total-channels');
         const activeStreamsEl = document.getElementById('active-streams');
@@ -773,6 +774,8 @@ class KPTVAdmin {
         const proxyClientsEl = document.getElementById('proxy-clients');
         const upstreamConnectionsEl = document.getElementById('upstream-connections');
         const connectionEfficiencyEl = document.getElementById('connection-efficiency');
+        const activeChannelsStatEl = document.getElementById('active-channels-stat');  // NEW
+        const avgClientsPerStreamEl = document.getElementById('avg-clients-per-stream');  // NEW
 
         if (proxyClientsEl) proxyClientsEl.textContent = stats.connectedClients || 0;
         if (upstreamConnectionsEl) upstreamConnectionsEl.textContent = stats.upstreamConnections || 0;
@@ -787,7 +790,22 @@ class KPTVAdmin {
                 connectionEfficiencyEl.textContent = 'N/A';
             }
         }
+
+        // NEW - Active Channels
+        if (activeChannelsStatEl) {
+            activeChannelsStatEl.textContent = stats.activeChannels || 0;
+        }
+
+        // NEW - Avg Clients per Stream
+        if (avgClientsPerStreamEl) {
+            if (stats.avgClientsPerStream > 0) {
+                avgClientsPerStreamEl.textContent = stats.avgClientsPerStream.toFixed(1);
+            } else {
+                avgClientsPerStreamEl.textContent = 'N/A';
+            }
+        }
     }
+
 
     // Channels
     async loadActiveChannels() {
@@ -800,6 +818,8 @@ class KPTVAdmin {
         }
     }
 
+
+    // admin.js - Replace renderActiveChannels method
     renderActiveChannels(channels) {
         const container = document.getElementById('active-channels-list');
 
@@ -808,32 +828,137 @@ class KPTVAdmin {
             return;
         }
 
-        container.innerHTML = channels.map(channel => `
+        container.innerHTML = channels.map(channel => {
+            const safeId = channel.name.replace(/[^a-zA-Z0-9]/g, '_');
+            return `
             <div class="channel-item fade-in">
                 <div class="uk-flex uk-flex-between uk-flex-middle">
                     <div class="uk-flex uk-flex-middle">
-                        <img src="${channel.logoURL || 'https://cdn.wmkp.us/tv/kptv-icon.png'}" 
+                        <img src="${channel.logoURL || 'https://cdn.kcp.im/tv/kptv-icon.png'}" 
                             alt="${this.escapeHtml(channel.name)}" 
                             style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
-                            onerror="this.src='https://cdn.wmkp.us/tv/kptv-icon.png'">
+                            onerror="this.src='https://cdn.kcp.im/tv/kptv-icon.png'">
                         <div class="uk-flex-1">
                             <div class="channel-name">${this.escapeHtml(channel.name)}</div>
                             <div class="channel-details">
                                 <span class="connection-dot status-active"></span>
                                 ${channel.clients || 0} client(s) connected
                             </div>
+                            <div class="uk-margin-small-top stream-stats-badges" id="stats-${safeId}">
+                                <span class="uk-text-meta">Loading stats...</span>
+                            </div>
                         </div>
                     </div>
                     <div class="uk-text-right uk-text-small">
                         <div class="uk-text-muted">Bytes: ${this.formatBytes(channel.bytesTransferred || 0)}</div>
                         <div class="uk-text-muted">Source: ${channel.currentSource || 'Unknown'}</div>
-                        <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-top" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name)}')">
+                        <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-top" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name).replace(/'/g, "\\'")}')">
                             <span uk-icon="settings"></span> Streams
                         </button>
                     </div>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
+
+        // Load stats for each active channel
+        channels.forEach(channel => {
+            this.loadChannelStats(channel.name);
+        });
+    }
+
+    // admin.js - Update loadChannelStats
+    async loadChannelStats(channelName) {
+        try {
+            const encodedChannelName = encodeURIComponent(channelName);
+            const statsData = await this.apiCall(`/api/channels/${encodedChannelName}/stats`);
+            this.renderChannelStatsBadges(channelName, statsData);
+        } catch (error) {
+            const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
+            const container = document.getElementById(`stats-${safeId}`);
+            if (container) {
+                container.innerHTML = '<span class="uk-badge">No Stats</span>';
+            }
+        }
+    }
+
+    // admin.js - Update renderChannelStatsBadges
+    renderChannelStatsBadges(channelName, stats) {
+        const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
+        const container = document.getElementById(`stats-${safeId}`);
+
+        if (!container) return;
+
+        if (!stats.streaming || !stats.valid) {
+            container.innerHTML = '<span class="uk-badge">No Stats</span>';
+            return;
+        }
+
+        const badges = [];
+
+        if (stats.videoResolution) {
+            badges.push(`<span class="uk-badge stat-badge">${stats.videoResolution}</span>`);
+        }
+
+        if (stats.fps > 0) {
+            badges.push(`<span class="uk-badge stat-badge">${stats.fps.toFixed(0)}fps</span>`);
+        }
+
+        if (stats.videoCodec) {
+            badges.push(`<span class="uk-badge stat-badge">${stats.videoCodec.toUpperCase()}</span>`);
+        }
+
+        if (stats.audioCodec) {
+            badges.push(`<span class="uk-badge stat-badge">${stats.audioCodec.toUpperCase()}</span>`);
+        }
+
+        if (stats.bitrate > 0) {
+            badges.push(`<span class="uk-badge stat-badge">${this.formatBitrate(stats.bitrate)}</span>`);
+        }
+
+        if (badges.length === 0) {
+            container.innerHTML = '<span class="uk-badge stat-badge">No Stats</span>';
+        } else {
+            container.innerHTML = badges.join(' ');
+        }
+    }
+
+    // admin.js - 
+    renderStreamStats(stats) {
+        const container = document.getElementById('stream-stats-container');
+
+        if (!stats.streaming || !stats.valid) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+
+        document.getElementById('stat-container').textContent = stats.container || 'N/A';
+        document.getElementById('stat-stream-type').textContent = stats.streamType || 'N/A';
+        document.getElementById('stat-video-codec').textContent = stats.videoCodec || 'N/A';
+        document.getElementById('stat-resolution').textContent = stats.videoResolution || 'N/A';
+        document.getElementById('stat-fps').textContent = stats.fps > 0 ? stats.fps.toFixed(2) : 'N/A';
+        document.getElementById('stat-bitrate').textContent = stats.bitrate > 0 ? this.formatBitrate(stats.bitrate) : 'N/A';
+        document.getElementById('stat-audio-codec').textContent = stats.audioCodec || 'N/A';
+        document.getElementById('stat-audio-channels').textContent = stats.audioChannels || 'N/A';
+    }
+
+    // admin.js - Update showStreamSelector to remove stats call (around line 935)
+    async showStreamSelector(channelName) {
+        try {
+            const encodedChannelName = encodeURIComponent(channelName);
+            const data = await this.apiCall(`/api/channels/${encodedChannelName}/streams`);
+            this.renderStreamSelector(data);
+
+            // REMOVE THESE LINES:
+            // const statsData = await this.apiCall(`/api/channels/${encodedChannelName}/stats`);
+            // this.renderStreamStats(statsData);
+
+            UIkit.modal('#stream-selector-modal').show();
+        } catch (error) {
+            this.showNotification('Failed to load streams for channel', 'danger');
+        }
     }
 
     async loadAllChannels() {
@@ -862,15 +987,16 @@ class KPTVAdmin {
         const fragment = document.createDocumentFragment();
 
         channels.forEach(channel => {
+            const safeId = channel.name.replace(/[^a-zA-Z0-9]/g, '_');
             const div = document.createElement('div');
             div.className = `channel-item ${channel.active ? '' : 'channel-inactive'} fade-in`;
             div.innerHTML = `
                 <div class="uk-flex uk-flex-between uk-flex-middle">
                     <div class="uk-flex uk-flex-middle">
-                        <img src="${channel.logoURL || 'https://cdn.wmkp.us/tv/kptv-icon.png'}" 
+                        <img src="${channel.logoURL || 'https://cdn.kcp.im/tv/kptv-icon.png'}" 
                             alt="${this.escapeHtml(channel.name)}" 
                             style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
-                            onerror="this.src='https://cdn.wmkp.us/tv/kptv-icon.png'">
+                            onerror="this.src='https://cdn.kcp.im/tv/kptv-icon.png'">
                         <div class="uk-flex-1">
                             <div class="channel-name">${this.escapeHtml(channel.name)}</div>
                             <div class="channel-details">
@@ -880,11 +1006,16 @@ class KPTVAdmin {
                                     Status: ${channel.active ? `Active (${channel.clients} clients)` : 'Inactive'}
                                 </div>
                             </div>
+                            ${channel.active ? `
+                            <div class="uk-margin-small-top stream-stats-badges" id="stats-all-${safeId}">
+                                <span class="uk-text-meta">Loading stats...</span>
+                            </div>
+                            ` : ''}
                         </div>
                     </div>
                     <div class="uk-text-right">
                         <span class="status-indicator ${channel.active ? 'status-active' : 'status-error'}"></span>
-                        <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-left" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name)}')">
+                        <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-left" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name).replace(/'/g, "\\'")}')">
                             <span uk-icon="settings"></span> Streams
                         </button>
                     </div>
@@ -896,7 +1027,71 @@ class KPTVAdmin {
         // Clear and append in one operation
         container.innerHTML = '';
         container.appendChild(fragment);
+
+        // Load stats for active channels
+        channels.forEach(channel => {
+            if (channel.active) {
+                this.loadChannelStatsForAllTab(channel.name);
+            }
+        });
     }
+
+    // admin.js - Add new method for All Channels tab stats
+    async loadChannelStatsForAllTab(channelName) {
+        try {
+            const encodedChannelName = encodeURIComponent(channelName);
+            const statsData = await this.apiCall(`/api/channels/${encodedChannelName}/stats`);
+            this.renderChannelStatsBadgesForAllTab(channelName, statsData);
+        } catch (error) {
+            const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
+            const container = document.getElementById(`stats-all-${safeId}`);
+            if (container) {
+                container.innerHTML = '<span class="uk-badge">No Stats</span>';
+            }
+        }
+    }
+
+    // admin.js - Add new method to render badges in All Channels tab
+    renderChannelStatsBadgesForAllTab(channelName, stats) {
+        const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
+        const container = document.getElementById(`stats-all-${safeId}`);
+
+        if (!container) return;
+
+        if (!stats.streaming || !stats.valid) {
+            container.innerHTML = '<span class="uk-badge">No Stats</span>';
+            return;
+        }
+
+        const badges = [];
+
+        if (stats.videoResolution) {
+            badges.push(`<span class="uk-badge stat-badge">${stats.videoResolution}</span>`);
+        }
+
+        if (stats.fps > 0) {
+            badges.push(`<span class="uk-badge stat-badge">${stats.fps.toFixed(0)}fps</span>`);
+        }
+
+        if (stats.videoCodec) {
+            badges.push(`<span class="uk-badge stat-badge">${stats.videoCodec.toUpperCase()}</span>`);
+        }
+
+        if (stats.audioCodec) {
+            badges.push(`<span class="uk-badge stat-badge">${stats.audioCodec.toUpperCase()}</span>`);
+        }
+
+        if (stats.bitrate > 0) {
+            badges.push(`<span class="uk-badge stat-badge">${this.formatBitrate(stats.bitrate)}</span>`);
+        }
+
+        if (badges.length === 0) {
+            container.innerHTML = '<span class="uk-badge stat-badge">No Stats</span>';
+        } else {
+            container.innerHTML = badges.join(' ');
+        }
+    }
+
 
     filterChannels(searchTerm) {
         if (!this.allChannels) return;
@@ -1055,41 +1250,6 @@ class KPTVAdmin {
         const i = Math.floor(Math.log(bytes) / Math.log(k));
 
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    async showStreamSelector(channelName) {
-        try {
-            const encodedChannelName = encodeURIComponent(channelName);
-            const data = await this.apiCall(`/api/channels/${encodedChannelName}/streams`);
-            this.renderStreamSelector(data);
-
-            const statsData = await this.apiCall(`/api/channels/${encodedChannelName}/stats`);
-            this.renderStreamStats(statsData);
-
-            UIkit.modal('#stream-selector-modal').show();
-        } catch (error) {
-            this.showNotification('Failed to load streams for channel', 'danger');
-        }
-    }
-
-    renderStreamStats(stats) {
-        const container = document.getElementById('stream-stats-container');
-
-        if (!stats.streaming || !stats.valid) {
-            container.style.display = 'none';
-            return;
-        }
-
-        container.style.display = 'block';
-
-        document.getElementById('stat-container').textContent = stats.container || 'N/A';
-        document.getElementById('stat-stream-type').textContent = stats.streamType || 'N/A';
-        document.getElementById('stat-video-codec').textContent = stats.videoCodec || 'N/A';
-        document.getElementById('stat-resolution').textContent = stats.videoResolution || 'N/A';
-        document.getElementById('stat-fps').textContent = stats.fps > 0 ? stats.fps.toFixed(2) : 'N/A';
-        document.getElementById('stat-bitrate').textContent = stats.bitrate > 0 ? this.formatBitrate(stats.bitrate) : 'N/A';
-        document.getElementById('stat-audio-codec').textContent = stats.audioCodec || 'N/A';
-        document.getElementById('stat-audio-channels').textContent = stats.audioChannels || 'N/A';
     }
 
     formatBitrate(bitrate) {
