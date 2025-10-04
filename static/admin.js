@@ -1,6 +1,8 @@
 // KPTV Proxy Admin Interface JavaScript
 
 class KPTVAdmin {
+
+    // class constructor
     constructor() {
         this.config = null;
         this.stats = null;
@@ -13,6 +15,7 @@ class KPTVAdmin {
         this.init();
     }
 
+    // initialize the class and load in all data
     init() {
         // Load initial data
         this.loadGlobalSettings();
@@ -29,13 +32,14 @@ class KPTVAdmin {
         this.startAutoRefresh();
     }
 
+    // setup the event listeners
     setupEventListeners() {
+
         // Global settings form
         document.getElementById('global-settings-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveGlobalSettings();
         });
-
         document.getElementById('load-global-settings').addEventListener('click', () => {
             this.loadGlobalSettings();
         });
@@ -58,18 +62,17 @@ class KPTVAdmin {
         document.getElementById('refresh-channels').addEventListener('click', () => {
             this.loadActiveChannels();
         });
-
         document.getElementById('refresh-all-channels').addEventListener('click', () => {
             this.currentPage = 1; // Reset to first page on manual refresh
             this.filteredChannels = null; // Clear any filters
             document.getElementById('channel-search').value = ''; // Clear search input
             this.loadAllChannels();
         });
-
         document.getElementById('refresh-logs').addEventListener('click', () => {
             this.loadLogs();
         });
 
+        // clear logs
         document.getElementById('clear-logs').addEventListener('click', () => {
             this.clearLogs();
         });
@@ -98,7 +101,6 @@ class KPTVAdmin {
             e.preventDefault();
             this.previousPage();
         });
-
         document.getElementById('next-page').addEventListener('click', (e) => {
             e.preventDefault();
             this.nextPage();
@@ -107,12 +109,10 @@ class KPTVAdmin {
             e.preventDefault();
             this.goToFirstPage();
         });
-
         document.getElementById('last-page').addEventListener('click', (e) => {
             e.preventDefault();
             this.goToLastPage();
         });
-
         document.getElementById('page-selector').addEventListener('change', (e) => {
             const page = parseInt(e.target.value);
             if (!isNaN(page)) {
@@ -156,7 +156,6 @@ class KPTVAdmin {
             this.renderCurrentPage();
         }
     }
-
     renderCurrentPage() {
         const channels = this.filteredChannels || this.allChannels;
         if (!channels) return;
@@ -168,7 +167,6 @@ class KPTVAdmin {
         this.renderAllChannels(pageChannels);
         this.updatePaginationInfo();
     }
-
     updatePaginationInfo() {
         const channels = this.filteredChannels || this.allChannels || [];
         const totalChannels = channels.length;
@@ -210,7 +208,9 @@ class KPTVAdmin {
         document.getElementById('last-page').parentElement.classList.toggle('uk-disabled', this.currentPage === totalPages || totalPages === 0);
     }
 
+    // fire up the auto-refresher
     startAutoRefresh() {
+
         // Refresh stats and active channels every 5 seconds
         this.refreshInterval = setInterval(() => {
             this.loadStats();
@@ -248,6 +248,7 @@ class KPTVAdmin {
         }, 5000);
     }
 
+    // now kill it
     stopAutoRefresh() {
         if (this.refreshInterval) {
             clearInterval(this.refreshInterval);
@@ -303,6 +304,7 @@ class KPTVAdmin {
         }
     }
 
+    // populate the form
     populateGlobalSettingsForm(config) {
         const form = document.getElementById('global-settings-form');
         Object.keys(config).forEach(key => {
@@ -343,6 +345,7 @@ class KPTVAdmin {
         }
     }
 
+    // save method
     async saveGlobalSettings() {
         const form = document.getElementById('global-settings-form');
         const formData = new FormData(form);
@@ -430,6 +433,7 @@ class KPTVAdmin {
         }
     }
 
+    // render the sources
     renderSources(sources) {
         const container = document.getElementById('sources-container');
 

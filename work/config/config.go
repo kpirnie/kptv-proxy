@@ -112,6 +112,28 @@ var (
 	configMutex sync.RWMutex // Mutex for safe concurrent access to configCache
 )
 
+// EnsureConfigExists checks if config file exists and creates it with defaults if not
+func EnsureConfigExists() error {
+	configPath := "/settings/config.json"
+	
+	// Check if config file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		// Ensure directory exists
+		if err := os.MkdirAll("/settings", 0755); err != nil {
+			return fmt.Errorf("failed to create settings directory: %w", err)
+		}
+		
+		// Create default config file
+		log.Println("Config file not found, creating default config at", configPath)
+		if err := CreateExampleConfig(configPath); err != nil {
+			return fmt.Errorf("failed to create default config: %w", err)
+		}
+		log.Println("Default config file created successfully")
+	}
+	
+	return nil
+}
+
 // LoadConfig loads the configuration from file or returns the cached instance.
 //
 // Process:

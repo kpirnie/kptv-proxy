@@ -28,6 +28,11 @@ var (
 // our main app worker
 func main() {
 
+	// Ensure config file exists before loading
+	if err := config.EnsureConfigExists(); err != nil {
+		log.Fatalf("Failed to ensure config exists: %v", err)
+	}
+
 	// load our config
 	cfg := config.LoadConfig()
 
