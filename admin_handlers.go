@@ -30,20 +30,21 @@ import (
 // The structure includes real-time performance data, resource utilization measurements,
 // and system health indicators essential for IPTV proxy administration.
 type StatsResponse struct {
-	TotalChannels     int    `json:"totalChannels"`     // Total number of channels available across all sources
-	ActiveStreams     int    `json:"activeStreams"`     // Number of channels currently being streamed to clients
-	TotalSources      int    `json:"totalSources"`      // Number of configured stream sources in the system
-	ConnectedClients  int    `json:"connectedClients"`  // Total number of active client connections
-	Uptime            string `json:"uptime"`            // Human-readable system uptime since admin interface initialization
-	MemoryUsage       string `json:"memoryUsage"`       // Current memory allocation in human-readable format
-	CacheStatus       string `json:"cacheStatus"`       // Cache system operational status (Enabled/Disabled)
-	WorkerThreads     int    `json:"workerThreads"`     // Number of configured worker threads for background operations
-	TotalConnections  int    `json:"totalConnections"`  // Historical total connection count
-	BytesTransferred  string `json:"bytesTransferred"`  // Approximate total data transfer volume
-	ActiveRestreamers int    `json:"activeRestreamers"` // Number of active restreaming instances
-	StreamErrors      int    `json:"streamErrors"`      // Count of streaming errors (requires implementation)
-	ResponseTime      string `json:"responseTime"`      // API response time measurement
-	WatcherEnabled    bool   `json:"watcherEnabled"`
+	TotalChannels       int    `json:"totalChannels"`
+	ActiveStreams       int    `json:"activeStreams"`
+	TotalSources        int    `json:"totalSources"`
+	ConnectedClients    int    `json:"connectedClients"`
+	Uptime              string `json:"uptime"`
+	MemoryUsage         string `json:"memoryUsage"`
+	CacheStatus         string `json:"cacheStatus"`
+	WorkerThreads       int    `json:"workerThreads"`
+	TotalConnections    int    `json:"totalConnections"`
+	BytesTransferred    string `json:"bytesTransferred"`
+	ActiveRestreamers   int    `json:"activeRestreamers"`
+	StreamErrors        int    `json:"streamErrors"`
+	ResponseTime        string `json:"responseTime"`
+	WatcherEnabled      bool   `json:"watcherEnabled"`
+	UpstreamConnections int    `json:"upstreamConnections"`
 }
 
 // ChannelResponse provides comprehensive channel information for admin interface display,
@@ -107,20 +108,18 @@ var (
 //   - router: configured mux router for route registration
 //   - proxyInstance: StreamProxy instance for API operations
 func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
-	// Configure static file serving for admin interface assets
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("/static/"))))
 
-	// Register admin interface HTML endpoints
 	router.HandleFunc("/admin", handleAdminInterface).Methods("GET")
 	router.HandleFunc("/admin/", handleAdminInterface).Methods("GET")
 
-	// Register API endpoints with CORS middleware for cross-origin support
 	router.HandleFunc("/api/config", corsMiddleware(handleGetConfig(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/config", corsMiddleware(handleSetConfig(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/stats", corsMiddleware(handleGetStats(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels", corsMiddleware(handleGetAllChannels(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/active", corsMiddleware(handleGetActiveChannels(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/streams", corsMiddleware(handleGetChannelStreams(proxyInstance))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/stats", corsMiddleware(handleGetChannelStats(proxyInstance))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/stream", corsMiddleware(handleSetChannelStream(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/kill-stream", corsMiddleware(handleKillStream(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/revive-stream", corsMiddleware(handleReviveStream(proxyInstance))).Methods("POST", "OPTIONS")
@@ -130,7 +129,6 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 	router.HandleFunc("/api/restart", corsMiddleware(handleRestart)).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/watcher/toggle", corsMiddleware(handleToggleWatcher(proxyInstance))).Methods("POST", "OPTIONS")
 
-	// Record admin interface initialization
 	addLogEntry("info", "Admin interface initialized")
 }
 
@@ -287,6 +285,54 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		channel.Mu.RUnlock()
 		json.NewEncoder(w).Encode(response)
+	}
+}
+
+func handleGetChannelStats(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		vars := mux.Vars(r)
+		channelName, err := url.QueryUnescape(vars["channel"])
+		if err != nil {
+			http.Error(w, "Invalid channel name", http.StatusBadRequest)
+			return
+		}
+
+		value, exists := sp.Channels.Load(channelName)
+		if !exists {
+			http.Error(w, "Channel not found", http.StatusNotFound)
+			return
+		}
+
+		channel := value.(*types.Channel)
+		channel.Mu.RLock()
+		defer channel.Mu.RUnlock()
+
+		if channel.Restreamer == nil || !channel.Restreamer.Running.Load() {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"streaming": false,
+			})
+			return
+		}
+
+		channel.Restreamer.Stats.Mu.RLock()
+		stats := map[string]interface{}{
+			"streaming":        true,
+			"container":        channel.Restreamer.Stats.Container,
+			"videoCodec":       channel.Restreamer.Stats.VideoCodec,
+			"audioCodec":       channel.Restreamer.Stats.AudioCodec,
+			"videoResolution":  channel.Restreamer.Stats.VideoResolution,
+			"fps":              channel.Restreamer.Stats.FPS,
+			"audioChannels":    channel.Restreamer.Stats.AudioChannels,
+			"bitrate":          channel.Restreamer.Stats.Bitrate,
+			"streamType":       channel.Restreamer.Stats.StreamType,
+			"valid":            channel.Restreamer.Stats.Valid,
+			"lastUpdated":      channel.Restreamer.Stats.LastUpdated,
+		}
+		channel.Restreamer.Stats.Mu.RUnlock()
+
+		json.NewEncoder(w).Encode(stats)
 	}
 }
 
@@ -570,11 +616,11 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		// Collect channel and streaming statistics
 		totalChannels := 0
 		activeStreams := 0
 		connectedClients := 0
 		activeRestreamers := 0
+		upstreamConnections := 0
 
 		sp.Channels.Range(func(key, value interface{}) bool {
 			totalChannels++
@@ -583,7 +629,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
 				activeStreams++
 				activeRestreamers++
-				// Count connected clients
+				upstreamConnections++
 				channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
 					connectedClients++
 					return true
@@ -593,37 +639,34 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			return true
 		})
 
-		// Collect memory and system statistics
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		memoryUsage := utils.FormatBytes(int64(m.Alloc))
 
-		// Calculate uptime
 		uptime := time.Since(adminStartTime)
 		uptimeStr := formatDuration(uptime)
 
-		// Determine cache status
 		cacheStatus := "Disabled"
 		if sp.Config.CacheEnabled {
 			cacheStatus = "Enabled"
 		}
 
-		// Build comprehensive statistics response
 		stats := StatsResponse{
-			TotalChannels:     totalChannels,
-			ActiveStreams:     activeStreams,
-			TotalSources:      len(sp.Config.Sources),
-			ConnectedClients:  connectedClients,
-			Uptime:            uptimeStr,
-			MemoryUsage:       memoryUsage,
-			CacheStatus:       cacheStatus,
-			WorkerThreads:     sp.Config.WorkerThreads,
-			TotalConnections:  connectedClients,
-			BytesTransferred:  utils.FormatBytes(int64(m.TotalAlloc)),
-			ActiveRestreamers: activeRestreamers,
-			StreamErrors:      0,
-			ResponseTime:      "< 1ms",
-			WatcherEnabled:    sp.Config.WatcherEnabled,
+			TotalChannels:       totalChannels,
+			ActiveStreams:       activeStreams,
+			TotalSources:        len(sp.Config.Sources),
+			ConnectedClients:    connectedClients,
+			Uptime:              uptimeStr,
+			MemoryUsage:         memoryUsage,
+			CacheStatus:         cacheStatus,
+			WorkerThreads:       sp.Config.WorkerThreads,
+			TotalConnections:    connectedClients,
+			BytesTransferred:    utils.FormatBytes(int64(m.TotalAlloc)),
+			ActiveRestreamers:   activeRestreamers,
+			StreamErrors:        0,
+			ResponseTime:        "< 1ms",
+			WatcherEnabled:      sp.Config.WatcherEnabled,
+			UpstreamConnections: upstreamConnections,
 		}
 
 		if err := json.NewEncoder(w).Encode(stats); err != nil {

@@ -36,27 +36,23 @@ type Restream struct {
 // - httpClient: custom HTTP client for making requests
 // - cfg: application configuration
 func NewRestreamer(channel *types.Channel, bufferSize int64, logger *log.Logger, httpClient *client.HeaderSettingClient, cfg *config.Config, rateLimiter ratelimit.Limiter) *Restream {
-
-	// Create a cancellable context for the restream lifecycle
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Initialize the base Restreamer struct with all dependencies
 	base := &types.Restreamer{
 		Channel:     channel,
-		Buffer:      buffer.NewRingBuffer(bufferSize), // initialize ring buffer for stream data
-		Ctx:         ctx,                              // streaming context
-		Cancel:      cancel,                           // cancel func
+		Buffer:      buffer.NewRingBuffer(bufferSize),
+		Ctx:         ctx,
+		Cancel:      cancel,
 		Logger:      logger,
 		HttpClient:  httpClient,
 		Config:      cfg,
 		RateLimiter: rateLimiter,
+		Stats:       &types.StreamStats{},
 	}
 
-	// Set initial timestamps and flags
-	base.LastActivity.Store(time.Now().Unix()) // record start activity time
-	base.Running.Store(false)                  // initially not running
+	base.LastActivity.Store(time.Now().Unix())
+	base.Running.Store(false)
 
-	// return the restream
 	return &Restream{base}
 }
 
@@ -65,51 +61,36 @@ func NewRestreamer(channel *types.Channel, bufferSize int64, logger *log.Logger,
 // - w: the HTTP response writer
 // - flusher: the HTTP flusher to push data immediately
 func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flusher) {
-
-	// Create a new restream client object
 	client := &types.RestreamClient{
-		Id:      id,              // unique identifier for the client
-		Writer:  w,               // HTTP response writer for TS data
-		Flusher: flusher,         // HTTP flusher for real-time streaming
-		Done:    make(chan bool), // channel to signal when client is closed
+		Id:      id,
+		Writer:  w,
+		Flusher: flusher,
+		Done:    make(chan bool),
 	}
 
-	// Store the last seen time as current time
 	client.LastSeen.Store(time.Now().Unix())
-
-	// Add client to the restreamer's active clients map
 	r.Clients.Store(id, client)
-
-	// Update last activity timestamp for the restreamer
 	r.LastActivity.Store(time.Now().Unix())
 
-	// Count active clients for metrics
 	count := 0
 	r.Clients.Range(func(_, _ interface{}) bool {
 		count++
 		return true
 	})
 
-	// Update Prometheus metric for connected clients
 	metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(count))
 
-	// Debug logging
 	if r.Config.Debug {
-		r.Logger.Printf("[CLIENT_CONNECT] Channel %s: ID: %s", r.Channel.Name, id)
-		r.Logger.Printf("[METRIC] clients_connected: %d [%s]", count, r.Channel.Name)
-		r.Logger.Printf("[CLIENT_ADD] Channel %s: Client %s added, total: %d", r.Channel.Name, id, count)
+		r.Logger.Printf("[CLIENT_CONNECT] Channel %s: ID: %s, Total: %d", r.Channel.Name, id, count)
 	}
 
-	// Start restreaming if it isn't already running
 	if !r.Running.Load() && r.Running.CompareAndSwap(false, true) {
 		if r.Config.Debug {
-			r.Logger.Printf("[RESTREAM_START] Channel %s: Starting goroutine", r.Channel.Name)
-			r.Logger.Printf("[CLIENT_READY] Channel %s: Client %s waiting", r.Channel.Name, id)
-			r.Logger.Printf("[RESTREAM_ACTIVE] Channel %s: Restreamer started", r.Channel.Name)
+			r.Logger.Printf("[RESTREAM_START] Channel %s: Starting", r.Channel.Name)
 		}
-
-		// Start the streaming loop in a goroutine
 		go r.Stream()
+		go r.monitorClientHealth()
+		go r.StartStatsCollection()
 	}
 }
 
@@ -787,7 +768,6 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 		r.RateLimiter.Take()
 	}
 
-	// Check if FFmpeg mode is enabled
 	if r.Config.FFmpegMode {
 		return r.streamWithFFmpeg(url)
 	}
@@ -795,19 +775,19 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_REQUEST_ERROR] Channel %s: Failed to create request for %s: %v",
-				r.Channel.Name, url, err)
+			r.Logger.Printf("[STREAM_REQUEST_ERROR] Channel %s: Failed to create request: %v", r.Channel.Name, err)
 		}
 		return false, 0
 	}
 
 	req = req.WithContext(r.Ctx)
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Accept", "*/*")
 
 	resp, err := r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_CONNECT_ERROR] Channel %s: Failed to connect to %s: %v",
-				r.Channel.Name, url, err)
+			r.Logger.Printf("[STREAM_CONNECT_ERROR] Channel %s: %v", r.Channel.Name, err)
 		}
 		return false, 0
 	}
@@ -815,23 +795,28 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 
 	if resp.StatusCode != http.StatusOK {
 		if r.Config.Debug {
-			r.Logger.Printf("[STREAM_HTTP_ERROR] Channel %s: %s returned HTTP %d",
-				r.Channel.Name, url, resp.StatusCode)
+			r.Logger.Printf("[STREAM_HTTP_ERROR] Channel %s: HTTP %d", r.Channel.Name, resp.StatusCode)
 		}
 		return false, 0
 	}
 
 	var totalBytes int64
-	buf := make([]byte, 32*1024)
+	buf := make([]byte, 64*1024)
 	lastActivityUpdate := time.Now()
+	lastMetricUpdate := time.Now()
+	consecutiveErrors := 0
+	maxConsecutiveErrors := 5
 
 	for {
 		select {
 		case <-r.Ctx.Done():
-			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_CANCELLED] Channel %s: Context cancelled during stream", r.Channel.Name)
+			if r.ManualSwitch.Load() {
+				if r.Config.Debug {
+					r.Logger.Printf("[STREAM_MANUAL_SWITCH] Channel %s: Graceful switch", r.Channel.Name)
+				}
+				return true, totalBytes
 			}
-			return true, totalBytes
+			return totalBytes > 1024*1024, totalBytes
 		default:
 		}
 
@@ -840,67 +825,71 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			chunk := buf[:n]
 
 			if !r.SafeBufferWrite(chunk) {
-				if r.Config.Debug {
-					r.Logger.Printf("[STREAM_BUFFER_ERROR] Channel %s: Buffer write failed", r.Channel.Name)
+				consecutiveErrors++
+				if consecutiveErrors >= maxConsecutiveErrors {
+					if r.Config.Debug {
+						r.Logger.Printf("[STREAM_BUFFER_ERROR] Channel %s: Buffer write failed %d times", r.Channel.Name, consecutiveErrors)
+					}
+					return false, totalBytes
 				}
-				return false, totalBytes
+				time.Sleep(10 * time.Millisecond)
+				continue
 			}
 
+			consecutiveErrors = 0
 			activeClients := r.DistributeToClients(chunk)
+			if activeClients == 0 {
+				if r.Config.Debug {
+					r.Logger.Printf("[STREAM_NO_CLIENTS] Channel %s: No active clients", r.Channel.Name)
+				}
+				return totalBytes > 1024*1024, totalBytes
+			}
+
 			totalBytes += int64(n)
 
-			// ADD THIS DEBUG LINE
-			if r.Config.Debug && totalBytes%(10*1024*1024) < int64(n) { // Every 10MB
-				r.Logger.Printf("[STREAM_DISTRIBUTE] Channel %s: Distributed %d bytes to %d clients (Total: %d MB)",
-					r.Channel.Name, n, activeClients, totalBytes/(1024*1024))
-			}
-
-			// UPDATE ACTIVITY EVERY 10 SECONDS
 			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 10*time.Second {
+			if now.Sub(lastActivityUpdate) > 5*time.Second {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
 			}
 
-			metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
-			metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(float64(activeClients))
-
+			if now.Sub(lastMetricUpdate) > 10*time.Second {
+				metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
+				metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(float64(activeClients))
+				lastMetricUpdate = now
+			}
 		}
 
-		// if we have something in the error variable
 		if err != nil {
 			if err == io.EOF {
-				// Only consider EOF a success if we streamed substantial data
-				if totalBytes > 2*1024*1024 { // 2MB minimum for substantial stream
-					if r.Config.Debug {
-						r.Logger.Printf("[STREAM_EOF_SUCCESS] Channel %s: Stream ended with sufficient data (%d bytes)", r.Channel.Name, totalBytes)
+				success := totalBytes > 2*1024*1024
+				if r.Config.Debug {
+					status := "insufficient"
+					if success {
+						status = "success"
 					}
-					return true, totalBytes
-				} else {
-					if r.Config.Debug {
-						r.Logger.Printf("[STREAM_EOF_INSUFFICIENT] Channel %s: Stream ended with insufficient data (%d bytes)", r.Channel.Name, totalBytes)
-					}
-					return false, totalBytes
+					r.Logger.Printf("[STREAM_EOF] Channel %s: Stream ended (%s, %d bytes)", r.Channel.Name, status, totalBytes)
 				}
+				return success, totalBytes
 			}
 
-			// Check if this is a context cancellation due to manual switch
-			if r.Ctx.Err() != nil {
-				isManualSwitch := r.ManualSwitch.Load()
-				if isManualSwitch {
-					if r.Config.Debug {
-						r.Logger.Printf("[STREAM_MANUAL_SWITCH] Channel %s: Context canceled due to manual switch", r.Channel.Name)
-					}
-					return true, totalBytes
-				}
+			if r.Ctx.Err() != nil && r.ManualSwitch.Load() {
+				return true, totalBytes
 			}
 
-			if r.Config.Debug {
-				r.Logger.Printf("[STREAM_READ_ERROR] Channel %s: %v", r.Channel.Name, err)
+			consecutiveErrors++
+			if consecutiveErrors >= maxConsecutiveErrors {
+				if r.Config.Debug {
+					r.Logger.Printf("[STREAM_READ_ERROR] Channel %s: %v (consecutive: %d)", r.Channel.Name, err, consecutiveErrors)
+				}
+				return false, totalBytes
 			}
-			return false, totalBytes
+
+			time.Sleep(100 * time.Millisecond)
+			continue
 		}
-		
+
+		consecutiveErrors = 0
 	}
 }
 
@@ -922,48 +911,32 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 // Returns:
 //   - int: number of active clients remaining after distribution
 func (r *Restream) DistributeToClients(data []byte) int {
-
-	// initial active clients
 	activeClients := 0
-	failedClients := 0
+	var failedClients []string
 
-	// Iterate over all connected clients
 	r.Clients.Range(func(key, value interface{}) bool {
 		client := value.(*types.RestreamClient)
+		clientID := key.(string)
 
-		// Attempt to write data to client
 		_, err := client.Writer.Write(data)
 		if err != nil {
-
-			// Remove failed client
-			if r.Config.Debug {
-				r.Logger.Printf("[CLIENT_WRITE_ERROR] Channel %s: Client %s write failed: %v",
-					r.Channel.Name, client.Id, err)
-			}
-			r.RemoveClient(client.Id)
-			failedClients++
+			failedClients = append(failedClients, clientID)
 			return true
 		}
 
-		// Flush data immediately
 		client.Flusher.Flush()
-
-		// Update last seen timestamp
 		client.LastSeen.Store(time.Now().Unix())
-
-		// Count client as active
 		activeClients++
-
 		return true
 	})
 
-	// Add debug logging when clients fail
-	if r.Config.Debug && failedClients > 0 {
-		r.Logger.Printf("[DISTRIBUTE_FAILURES] Channel %s: %d clients failed, %d active remaining",
-			r.Channel.Name, failedClients, activeClients)
+	for _, clientID := range failedClients {
+		if r.Config.Debug {
+			r.Logger.Printf("[CLIENT_WRITE_ERROR] Channel %s: Removing failed client %s", r.Channel.Name, clientID)
+		}
+		r.RemoveClient(clientID)
 	}
 
-	// return the active clients
 	return activeClients
 }
 
@@ -999,6 +972,43 @@ func (r *Restream) SafeBufferWrite(data []byte) bool {
 	// Perform write into ring buffer
 	r.Buffer.Write(data)
 	return true
+}
+
+// monitor client health
+func (r *Restream) monitorClientHealth() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Ctx.Done():
+			return
+		case <-ticker.C:
+			if !r.Running.Load() {
+				return
+			}
+
+			now := time.Now().Unix()
+			var staleClients []string
+
+			r.Clients.Range(func(key, value interface{}) bool {
+				client := value.(*types.RestreamClient)
+				lastSeen := client.LastSeen.Load()
+
+				if now-lastSeen > 300 {
+					staleClients = append(staleClients, key.(string))
+				}
+				return true
+			})
+
+			for _, clientID := range staleClients {
+				if r.Config.Debug {
+					r.Logger.Printf("[CLIENT_HEALTH] Removing stale client: %s", clientID)
+				}
+				r.RemoveClient(clientID)
+			}
+		}
+	}
 }
 
 // WatcherStreamFromSource provides an external entry point

@@ -128,28 +128,30 @@ func (st *SegmentTracker) GetTrackedSegments() []string {
 //   - int64: total number of bytes streamed during the session
 func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	if r.Config.Debug {
-		r.Logger.Printf("[HLS_STREAM] Starting HLS segment streaming for: %s", utils.LogURL(r.Config, playlistURL))
+		r.Logger.Printf("[HLS_STREAM] Starting for: %s", utils.LogURL(r.Config, playlistURL))
 	}
 
-	// Use FFmpeg for HLS if enabled
 	if r.Config.FFmpegMode {
 		return r.streamWithFFmpeg(playlistURL)
 	}
 
 	totalBytes := int64(0)
-
-	// IMPROVED: Use a circular buffer approach for segment tracking
-	segmentTracker := NewSegmentTracker(10) // Keep track of last 10 segments
+	segmentTracker := NewSegmentTracker(20)
+	consecutiveEmptyRefresh := 0
+	maxEmptyRefresh := 10
+	lastSuccessfulSegment := time.Now()
 
 	for {
 		select {
 		case <-r.Ctx.Done():
-			// Only consider it successful if substantial data was streamed
-			return totalBytes > 1024*1024, totalBytes
+			success := totalBytes > 1024*1024
+			if r.Config.Debug {
+				r.Logger.Printf("[HLS_STREAM] Context done: %d bytes", totalBytes)
+			}
+			return success, totalBytes
 		default:
 		}
 
-		// Check if we still have clients
 		clientCount := 0
 		r.Clients.Range(func(_, _ interface{}) bool {
 			clientCount++
@@ -160,7 +162,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			if r.Config.Debug {
 				r.Logger.Printf("[HLS_STREAM] No clients remaining")
 			}
-			return totalBytes > 0, totalBytes
+			return totalBytes > 1024*1024, totalBytes
 		}
 
 		segments, err := r.getHLSSegments(playlistURL)
@@ -171,45 +173,74 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			return false, totalBytes
 		}
 
-		if r.Config.Debug {
+		if r.Config.Debug && len(segments) > 0 {
 			r.Logger.Printf("[HLS_PLAYLIST_REFRESH] Found %d segments", len(segments))
 		}
 
-		// Stream new segments only
 		newSegmentCount := 0
+		segmentErrors := 0
+
 		for _, segmentURL := range segments {
 			if segmentTracker.HasProcessed(segmentURL) {
-				continue // Skip already processed segments
+				continue
+			}
+
+			select {
+			case <-r.Ctx.Done():
+				return totalBytes > 1024*1024, totalBytes
+			default:
 			}
 
 			if r.Config.Debug {
-				r.Logger.Printf("[HLS_SEGMENT_NEW] Processing new segment: %s", utils.LogURL(r.Config, segmentURL))
+				r.Logger.Printf("[HLS_SEGMENT_NEW] Processing: %s", utils.LogURL(r.Config, segmentURL))
 			}
 
 			segmentBytes, err := r.streamSegment(segmentURL, playlistURL)
 			if err != nil {
+				segmentErrors++
 				if r.Config.Debug {
-					r.Logger.Printf("[HLS_SEGMENT_ERROR] Error streaming segment: %v", err)
+					r.Logger.Printf("[HLS_SEGMENT_ERROR] %v", err)
+				}
+
+				if segmentErrors > 5 {
+					if r.Config.Debug {
+						r.Logger.Printf("[HLS_SEGMENT_ERROR] Too many segment errors")
+					}
+					return false, totalBytes
 				}
 				continue
 			}
 
-			// Mark as processed (automatically handles cleanup)
 			segmentTracker.MarkProcessed(segmentURL)
 			totalBytes += segmentBytes
 			newSegmentCount++
+			lastSuccessfulSegment = time.Now()
+			consecutiveEmptyRefresh = 0
 
 			if r.Config.Debug {
-				r.Logger.Printf("[HLS_SEGMENT] Streamed segment: %d bytes", segmentBytes)
+				r.Logger.Printf("[HLS_SEGMENT] Streamed: %d bytes", segmentBytes)
 			}
 		}
 
-		if r.Config.Debug && newSegmentCount > 0 {
-			r.Logger.Printf("[HLS_BATCH] Streamed %d new segments, tracker size: %d",
-				newSegmentCount, segmentTracker.Size())
+		if newSegmentCount == 0 {
+			consecutiveEmptyRefresh++
+			if consecutiveEmptyRefresh >= maxEmptyRefresh {
+				timeSinceSuccess := time.Since(lastSuccessfulSegment)
+				if timeSinceSuccess > 30*time.Second {
+					if r.Config.Debug {
+						r.Logger.Printf("[HLS_STALLED] No new segments for %v", timeSinceSuccess)
+					}
+					return false, totalBytes
+				}
+			}
+		} else {
+			consecutiveEmptyRefresh = 0
 		}
 
-		// Wait before next playlist refresh
+		if r.Config.Debug && newSegmentCount > 0 {
+			r.Logger.Printf("[HLS_BATCH] Streamed %d new segments (tracker size: %d)", newSegmentCount, segmentTracker.Size())
+		}
+
 		select {
 		case <-r.Ctx.Done():
 			return totalBytes > 1024*1024, totalBytes
@@ -428,7 +459,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
 		segmentURL = resolvedURL
 		if r.Config.Debug {
-			r.Logger.Printf("[HLS_SEGMENT_REDIRECT] Using resolved URL: %s", utils.LogURL(r.Config, segmentURL))
+			r.Logger.Printf("[HLS_SEGMENT_REDIRECT] Using: %s", utils.LogURL(r.Config, segmentURL))
 		}
 	}
 
@@ -461,9 +492,11 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	buffer := make([]byte, (r.Config.BufferSizePerStream * 1024 * 1024))
+	buffer := make([]byte, 64*1024)
 	totalBytes := int64(0)
 	lastActivityUpdate := time.Now()
+	consecutiveErrors := 0
+	maxConsecutiveErrors := 5
 
 	for {
 		n, err := resp.Body.Read(buffer)
@@ -472,15 +505,20 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 			totalBytes += int64(n)
 
 			if !r.SafeBufferWrite(data) {
-				return totalBytes, fmt.Errorf("buffer write failed")
+				consecutiveErrors++
+				if consecutiveErrors >= maxConsecutiveErrors {
+					return totalBytes, fmt.Errorf("buffer write failed")
+				}
+				time.Sleep(10 * time.Millisecond)
+				continue
 			}
 
+			consecutiveErrors = 0
 			activeClients := r.DistributeToClients(data)
 			if activeClients == 0 {
 				return totalBytes, fmt.Errorf("no active clients")
 			}
 
-			// UPDATE ACTIVITY EVERY 5 SECONDS
 			now := time.Now()
 			if now.Sub(lastActivityUpdate) > 5*time.Second {
 				r.LastActivity.Store(now.Unix())
@@ -492,7 +530,14 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 			if err == io.EOF {
 				return totalBytes, nil
 			}
-			return totalBytes, err
+			consecutiveErrors++
+			if consecutiveErrors >= maxConsecutiveErrors {
+				return totalBytes, err
+			}
+			time.Sleep(10 * time.Millisecond)
+			continue
 		}
+
+		consecutiveErrors = 0
 	}
 }

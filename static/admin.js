@@ -733,7 +733,6 @@ class KPTVAdmin {
     }
 
     updateStatsDisplay(stats) {
-        // Update main stats cards
         const totalChannelsEl = document.getElementById('total-channels');
         const activeStreamsEl = document.getElementById('active-streams');
         const totalSourcesEl = document.getElementById('total-sources');
@@ -744,7 +743,6 @@ class KPTVAdmin {
         if (totalSourcesEl) totalSourcesEl.textContent = stats.totalSources || 0;
         if (connectedClientsEl) connectedClientsEl.textContent = stats.connectedClients || 0;
 
-        // Update system status
         const uptimeEl = document.getElementById('uptime');
         const memoryUsageEl = document.getElementById('memory-usage');
         const cacheStatusEl = document.getElementById('cache-status');
@@ -753,7 +751,6 @@ class KPTVAdmin {
         if (memoryUsageEl) memoryUsageEl.textContent = stats.memoryUsage || '0 MB';
         if (cacheStatusEl) cacheStatusEl.textContent = stats.cacheStatus || 'Unknown';
 
-        // Update traffic stats
         const totalConnectionsEl = document.getElementById('total-connections');
         const bytesTransferredEl = document.getElementById('bytes-transferred');
         const activeRestreamersEl = document.getElementById('active-restreamers');
@@ -766,12 +763,29 @@ class KPTVAdmin {
         if (streamErrorsEl) streamErrorsEl.textContent = stats.streamErrors || 0;
         if (responseTimeEl) responseTimeEl.textContent = stats.responseTime || '0ms';
 
-        // Update watcher status
         const watcherStatus = stats.watcherEnabled ? 'Enabled' : 'Disabled';
         const watcherElement = document.getElementById('watcher-status');
         if (watcherElement) {
             watcherElement.textContent = watcherStatus;
             watcherElement.className = `watcher-status ${stats.watcherEnabled ? 'enabled' : 'disabled'}`;
+        }
+
+        const proxyClientsEl = document.getElementById('proxy-clients');
+        const upstreamConnectionsEl = document.getElementById('upstream-connections');
+        const connectionEfficiencyEl = document.getElementById('connection-efficiency');
+
+        if (proxyClientsEl) proxyClientsEl.textContent = stats.connectedClients || 0;
+        if (upstreamConnectionsEl) upstreamConnectionsEl.textContent = stats.upstreamConnections || 0;
+
+        if (connectionEfficiencyEl) {
+            const clients = stats.connectedClients || 0;
+            const upstream = stats.upstreamConnections || 0;
+            if (upstream > 0) {
+                const ratio = (clients / upstream).toFixed(1);
+                connectionEfficiencyEl.textContent = `${ratio}:1`;
+            } else {
+                connectionEfficiencyEl.textContent = 'N/A';
+            }
         }
     }
 
@@ -1045,14 +1059,43 @@ class KPTVAdmin {
 
     async showStreamSelector(channelName) {
         try {
-            // Properly encode the channel name for the URL
             const encodedChannelName = encodeURIComponent(channelName);
             const data = await this.apiCall(`/api/channels/${encodedChannelName}/streams`);
             this.renderStreamSelector(data);
+
+            const statsData = await this.apiCall(`/api/channels/${encodedChannelName}/stats`);
+            this.renderStreamStats(statsData);
+
             UIkit.modal('#stream-selector-modal').show();
         } catch (error) {
             this.showNotification('Failed to load streams for channel', 'danger');
         }
+    }
+
+    renderStreamStats(stats) {
+        const container = document.getElementById('stream-stats-container');
+
+        if (!stats.streaming || !stats.valid) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+
+        document.getElementById('stat-container').textContent = stats.container || 'N/A';
+        document.getElementById('stat-stream-type').textContent = stats.streamType || 'N/A';
+        document.getElementById('stat-video-codec').textContent = stats.videoCodec || 'N/A';
+        document.getElementById('stat-resolution').textContent = stats.videoResolution || 'N/A';
+        document.getElementById('stat-fps').textContent = stats.fps > 0 ? stats.fps.toFixed(2) : 'N/A';
+        document.getElementById('stat-bitrate').textContent = stats.bitrate > 0 ? this.formatBitrate(stats.bitrate) : 'N/A';
+        document.getElementById('stat-audio-codec').textContent = stats.audioCodec || 'N/A';
+        document.getElementById('stat-audio-channels').textContent = stats.audioChannels || 'N/A';
+    }
+
+    formatBitrate(bitrate) {
+        if (bitrate < 1000) return bitrate + ' bps';
+        if (bitrate < 1000000) return (bitrate / 1000).toFixed(1) + ' Kbps';
+        return (bitrate / 1000000).toFixed(2) + ' Mbps';
     }
 
     renderStreamSelector(data) {

@@ -95,6 +95,7 @@ type Restreamer struct {
 	RateLimiter             ratelimit.Limiter
 	ManualSwitch            atomic.Bool
 	ManualSwitchPreventStop atomic.Bool
+	Stats                   *StreamStats
 }
 
 // RestreamClient represents an individual client connection receiving streamed content
@@ -129,4 +130,19 @@ type StreamHealthData struct {
 	FPS        float64 // Video frame rate for performance evaluation and playback quality assessment
 	Resolution string  // Video resolution in "WIDTHxHEIGHT" format for display capability matching
 	Valid      bool    // Overall validity flag indicating successful analysis and usable stream characteristics
+}
+
+
+type StreamStats struct {
+	Container      string  `json:"container"`
+	VideoCodec     string  `json:"videoCodec"`
+	AudioCodec     string  `json:"audioCodec"`
+	VideoResolution string `json:"videoResolution"`
+	FPS            float64 `json:"fps"`
+	AudioChannels  string  `json:"audioChannels"`
+	Bitrate        int64   `json:"bitrate"`
+	StreamType     string  `json:"streamType"`
+	Valid          bool    `json:"valid"`
+	LastUpdated    int64   `json:"lastUpdated"`
+	Mu             sync.RWMutex `json:"-"`
 }
