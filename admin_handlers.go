@@ -163,7 +163,7 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 
 		vars := mux.Vars(r)
-		channelName, err := url.QueryUnescape(vars["channel"])
+		channelName, err := url.PathUnescape(vars["channel"])
 		if err != nil {
 			http.Error(w, "Invalid channel name", http.StatusBadRequest)
 			return
@@ -234,7 +234,7 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 
 		vars := mux.Vars(r)
-		channelName, err := url.QueryUnescape(vars["channel"])
+		channelName, err := url.PathUnescape(vars["channel"])
 		if err != nil {
 			http.Error(w, "Invalid channel name", http.StatusBadRequest)
 			return
@@ -291,7 +291,7 @@ func handleGetChannelStats(sp *proxy.StreamProxy) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 
 		vars := mux.Vars(r)
-		channelName, err := url.QueryUnescape(vars["channel"])
+		channelName, err := url.PathUnescape(vars["channel"])
 		if err != nil {
 			http.Error(w, "Invalid channel name", http.StatusBadRequest)
 			return
@@ -343,7 +343,7 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		// Extract channel name from URL parameters
 		vars := mux.Vars(r)
-		channelName, err := url.QueryUnescape(vars["channel"])
+		channelName, err := url.PathUnescape(vars["channel"])
 		if err != nil {
 			http.Error(w, "Invalid channel name", http.StatusBadRequest)
 			return
@@ -917,7 +917,7 @@ func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 
 		vars := mux.Vars(r)
-		channelName, err := url.QueryUnescape(vars["channel"])
+		channelName, err := url.PathUnescape(vars["channel"])
 		if err != nil {
 			http.Error(w, "Invalid channel name", http.StatusBadRequest)
 			return
@@ -974,7 +974,7 @@ func handleReviveStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 
 		vars := mux.Vars(r)
-		channelName, err := url.QueryUnescape(vars["channel"])
+		channelName, err := url.PathUnescape(vars["channel"])
 		if err != nil {
 			http.Error(w, "Invalid channel name", http.StatusBadRequest)
 			return
