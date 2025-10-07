@@ -2,7 +2,7 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: ["main"]  # Trigger on push to main
+    branches: ["main", "develop"]  # Trigger on push to main AND develop
 
 jobs:
   build-and-push:
@@ -22,11 +22,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}  # Auto-generated secret
 
+      - name: Determine image tag
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "TAG=latest" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "TAG=dev" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/kptv-proxy:latest
+            ghcr.io/${{ github.repository_owner }}/kptv-proxy:${{ steps.vars.outputs.TAG }}
             ghcr.io/${{ github.repository_owner }}/kptv-proxy:${{ github.sha }}
+            

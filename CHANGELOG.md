@@ -4,9 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [v]
 
-* Implement SQLite database
-
-
+* Implement SQLite database modules and schema
 * Improve connection pooling
 * Implement XC API batch processing
 * Fix buffer and bufferpool
