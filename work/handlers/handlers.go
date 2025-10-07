@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"kptv-proxy/work/proxy"
-	"kptv-proxy/work/types"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -90,9 +89,8 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		channelName := sp.FindChannelBySafeName(safeName)
 
 		// Attempt to load channel from the concurrent channel store
-		value, exists := sp.Channels.Load(channelName)
+		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
-
 			// Channel not found - log for debugging and return 404
 			if sp.Config.Debug {
 				sp.Logger.Printf("Channel not found: %s", channelName)
@@ -100,9 +98,6 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
-
-		// Type assert to Channel struct for safe access
-		channel := value.(*types.Channel)
 
 		// Log streaming mode selection for debugging
 		if sp.Config.Debug {
