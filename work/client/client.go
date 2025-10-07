@@ -30,17 +30,21 @@ func NewHeaderSettingClient() *HeaderSettingClient {
 	client := &http.Client{
 		Timeout: 0, // No overall timeout for streaming scenarios
 		Transport: &http.Transport{
-			MaxIdleConns:          100,              // Maximum number of idle connections across all hosts
-			MaxIdleConnsPerHost:   10,               // Maximum number of idle connections to a single host
-			IdleConnTimeout:       90 * time.Second, // How long idle connections are kept before closing
-			TLSHandshakeTimeout:   10 * time.Second, // Timeout for TLS handshakes
-			ExpectContinueTimeout: 1 * time.Second,  // Timeout for Expect: 100-continue responses
-			DisableKeepAlives:     false,            // Keep-Alive connections enabled for efficiency
-			ResponseHeaderTimeout: 30 * time.Second, // Timeout for receiving response headers
+			MaxIdleConns:          100,              // Maximum total idle connections
+			MaxIdleConnsPerHost:   20,               // Increased from 10 for better reuse
+			MaxConnsPerHost:       50,               // Limit concurrent connections per host
+			IdleConnTimeout:       90 * time.Second, // Keep connections alive longer
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			DisableKeepAlives:     false,
+			ResponseHeaderTimeout: 30 * time.Second,
+			ForceAttemptHTTP2:     true,             // Enable HTTP/2 where available
+			DisableCompression:    false,            // Allow compression
+			WriteBufferSize:       32 * 1024,        // 32KB write buffer
+			ReadBufferSize:        32 * 1024,        // 32KB read buffer
 		},
 	}
 
-	// return the fully configured client
 	return &HeaderSettingClient{
 		Client: client,
 	}

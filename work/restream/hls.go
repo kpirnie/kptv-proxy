@@ -6,7 +6,6 @@ import (
 	"io"
 	"kptv-proxy/work/utils"
 	"kptv-proxy/work/types"
-	bbuffer "kptv-proxy/work/buffer"
 	"net/http"
 	"net/url"
 	"strings"
@@ -494,11 +493,9 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	// Create a buffer pool instance and use it properly
-    bufferPool := bbuffer.NewBufferPool(32 * 1024)
-    buf := bufferPool.Get()
-    defer bufferPool.Put(buf)
-    totalBytes := int64(0)
+	// Use 32KB buffer for live streams
+	buf := make([]byte, 32*1024)
+	totalBytes := int64(0)
 	lastActivityUpdate := time.Now()
 	consecutiveErrors := 0
 	maxConsecutiveErrors := 5

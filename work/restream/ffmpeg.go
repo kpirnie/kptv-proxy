@@ -8,7 +8,6 @@ import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/metrics"
 	"kptv-proxy/work/types"
-	bbuffer "kptv-proxy/work/buffer"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -92,10 +91,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	}()
 
 	var totalBytes int64
-	// Create a buffer pool instance and use it properly
-    bufferPool := bbuffer.NewBufferPool(32 * 1024)
-    buf := bufferPool.Get()
-    defer bufferPool.Put(buf)
+	buf := make([]byte, 32*1024) // 32KB for live streams
 	lastActivityUpdate := time.Now()
 	lastMetricUpdate := time.Now()
 	consecutiveErrors := 0

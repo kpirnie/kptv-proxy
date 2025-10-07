@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"time"
+	"sync"
 
 	regexp "github.com/grafana/regexp"
 	"go.uber.org/ratelimit"
@@ -74,7 +75,7 @@ type XCVODStream struct {
 //   - []*types.Stream: aggregated collection of streams from all three API endpoints
 func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
 	if cfg.Debug {
-		logger.Printf("Parsing Xtreme Codes API from %s with optimized processing", utils.LogURL(cfg, source.URL))
+		logger.Printf("Parsing Xtreme Codes API from %s with optimized batch processing", utils.LogURL(cfg, source.URL))
 	}
 
 	// Check cache first
@@ -83,9 +84,9 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 		if cfg.Debug {
 			logger.Printf("[XC_CACHE_HIT] Using cached XC API data for %s", source.Name)
 		}
-		var allStreams []*types.Stream
-		if err := json.Unmarshal([]byte(cached), &allStreams); err == nil {
-			return allStreams
+		var streams []*types.Stream
+		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
+			return streams
 		}
 	}
 
@@ -93,7 +94,7 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	// Pre-compile regex patterns for efficiency: add vodInclude vodInclude
+	// Pre-compile regex patterns once
 	var liveInclude, liveExclude, seriesInclude, seriesExclude *regexp.Regexp
 	var err error
 
@@ -121,26 +122,9 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 			logger.Printf("Invalid SeriesExcludeRegex: %v", err)
 		}
 	}
-	/*if source.VODIncludeRegex != "" {
-		vodInclude, err = regexp.Compile(source.VODIncludeRegex)
-		if err != nil && cfg.Debug {
-			logger.Printf("Invalid VODIncludeRegex: %v", err)
-		}
-	}
-	if source.VODExcludeRegex != "" {
-		vodExclude, err = regexp.Compile(source.VODExcludeRegex)
-		if err != nil && cfg.Debug {
-			logger.Printf("Invalid VODExcludeRegex: %v", err)
-		}
-	}*/
 
 	// Content type detection regexes
 	seriesRegex := regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
-	//vodRegex := regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
-
-	var allStreams []*types.Stream
-	filteredCount := 0
-	skippedCount := 0
 
 	// Helper function to check if a name passes include/exclude filters
 	checkFilters := func(name string, include, exclude *regexp.Regexp) bool {
@@ -153,77 +137,96 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 		return true
 	}
 
-	// Process live streams
+	// Batch processing configuration
+	const batchSize = 2500
+	var allStreams []*types.Stream
+	var allStreamsMu sync.Mutex
+
+	// Process live streams with batch processing
 	if cfg.Debug {
 		logger.Printf("[XC_DEBUG] Starting live streams fetch")
 	}
-	
+
 	liveStreams := fetchXCLiveStreams(httpClient, logger, cfg, source, rateLimiter)
 	if cfg.Debug {
 		logger.Printf("[XC_DEBUG] Fetched %d live streams", len(liveStreams))
 	}
 
 	if len(liveStreams) > 0 {
-		liveFiltered := make([]*types.Stream, 0, len(liveStreams)/10)
-		
-		for i, stream := range liveStreams {
-			// Aggressive cancellation check every 100 items
-			if i%100 == 0 {
+		processLiveBatch := func(batch []XCLiveStream) []*types.Stream {
+			results := make([]*types.Stream, 0, len(batch))
+			
+			for _, stream := range batch {
+				// Check context cancellation
 				select {
 				case <-ctx.Done():
-					if cfg.Debug {
-						logger.Printf("[XC_DEBUG] Live streams processing cancelled at item %d", i)
-					}
-					return allStreams
+					return results
 				default:
 				}
-			}
 
-			if cfg.Debug && i > 0 && i%5000 == 0 {
-				logger.Printf("[XC_DEBUG] Live streams processing: %d/%d processed, %d kept", i, len(liveStreams), len(liveFiltered))
-			}
-			
-			if !checkFilters(stream.Name, liveInclude, liveExclude) {
-				skippedCount++
-				continue
-			}
+				if !checkFilters(stream.Name, liveInclude, liveExclude) {
+					continue
+				}
 
-			streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
-			
-			group := "live"
-			if seriesRegex.MatchString(stream.Name) || seriesRegex.MatchString(streamURL) {
-				group = "series"
-			} else if vodRegex.MatchString(stream.Name) || vodRegex.MatchString(streamURL) {
-				group = "vod"
-			}
+				streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
 
-			s := &types.Stream{
-				URL:    streamURL,
-				Name:   stream.Name,
-				Source: source,
-				Attributes: map[string]string{
-					"tvg-name":    stream.Name,
-					"group-title": group,
-					"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
-					"category-id": stream.CategoryID,
-				},
-			}
+				group := "live"
+				if seriesRegex.MatchString(stream.Name) || seriesRegex.MatchString(streamURL) {
+					group = "series"
+				} else if vodRegex.MatchString(stream.Name) || vodRegex.MatchString(streamURL) {
+					group = "vod"
+				}
 
-			if stream.StreamIcon != "" {
-				s.Attributes["tvg-logo"] = stream.StreamIcon
-			}
-			if stream.EpgChannelID != "" {
-				s.Attributes["tvg-id"] = stream.EpgChannelID
-			}
+				s := &types.Stream{
+					URL:    streamURL,
+					Name:   stream.Name,
+					Source: source,
+					Attributes: map[string]string{
+						"tvg-name":    stream.Name,
+						"group-title": group,
+						"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
+						"category-id": stream.CategoryID,
+					},
+				}
 
-			liveFiltered = append(liveFiltered, s)
+				if stream.StreamIcon != "" {
+					s.Attributes["tvg-logo"] = stream.StreamIcon
+				}
+				if stream.EpgChannelID != "" {
+					s.Attributes["tvg-id"] = stream.EpgChannelID
+				}
+
+				results = append(results, s)
+			}
+			return results
 		}
-		
-		allStreams = append(allStreams, liveFiltered...)
-		filteredCount += len(liveFiltered)
-		
+
+		// Process in batches
+		var wg sync.WaitGroup
+		for i := 0; i < len(liveStreams); i += batchSize {
+			end := i + batchSize
+			if end > len(liveStreams) {
+				end = len(liveStreams)
+			}
+
+			batch := liveStreams[i:end]
+			wg.Add(1)
+
+			go func(b []XCLiveStream) {
+				defer wg.Done()
+				
+				results := processLiveBatch(b)
+				
+				allStreamsMu.Lock()
+				allStreams = append(allStreams, results...)
+				allStreamsMu.Unlock()
+			}(batch)
+		}
+
+		wg.Wait()
+
 		if cfg.Debug {
-			logger.Printf("[XC_DEBUG] Live streams completed: %d kept, %d filtered out", len(liveFiltered), len(liveStreams)-len(liveFiltered))
+			logger.Printf("[XC_DEBUG] Live streams completed: %d total kept", len(allStreams))
 		}
 	}
 
@@ -237,81 +240,91 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 	default:
 	}
 
-	// Process series
+	// Process series with batch processing
 	if cfg.Debug {
 		logger.Printf("[XC_DEBUG] Starting series fetch")
 	}
-	
+
 	series := fetchXCSeries(httpClient, logger, cfg, source, rateLimiter)
 	if cfg.Debug {
 		logger.Printf("[XC_DEBUG] Fetched %d series", len(series))
 	}
 
 	if len(series) > 0 {
-		seriesFiltered := make([]*types.Stream, 0, len(series)/10)
-		
-		for i, serie := range series {
-			// Aggressive cancellation check every 100 items
-			if i%100 == 0 {
+		processSeriesBatch := func(batch []XCSeries) []*types.Stream {
+			results := make([]*types.Stream, 0, len(batch))
+			
+			for _, serie := range batch {
+				// Check context cancellation
 				select {
 				case <-ctx.Done():
-					if cfg.Debug {
-						logger.Printf("[XC_DEBUG] Series processing cancelled at item %d", i)
-					}
-					return allStreams
+					return results
 				default:
 				}
-			}
 
-			if cfg.Debug && i > 0 && i%5000 == 0 {
-				logger.Printf("[XC_DEBUG] Series processing: %d/%d processed, %d kept", i, len(series), len(seriesFiltered))
-			}
-			
-			if !checkFilters(serie.Name, seriesInclude, seriesExclude) {
-				skippedCount++
-				continue
-			}
+				if !checkFilters(serie.Name, seriesInclude, seriesExclude) {
+					continue
+				}
 
-			streamURL := fmt.Sprintf("%s/series/%s/%s/%d.ts", source.URL, source.Username, source.Password, serie.SeriesID)
-			
-			s := &types.Stream{
-				URL:    streamURL,
-				Name:   serie.Name,
-				Source: source,
-				Attributes: map[string]string{
-					"tvg-name":    serie.Name,
-					"group-title": "series",
-					"tvg-id":      fmt.Sprintf("%d", serie.SeriesID),
-					"category-id": serie.CategoryID,
-				},
-			}
+				streamURL := fmt.Sprintf("%s/series/%s/%s/%d.ts", source.URL, source.Username, source.Password, serie.SeriesID)
 
-			if serie.Cover != "" {
-				s.Attributes["tvg-logo"] = serie.Cover
-			}
+				s := &types.Stream{
+					URL:    streamURL,
+					Name:   serie.Name,
+					Source: source,
+					Attributes: map[string]string{
+						"tvg-name":    serie.Name,
+						"group-title": "series",
+						"tvg-id":      fmt.Sprintf("%d", serie.SeriesID),
+						"category-id": serie.CategoryID,
+					},
+				}
 
-			seriesFiltered = append(seriesFiltered, s)
+				if serie.Cover != "" {
+					s.Attributes["tvg-logo"] = serie.Cover
+				}
+
+				results = append(results, s)
+			}
+			return results
 		}
-		
-		allStreams = append(allStreams, seriesFiltered...)
-		filteredCount += len(seriesFiltered)
-		
+
+		// Process in batches
+		var wg sync.WaitGroup
+		for i := 0; i < len(series); i += batchSize {
+			end := i + batchSize
+			if end > len(series) {
+				end = len(series)
+			}
+
+			batch := series[i:end]
+			wg.Add(1)
+
+			go func(b []XCSeries) {
+				defer wg.Done()
+				
+				results := processSeriesBatch(b)
+				
+				allStreamsMu.Lock()
+				allStreams = append(allStreams, results...)
+				allStreamsMu.Unlock()
+			}(batch)
+		}
+
+		wg.Wait()
+
 		if cfg.Debug {
-			logger.Printf("[XC_DEBUG] Series completed: %d kept, %d filtered out", len(seriesFiltered), len(series)-len(seriesFiltered))
+			logger.Printf("[XC_DEBUG] Series completed: total streams now %d", len(allStreams))
 		}
 	}
 
 	if cfg.Debug {
-		logger.Printf("[XC_DEBUG] XC API parsing complete: %d total streams kept, %d filtered out", filteredCount, skippedCount)
+		logger.Printf("[XC_DEBUG] XC API parsing complete: %d total streams", len(allStreams))
 	}
 
-	// make sure we have all streams
+	// Cache the results
 	if len(allStreams) > 0 {
-
-		// make sure we have data
 		if data, err := json.Marshal(allStreams); err == nil {
-
-			// set to the cache
 			cache.SetXCData(cacheKey, string(data))
 			if cfg.Debug {
 				logger.Printf("[XC_CACHE_SET] Cached %d streams for %s", len(allStreams), source.Name)

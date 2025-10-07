@@ -13,9 +13,8 @@ import (
 // implementation provides high-performance buffer management with automatic pooling,
 // reuse capabilities, and efficient memory reclamation without manual zeroing operations.
 type BufferPool struct {
-	pool        *bytebufferpool.Pool
-	bufferSize  int
-	initialized atomic.Bool
+	pool       *bytebufferpool.Pool
+	bufferSize int
 }
 
 // NewBufferPool creates a new BufferPool that manages byte slices of the specified size.
@@ -23,48 +22,42 @@ type BufferPool struct {
 // memory management, providing high-performance buffer allocation without manual pooling
 // overhead. The pool is immediately ready for use after creation.
 func NewBufferPool(bufferSize int64) *BufferPool {
-	bp := &BufferPool{
+	return &BufferPool{
 		bufferSize: int(bufferSize),
 		pool:       &bytebufferpool.Pool{},
 	}
-	bp.initialized.Store(true)
-	return bp
 }
 
 // Get retrieves a byte slice from the pool. The pool automatically manages buffer
 // lifecycle and reuse through valyala/bytebufferpool, ensuring optimal memory usage
 // and minimal allocation overhead. Returns a fresh copy of a buffer with the configured
 // size, safe for concurrent use without interference from other buffer consumers.
-func (bp *BufferPool) Get() []byte {
+func (bp *BufferPool) Get() *bytebufferpool.ByteBuffer {
 	buf := bp.pool.Get()
+	// Ensure buffer has correct capacity
 	if cap(buf.B) < bp.bufferSize {
-		buf.B = make([]byte, bp.bufferSize)
-	} else {
-		buf.B = buf.B[:bp.bufferSize]
+		buf.B = make([]byte, 0, bp.bufferSize)
 	}
-	result := make([]byte, len(buf.B))
-	copy(result, buf.B)
-	bp.pool.Put(buf)
-	return result
+	buf.Reset() // Clear any existing data
+	return buf
 }
 
 // Put returns a byte slice to the pool. The valyala/bytebufferpool implementation
 // handles automatic buffer cleanup and reuse internally, eliminating the need for
 // manual zeroing operations while maintaining security through the pool's internal
 // management. This method exists for API compatibility and future extensibility.
-func (bp *BufferPool) Put(buf []byte) {
-	if buf == nil {
-		return
+func (bp *BufferPool) Put(buf *bytebufferpool.ByteBuffer) {
+	if buf != nil {
+		bp.pool.Put(buf)
 	}
 }
+
 
 // Cleanup releases all pooled buffers and performs garbage collection to reclaim memory.
 // This method should be called during application shutdown or when performing comprehensive
 // resource cleanup to ensure all pooled memory is properly released back to the system.
 func (bp *BufferPool) Cleanup() {
-	if bp.pool != nil {
-		bp.pool = &bytebufferpool.Pool{}
-	}
+	// bytebufferpool handles its own cleanup
 	runtime.GC()
 }
 
