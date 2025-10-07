@@ -6,7 +6,8 @@ All notable changes to this project will be documented in this file.
 
 * Implement more efficient caching methodologies
 * Cache XC API Responses
-
+* Rework M3U caching
+* Rework playlist output caching
 
 ## [v10072025.01]
 
