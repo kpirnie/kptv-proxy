@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [v10072025]
 
 * Fixed channel name URL encoding for channels containing special characters like "+" (e.g., "MGM+ Hits", "MGM+ Marquee")
+* Replace `sync` and `buffer` packages with more efficient packages
+* Fix all type assertions
 
 ## [v10042025]
 

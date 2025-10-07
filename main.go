@@ -18,6 +18,7 @@ import (
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/utils"
+	"kptv-proxy/work/types"
 )
 
 // default version
@@ -146,7 +147,7 @@ func main() {
 			proxyInstance.Config = newConfig
 
 			// Clear existing channels
-			proxyInstance.Channels.Range(func(key, value interface{}) bool {
+			proxyInstance.Channels.Range(func(key string, value *types.Channel) bool {
 				proxyInstance.Channels.Delete(key)
 				return true
 			})

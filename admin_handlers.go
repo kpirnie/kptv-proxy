@@ -179,13 +179,11 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		// Validate the stream order array
-		value, exists := sp.Channels.Load(channelName)
+		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
-
-		channel := value.(*types.Channel)
 		channel.Mu.RLock()
 		streamCount := len(channel.Streams)
 		channel.Mu.RUnlock()
@@ -242,13 +240,11 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		value, exists := sp.Channels.Load(channelName)
+		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
-
-		channel := value.(*types.Channel)
 		channel.Mu.RLock()
 
 		// Always build streams in original order first
@@ -301,13 +297,11 @@ func handleGetChannelStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		value, exists := sp.Channels.Load(channelName)
+		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
-
-		channel := value.(*types.Channel)
 		channel.Mu.RLock()
 		defer channel.Mu.RUnlock()
 
@@ -366,13 +360,11 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		// Locate and validate channel
-		value, exists := sp.Channels.Load(channelName)
+		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
-
-		channel := value.(*types.Channel)
 		channel.Mu.Lock()
 
 		// Validate stream index bounds
@@ -393,7 +385,7 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 
 			// Verify client presence before switch
 			clientCount := 0
-			channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
+			channel.Restreamer.Clients.Range(func(_ string, _ *types.RestreamClient) bool {
 				clientCount++
 				return true
 			})
@@ -625,16 +617,16 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 		upstreamConnections := 0
 		activeChannels := 0  // NEW
 
-		sp.Channels.Range(func(key, value interface{}) bool {
+		sp.Channels.Range(func(key string, value *types.Channel) bool {
 			totalChannels++
-			channel := value.(*types.Channel)
+			channel := value
 			channel.Mu.RLock()
 			if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
 				activeStreams++
 				activeRestreamers++
 				upstreamConnections++
 				activeChannels++  // NEW - count active channels
-				channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
+				channel.Restreamer.Clients.Range(func(_ string, _ *types.RestreamClient) bool {
 					connectedClients++
 					return true
 				})
@@ -697,10 +689,8 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		var channels []ChannelResponse
 
-		sp.Channels.Range(func(key, value interface{}) bool {
-			channelName := key.(string)
-			channel := value.(*types.Channel)
-
+		sp.Channels.Range(func(key string, value *types.Channel) bool {
+			channel := value
 			channel.Mu.RLock()
 
 			// Determine channel activity status
@@ -716,7 +706,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 			active := hasRestreamer && isRunning
 			clients := 0
 			if active {
-				channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
+				channel.Restreamer.Clients.Range(func(_ string, _ *types.RestreamClient) bool {
 					clients++
 					return true
 				})
@@ -739,7 +729,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 			}
 
 			channels = append(channels, ChannelResponse{
-				Name:    channelName,
+				Name:    channel.Name,
 				Active:  active,
 				Clients: clients,
 				Group:   group,
@@ -767,17 +757,15 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		var channels []ChannelResponse
 
-		sp.Channels.Range(func(key, value interface{}) bool {
-			channelName := key.(string)
-			channel := value.(*types.Channel)
-
+		sp.Channels.Range(func(key string, value *types.Channel) bool {
+			channel := value
 			channel.Mu.RLock()
 
 			// Include only active streaming channels
 			if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
 				// Count connected clients
 				clients := 0
-				channel.Restreamer.Clients.Range(func(_, _ interface{}) bool {
+				channel.Restreamer.Clients.Range(func(_ string, _ *types.RestreamClient) bool {
 					clients++
 					return true
 				})
@@ -799,7 +787,7 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				if activityTime < 60*time.Second && clients > 0 {
 					// Base estimation: 500KB per client plus variance
 					baseRate := int64(500 * 1024 * clients)
-					variance := int64(len(channelName) * 100 * 1024) // Simple variance calculation
+					variance := int64(len(channel.Name) * 100 * 1024) // Simple variance calculation
 					estimatedBytes = baseRate + variance
 				}
 
@@ -811,7 +799,7 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				}
 
 				channels = append(channels, ChannelResponse{
-					Name:             channelName,
+					Name:             channel.Name,
 					Active:           true,
 					Clients:          clients,
 					CurrentSource:    currentSource,
@@ -945,13 +933,11 @@ func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		// Get stream details from proxy
-		value, exists := sp.Channels.Load(channelName)
+		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
-
-		channel := value.(*types.Channel)
 		channel.Mu.RLock()
 
 		if request.StreamIndex >= len(channel.Streams) {
