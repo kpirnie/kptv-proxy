@@ -4,10 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [v]
 
+* Implement SQLite database
+
+
 * Improve connection pooling
 * Implement XC API batch processing
 * Fix buffer and bufferpool
-
 
 ## [v10072025.15]
 
