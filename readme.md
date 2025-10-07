@@ -135,6 +135,37 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
+## Third-Party Libraries
+
+KPTV Proxy leverages several high-quality open-source libraries:
+
+### Core Dependencies
+- **[gorilla/mux](https://github.com/gorilla/mux)** (v1.8.1) - HTTP router and URL matcher for building REST APIs
+- **[panjf2000/ants](https://github.com/panjf2000/ants)** (v2.11.3) - High-performance goroutine pool for worker thread management
+- **[uber-go/ratelimit](https://github.com/uber-go/ratelimit)** (v0.3.1) - Per-source rate limiting to prevent provider overload
+
+### Streaming & Parsing
+- **[grafov/m3u8](https://github.com/grafov/m3u8)** (v0.12.1) - M3U8 playlist parser for HLS stream handling
+- **[grafana/regexp](https://github.com/grafana/regexp)** (v0.0.0-20240518133315) - High-performance regular expression engine for content filtering
+
+### Monitoring
+- **[prometheus/client_golang](https://github.com/prometheus/client_golang)** (v1.23.0) - Metrics collection and exposition for Prometheus integration
+- **[prometheus/client_model](https://github.com/prometheus/client_model)** (v0.6.2) - Data model for Prometheus metrics
+- **[prometheus/common](https://github.com/prometheus/common)** (v0.65.0) - Common libraries for Prometheus components
+- **[prometheus/procfs](https://github.com/prometheus/procfs)** (v0.16.1) - Process filesystem parsing for system metrics
+
+### External Tools
+- **[FFmpeg/FFprobe](https://ffmpeg.org)** - Stream validation, transcoding, and format analysis (LGPL v2.1)
+  - Used as external binaries for stream processing
+  - Source code available at: https://ffmpeg.org/download.html
+  - See LICENSE file for complete legal information
+
+### Web Interface
+- **[UIKit 3](https://getuikit.com)** (v3.17.11) - Frontend framework for admin interface (MIT License)
+- **[Sortable.js](https://sortablejs.github.io/Sortable/)** (v1.15.0) - Drag-and-drop functionality for stream ordering
+
+All dependencies are vendored and their licenses are compatible with the MIT License used by KPTV Proxy.
+
 ## Quick Start
 
 **Prerequisites**: Docker or Podman installed

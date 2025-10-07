@@ -13,6 +13,7 @@ import (
 	"kptv-proxy/work/config"
 
 	"go.uber.org/ratelimit"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 // StreamType represents the different categories of stream content that the proxy can handle,
@@ -81,17 +82,17 @@ type Channel struct {
 // and resource management capabilities. All operations are designed for high concurrency
 // with minimal contention between client operations and background maintenance tasks.
 type Restreamer struct {
-	Channel                 *Channel                    // Reference to parent channel for stream access and metadata
-	Clients                 sync.Map                    // Thread-safe map of client ID -> *RestreamClient for concurrent access
-	Buffer                  *buffer.RingBuffer          // Shared ring buffer for efficient data distribution to multiple clients
-	Running                 atomic.Bool                 // Atomic flag indicating active streaming state (true=streaming, false=stopped)
-	Ctx                     context.Context             // Cancellable context for coordinated shutdown and timeout management
-	Cancel                  context.CancelFunc          // Context cancellation function for graceful streaming termination
-	CurrentIndex            int32                       // Atomic storage of currently active stream index within channel
-	LastActivity            atomic.Int64                // Atomic Unix timestamp of most recent streaming activity for cleanup logic
-	Logger                  *log.Logger                 // Application logger for debugging and operational event recording
-	HttpClient              *client.HeaderSettingClient // HTTP client with custom header support for source authentication
-	Config                  *config.Config              // Application configuration reference for URL obfuscation and operational parameters
+	Channel                 *Channel                    			// Reference to parent channel for stream access and metadata
+	Clients                 *xsync.MapOf[string, *RestreamClient]   // Thread-safe map of client ID -> *RestreamClient for concurrent access
+	Buffer                  *buffer.RingBuffer          			// Shared ring buffer for efficient data distribution to multiple clients
+	Running                 atomic.Bool                 			// Atomic flag indicating active streaming state (true=streaming, false=stopped)
+	Ctx                     context.Context             			// Cancellable context for coordinated shutdown and timeout management
+	Cancel                  context.CancelFunc          			// Context cancellation function for graceful streaming termination
+	CurrentIndex            int32                       			// Atomic storage of currently active stream index within channel
+	LastActivity            atomic.Int64                			// Atomic Unix timestamp of most recent streaming activity for cleanup logic
+	Logger                  *log.Logger                 			// Application logger for debugging and operational event recording
+	HttpClient              *client.HeaderSettingClient 			// HTTP client with custom header support for source authentication
+	Config                  *config.Config              			// Application configuration reference for URL obfuscation and operational parameters
 	RateLimiter             ratelimit.Limiter
 	ManualSwitch            atomic.Bool
 	ManualSwitchPreventStop atomic.Bool

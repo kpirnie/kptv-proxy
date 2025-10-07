@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 // WatcherManager coordinates multiple stream watchers across all active channels,
@@ -36,7 +38,7 @@ import (
 //   - Resource management and memory optimization for long-running operations
 //   - Integration with restreaming infrastructure for seamless failover
 type WatcherManager struct {
-	watchers sync.Map      // Thread-safe map of channel name -> *StreamWatcher for concurrent access
+	watchers *xsync.MapOf[string, *StreamWatcher]      // Thread-safe map of channel name -> *StreamWatcher for concurrent access
 	logger   *log.Logger   // Application logger for monitoring events and debugging information
 	enabled  atomic.Bool   // Atomic flag indicating manager operational state (true=active, false=stopped)
 	stopChan chan struct{} // Coordination channel for graceful manager shutdown and cleanup
@@ -104,6 +106,7 @@ type RestreamWrapper struct {
 func NewWatcherManager(logger *log.Logger) *WatcherManager {
 	return &WatcherManager{
 		logger:   logger,
+		watchers: xsync.NewMapOf[string, *StreamWatcher](),
 		stopChan: make(chan struct{}),
 	}
 }
@@ -150,8 +153,7 @@ func (wm *WatcherManager) Stop() {
 	close(wm.stopChan)
 
 	// Terminate all active stream watchers with proper cleanup
-	wm.watchers.Range(func(key, value interface{}) bool {
-		watcher := value.(*StreamWatcher)
+	wm.watchers.Range(func(key string, watcher *StreamWatcher) bool {
 		watcher.Stop()
 		return true
 	})
@@ -173,14 +175,10 @@ func (wm *WatcherManager) Stop() {
 //   - channelName: unique channel identifier for watcher coordination and logging
 //   - restreamer: active restreamer instance to monitor for health and quality issues
 func (wm *WatcherManager) StartWatching(channelName string, restreamer *types.Restreamer) {
-
-	// Terminate any existing watcher for this channel to prevent duplication
 	if existing, exists := wm.watchers.LoadAndDelete(channelName); exists {
-		existingWatcher := existing.(*StreamWatcher)
-		existingWatcher.Stop()
+		existing.Stop()
 	}
 
-	// Create new watcher instance with comprehensive monitoring configuration
 	watcher := &StreamWatcher{
 		channelName:      channelName,
 		restreamer:       restreamer,
@@ -190,14 +188,11 @@ func (wm *WatcherManager) StartWatching(channelName string, restreamer *types.Re
 		lastFailureReset: time.Now(),
 	}
 
-	// Initialize cancellable context for coordinated watcher lifecycle management
 	watcher.ctx, watcher.cancel = context.WithCancel(context.Background())
 	wm.watchers.Store(channelName, watcher)
 
-	// Launch monitoring goroutine for continuous health assessment
 	go watcher.Watch()
 
-	// Extract current stream information for logging and debugging
 	currentIdx := int(atomic.LoadInt32(&restreamer.CurrentIndex))
 	restreamer.Channel.Mu.RLock()
 	var streamURL string
@@ -225,9 +220,8 @@ func (wm *WatcherManager) StartWatching(channelName string, restreamer *types.Re
 //   - channelName: unique channel identifier for the watcher to terminate
 func (wm *WatcherManager) StopWatching(channelName string) {
 	if watcher, exists := wm.watchers.LoadAndDelete(channelName); exists {
-		w := watcher.(*StreamWatcher)
-		w.Stop()
-		if w.restreamer.Config.Debug {
+		watcher.Stop()
+		if watcher.restreamer.Config.Debug {
 			wm.logger.Printf("[WATCHER] Stopped watching channel %s", channelName)
 		}
 	}
@@ -257,15 +251,11 @@ func (wm *WatcherManager) cleanupRoutine() {
 		case <-ticker.C:
 
 			// Evaluate all active watchers for cleanup opportunities
-			wm.watchers.Range(func(key, value interface{}) bool {
-				watcher := value.(*StreamWatcher)
-
-				// Remove watchers for terminated restreamers to prevent resource leaks
+			wm.watchers.Range(func(key string, watcher *StreamWatcher) bool {
 				if !watcher.restreamer.Running.Load() {
 					watcher.Stop()
 					wm.watchers.Delete(key)
 				}
-
 				return true
 			})
 		}

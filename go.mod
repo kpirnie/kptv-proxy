@@ -10,6 +10,7 @@ require (
 	github.com/grafov/m3u8 v0.12.1
 	github.com/panjf2000/ants/v2 v2.11.3
 	github.com/prometheus/client_golang v1.23.0
+	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	go.uber.org/ratelimit v0.3.1
 )
 

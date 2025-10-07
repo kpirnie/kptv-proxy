@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/panjf2000/ants/v2"
+	"github.com/puzpuzpuz/xsync/v3"
 	"go.uber.org/ratelimit"
 )
 
@@ -38,16 +39,16 @@ import (
 // and manages the restreaming infrastructure that enables efficient one-to-many distribution
 // of video content while minimizing upstream bandwidth usage and source server load.
 type StreamProxy struct {
-	Config                *config.Config                // Application configuration with source URLs and operational parameters
-	Channels              sync.Map                      // Thread-safe map of channel name -> *types.Channel for concurrent access
-	Cache                 *cache.Cache                  // Playlist and metadata caching system for performance optimization
-	Logger                *log.Logger                   // Centralized logging system for debugging and operational monitoring
-	BufferPool            *buffer.BufferPool            // Reusable buffer pool for TS segment processing and memory management
-	HttpClient            *client.HeaderSettingClient   // HTTP client with custom header support for source authentication
-	WorkerPool            *ants.Pool                    // Goroutine pool for concurrent task execution and resource control
-	MasterPlaylistHandler *parser.MasterPlaylistHandler // Specialized handler for HLS master playlist parsing and variant selection
-	importStopChan        chan bool                     // Signal channel for gracefully stopping the periodic import refresh loop
-	WatcherManager        *watcher.WatcherManager       // Stream health monitoring and automatic failover management system
+	Config                *config.Config                		// Application configuration with source URLs and operational parameters
+	Channels              *xsync.MapOf[string, *types.Channel]	// Thread-safe map of channel name -> *types.Channel for concurrent access
+	Cache                 *cache.Cache                  		// Playlist and metadata caching system for performance optimization
+	Logger                *log.Logger                   		// Centralized logging system for debugging and operational monitoring
+	BufferPool            *buffer.BufferPool            		// Reusable buffer pool for TS segment processing and memory management
+	HttpClient            *client.HeaderSettingClient   		// HTTP client with custom header support for source authentication
+	WorkerPool            *ants.Pool                    		// Goroutine pool for concurrent task execution and resource control
+	MasterPlaylistHandler *parser.MasterPlaylistHandler 		// Specialized handler for HLS master playlist parsing and variant selection
+	importStopChan        chan bool                     		// Signal channel for gracefully stopping the periodic import refresh loop
+	WatcherManager        *watcher.WatcherManager       		// Stream health monitoring and automatic failover management system
 	SourceRateLimiters    map[string]ratelimit.Limiter
 	rateLimiterMutex      sync.RWMutex
 	FilterManager         *filter.FilterManager
@@ -75,7 +76,7 @@ type StreamProxy struct {
 func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, cache *cache.Cache) *StreamProxy {
 	return &StreamProxy{
 		Config:                cfg,
-		Channels:              sync.Map{}, // Initialize empty thread-safe channel store
+		Channels:              xsync.NewMapOf[string, *types.Channel](), // Initialize empty thread-safe channel store
 		Cache:                 cache,
 		Logger:                logger,
 		BufferPool:            bufferPool,
@@ -116,7 +117,7 @@ func (sp *StreamProxy) ImportStreams() {
 	}
 
 	var wg sync.WaitGroup
-	newChannels := sync.Map{} // Temporary staging area for imported channels
+	newChannels := xsync.NewMapOf[string, *types.Channel]() // Temporary staging area for imported channels
 
 	// Launch concurrent import goroutine for each configured source
 	for i := range sp.Config.Sources {
@@ -302,35 +303,26 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	totalCount := 0
 
 	// Iterate through all channels in the concurrent channel store
-	sp.Channels.Range(func(key, value interface{}) bool {
-		channelName := key.(string)
-		channel := value.(*types.Channel)
+	sp.Channels.Range(func(channelName string, channel *types.Channel) bool {
 		totalCount++
 
-		// Acquire read lock for safe access to channel stream data
 		channel.Mu.RLock()
 		if len(channel.Streams) > 0 {
-
-			// Use first stream's attributes as channel metadata source
 			attrs := channel.Streams[0].Attributes
 
-			// Apply group filtering if requested
 			if groupFilter != "" {
 				channelGroup := sp.GetChannelGroup(attrs)
 				if !strings.EqualFold(channelGroup, groupFilter) {
 					channel.Mu.RUnlock()
-					return true // Skip this channel, continue iteration
+					return true
 				}
 			}
 
 			filteredCount++
 
-			// Generate EXTINF line with duration and attributes
 			playlist.WriteString("#EXTINF:-1")
 			for key, value := range attrs {
 				if key != "tvg-name" && key != "duration" {
-
-					// Quote values containing special characters
 					if strings.ContainsAny(value, ",\"") {
 						value = fmt.Sprintf("%q", value)
 					}
@@ -338,7 +330,6 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 				}
 			}
 
-			// Write channel name and proxy stream URL
 			cleanName := strings.Trim(channelName, "\"")
 			playlist.WriteString(fmt.Sprintf(",%s\n", cleanName))
 			safeName := utils.SanitizeChannelName(channelName)
@@ -348,7 +339,7 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 		channel.Mu.RUnlock()
 		return true
 	})
-
+	
 	result := playlist.String()
 
 	// Cache the generated playlist for future requests
@@ -484,22 +475,16 @@ func (sp *StreamProxy) RestreamCleanup() {
 		now := time.Now().Unix()
 
 		// Scan all channels for cleanup opportunities
-		sp.Channels.Range(func(key, value interface{}) bool {
-			channel := value.(*types.Channel)
+		sp.Channels.Range(func(key string, channel *types.Channel) bool {
 			channel.Mu.Lock()
 
 			if channel.Restreamer != nil {
-
-				// Handle inactive or cancelled restreamers
 				if !channel.Restreamer.Running.Load() {
 					lastActivity := channel.Restreamer.LastActivity.Load()
 
-					// Check for cancelled contexts requiring extended cleanup
 					if now-lastActivity > 30 {
 						select {
 						case <-channel.Restreamer.Ctx.Done():
-
-							// Force cleanup after cancelled context with extended grace period
 							if now-lastActivity > 60 {
 								if sp.Config.Debug {
 									sp.Logger.Printf("[CLEANUP_FORCE] Channel %s: Force cleaning cancelled context after 60s", channel.Name)
@@ -511,8 +496,6 @@ func (sp *StreamProxy) RestreamCleanup() {
 								channel.Restreamer = nil
 							}
 						default:
-
-							// Normal cleanup for inactive restreamer without cancelled context
 							if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
 								if sp.Config.Debug {
 									sp.Logger.Printf("[CLEANUP_BUFFER_DESTROY] Channel %s: Safely destroying buffer", channel.Name)
@@ -529,24 +512,19 @@ func (sp *StreamProxy) RestreamCleanup() {
 					}
 
 				} else {
-
-					// Active restreamer: prune expired clients and manage client lifecycle
 					clientCount := 0
 					channel.Restreamer.Clients.Range(func(ckey, cvalue interface{}) bool {
 						client := cvalue.(*types.RestreamClient)
 						lastSeen := client.LastSeen.Load()
 
-						// Remove clients inactive for more than 5 minutes
 						if now-lastSeen > 600 {
 							if sp.Config.Debug {
 								sp.Logger.Printf("Removing inactive client: %s (last seen %d seconds ago)", ckey.(string), now-lastSeen)
 							}
 							channel.Restreamer.Clients.Delete(ckey)
 
-							// Signal client completion
 							select {
 							case <-client.Done:
-								// Already closed
 							default:
 								close(client.Done)
 							}
@@ -556,7 +534,6 @@ func (sp *StreamProxy) RestreamCleanup() {
 						return true
 					})
 
-					// Stop restreamer if no active clients remain
 					if clientCount == 0 && channel.Restreamer.Running.Load() {
 						lastActivity := channel.Restreamer.LastActivity.Load()
 						if now-lastActivity > 120 {
@@ -566,7 +543,6 @@ func (sp *StreamProxy) RestreamCleanup() {
 							channel.Restreamer.Cancel()
 							channel.Restreamer.Running.Store(false)
 
-							// Clean up buffer resources
 							if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
 								if sp.Config.Debug {
 									sp.Logger.Printf("[CLEANUP_NO_CLIENTS] Channel %s: Safely destroying buffer", channel.Name)
@@ -616,8 +592,7 @@ func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 
 	// Perform comprehensive scan for matching sanitized names
 	var foundName string
-	sp.Channels.Range(func(key, _ interface{}) bool {
-		name := key.(string)
+		sp.Channels.Range(func(name string, _ *types.Channel) bool {
 		if utils.SanitizeChannelName(name) == safeName {
 			foundName = name
 			return false
