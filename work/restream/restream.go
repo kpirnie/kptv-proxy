@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"kptv-proxy/work/buffer"
+	bbuffer "kptv-proxy/work/buffer"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/deadstreams"
@@ -40,7 +40,7 @@ func NewRestreamer(channel *types.Channel, bufferSize int64, logger *log.Logger,
 
 	base := &types.Restreamer{
 		Channel:     channel,
-		Buffer:      buffer.NewRingBuffer(bufferSize),
+		Buffer:      bbuffer.NewRingBuffer(bufferSize),
 		Ctx:         ctx,
 		Cancel:      cancel,
 		Logger:      logger,
@@ -72,16 +72,16 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 	r.Clients.Store(id, client)
 	r.LastActivity.Store(time.Now().Unix())
 
-	count := 0
-	r.Clients.Range(func(_, _ interface{}) bool {
-		count++
+	clientCount := 0
+	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
+		clientCount++
 		return true
 	})
 
-	metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(count))
+	metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(clientCount))
 
 	if r.Config.Debug {
-		r.Logger.Printf("[CLIENT_CONNECT] Channel %s: ID: %s, Total: %d", r.Channel.Name, id, count)
+		r.Logger.Printf("[CLIENT_CONNECT] Channel %s: ID: %s, Total: %d", r.Channel.Name, id, clientCount)
 	}
 
 	if !r.Running.Load() && r.Running.CompareAndSwap(false, true) {
@@ -99,49 +99,46 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 func (r *Restream) RemoveClient(id string) {
 
 	// Attempt to load and delete the client from the map
-	if client, ok := r.Clients.LoadAndDelete(id); ok {
-
-		// hold the client
-		c := client.(*types.RestreamClient)
+    if client, ok := r.Clients.LoadAndDelete(id); ok {
 
 		// Mark client as finished by closing its Done channel
-		select {
-		case <-c.Done:
-			// Already closed
-		default:
-			close(c.Done)
-		}
+        select {
+        case <-client.Done:
+            // Already closed
+        default:
+            close(client.Done)
+        }
 
-		// Remove the client from the buffer's internal tracking - with nil check
-		if r.Buffer != nil && !r.Buffer.IsDestroyed() {
-			r.Buffer.RemoveClient(id)
-		}
+        // Remove the client from the buffer's internal tracking - with nil check
+        if r.Buffer != nil && !r.Buffer.IsDestroyed() {
+            r.Buffer.RemoveClient(id)
+        }
 
-		// Count remaining clients
-		count := 0
-		r.Clients.Range(func(_, _ interface{}) bool {
-			count++
-			return true
-		})
+        // Count remaining clients
+        clientCount := 0
+        r.Clients.Range(func(key string, value *types.RestreamClient) bool {
+            clientCount++
+            return true
+        })
 
-		// Update Prometheus metrics for clients
-		metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(count))
+        // Update Prometheus metrics for clients
+        metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(clientCount))
 
-		// Debug logging
-		if r.Config.Debug {
-			r.Logger.Printf("[CLIENT_DISCONNECT] Channel %s: Client: %s", r.Channel.Name, id)
-			r.Logger.Printf("[METRIC] clients_connected: %d [%s]", count, r.Channel.Name)
-			r.Logger.Printf("[CLIENT_REMOVE] Channel %s: Client %s removed, remaining: %d", r.Channel.Name, id, count)
-		}
+        // Debug logging
+        if r.Config.Debug {
+            r.Logger.Printf("[CLIENT_DISCONNECT] Channel %s: Client: %s", r.Channel.Name, id)
+            r.Logger.Printf("[METRIC] clients_connected: %d [%s]", clientCount, r.Channel.Name)
+            r.Logger.Printf("[CLIENT_REMOVE] Channel %s: Client %s removed, remaining: %d", r.Channel.Name, id, clientCount)
+        }
 
-		// If no clients remain, stop the stream immediately
-		if count == 0 {
-			if r.Config.Debug {
-				r.Logger.Printf("[RESTREAM_STOP] Channel %s: No more clients", r.Channel.Name)
-			}
-			r.stopStream()
-		}
-	}
+        // If no clients remain, stop the stream immediately
+        if clientCount == 0 {
+            if r.Config.Debug {
+                r.Logger.Printf("[RESTREAM_STOP] Channel %s: No more clients", r.Channel.Name)
+            }
+            r.stopStream()
+        }
+    }
 }
 
 // stopStream forces the restreamer to stop streaming immediately.
@@ -258,7 +255,7 @@ func (r *Restream) Stream() {
 
 			// Count clients still connected
 			clientCount := 0
-			r.Clients.Range(func(_, _ interface{}) bool {
+			r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 				clientCount++
 				return true
 			})
@@ -304,7 +301,7 @@ func (r *Restream) Stream() {
 
 		// Count active clients
 		clientCount := 0
-		r.Clients.Range(func(_, _ interface{}) bool {
+		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 			clientCount++
 			return true
 		})
@@ -466,7 +463,7 @@ func (r *Restream) Stream() {
 			
 			// Count clients
 			clientCount := 0
-			r.Clients.Range(func(_, _ interface{}) bool {
+			r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 				clientCount++
 				return true
 			})
@@ -511,7 +508,7 @@ func (r *Restream) Stream() {
 
 	// Start fallback video if we still have clients
 	clientCount := 0
-	r.Clients.Range(func(_, _ interface{}) bool {
+	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 		clientCount++
 		return true
 	})
@@ -839,7 +836,10 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 	}
 
 	var totalBytes int64
-	buf := make([]byte, 64*1024)
+	// Create a buffer pool instance and use it properly
+    bufferPool := bbuffer.NewBufferPool(64 * 1024)
+    buf := bufferPool.Get()
+    defer bufferPool.Put(buf)
 	lastActivityUpdate := time.Now()
 	lastMetricUpdate := time.Now()
 	consecutiveErrors := 0
@@ -952,9 +952,9 @@ func (r *Restream) DistributeToClients(data []byte) int {
 	activeClients := 0
 	var failedClients []string
 
-	r.Clients.Range(func(key, value interface{}) bool {
-		client := value.(*types.RestreamClient)
-		clientID := key.(string)
+	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
+		client := value
+		clientID := key
 
 		_, err := client.Writer.Write(data)
 		if err != nil {
@@ -1029,12 +1029,12 @@ func (r *Restream) monitorClientHealth() {
 			now := time.Now().Unix()
 			var staleClients []string
 
-			r.Clients.Range(func(key, value interface{}) bool {
-				client := value.(*types.RestreamClient)
+			r.Clients.Range(func(key string, value *types.RestreamClient) bool {
+				client := value
 				lastSeen := client.LastSeen.Load()
 
 				if now-lastSeen > 300 {
-					staleClients = append(staleClients, key.(string))
+					staleClients = append(staleClients, key)
 				}
 				return true
 			})
@@ -1081,7 +1081,7 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 
 	// Count clients before switch
 	clientCount := 0
-	r.Clients.Range(func(_, _ interface{}) bool {
+	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 		clientCount++
 		return true
 	})
@@ -1107,7 +1107,7 @@ func (r *Restream) resetBufferSafely() {
 	} else {
 		// Use BufferSizePerStream instead of MaxBufferSize
 		bufferSize := r.Config.BufferSizePerStream * 1024 * 1024
-		r.Buffer = buffer.NewRingBuffer(bufferSize)
+		r.Buffer = bbuffer.NewRingBuffer(bufferSize)
 		if r.Config.Debug {
 			r.Logger.Printf("[BUFFER_RECREATED] Channel %s: New buffer created (%d MB)", r.Channel.Name, r.Config.BufferSizePerStream)
 		}
@@ -1139,7 +1139,7 @@ func (r *Restream) streamFallbackVideo() {
 
 		// Check if we still have clients
 		clientCount := 0
-		r.Clients.Range(func(_, _ interface{}) bool {
+		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 			clientCount++
 			return true
 		})

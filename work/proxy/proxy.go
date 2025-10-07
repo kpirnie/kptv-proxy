@@ -560,6 +560,11 @@ func (sp *StreamProxy) RestreamCleanup() {
 
 		// Trigger garbage collection to reclaim cleaned up memory
 		runtime.GC()
+
+		// clean up the buffer pool
+		if sp.BufferPool != nil {
+			sp.BufferPool.Cleanup()
+		}
 	}
 }
 

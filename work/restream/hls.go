@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"kptv-proxy/work/utils"
+	"kptv-proxy/work/types"
+	bbuffer "kptv-proxy/work/buffer"
 	"net/http"
 	"net/url"
 	"strings"
@@ -153,7 +155,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		}
 
 		clientCount := 0
-		r.Clients.Range(func(_, _ interface{}) bool {
+		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 			clientCount++
 			return true
 		})
@@ -492,16 +494,19 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	buffer := make([]byte, 64*1024)
-	totalBytes := int64(0)
+	// Create a buffer pool instance and use it properly
+    bufferPool := bbuffer.NewBufferPool(64 * 1024)
+    buf := bufferPool.Get()
+    defer bufferPool.Put(buf)
+    totalBytes := int64(0)
 	lastActivityUpdate := time.Now()
 	consecutiveErrors := 0
 	maxConsecutiveErrors := 5
 
 	for {
-		n, err := resp.Body.Read(buffer)
+		n, err := resp.Body.Read(buf)
 		if n > 0 {
-			data := buffer[:n]
+			data := buf[:n]
 			totalBytes += int64(n)
 
 			if !r.SafeBufferWrite(data) {

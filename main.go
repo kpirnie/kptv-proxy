@@ -51,6 +51,7 @@ func main() {
 		log.Fatalf("Failed to create worker pool: %v", err)
 	}
 	defer workerPool.Release()
+	defer bufferPool.Cleanup()
 
 	// Initialize cache
 	cacheInstance := cache.NewCache(cfg.CacheDuration)

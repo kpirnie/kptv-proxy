@@ -7,6 +7,8 @@ import (
 	"io"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/metrics"
+	"kptv-proxy/work/types"
+	bbuffer "kptv-proxy/work/buffer"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -90,7 +92,10 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	}()
 
 	var totalBytes int64
-	buffer := make([]byte, 64*1024)
+	// Create a buffer pool instance and use it properly
+    bufferPool := bbuffer.NewBufferPool(64 * 1024)
+    buf := bufferPool.Get()
+    defer bufferPool.Put(buf)
 	lastActivityUpdate := time.Now()
 	lastMetricUpdate := time.Now()
 	consecutiveErrors := 0
@@ -107,7 +112,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 		}
 
 		clientCount := 0
-		r.Clients.Range(func(_, _ interface{}) bool {
+		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 			clientCount++
 			return true
 		})
@@ -119,9 +124,9 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 			return totalBytes > 1024*1024, totalBytes
 		}
 
-		n, err := stdout.Read(buffer)
+		n, err := stdout.Read(buf)
 		if n > 0 {
-			data := buffer[:n]
+			data := buf[:n]
 
 			if !r.SafeBufferWrite(data) {
 				consecutiveErrors++
