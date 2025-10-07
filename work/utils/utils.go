@@ -96,6 +96,7 @@ func SanitizeChannelName(name string) string {
 		"*":  "_", // Replace asterisks which are wildcard characters in many contexts
 		"<":  "_", // Replace less-than signs which are HTML tag delimiters
 		">":  "_", // Replace greater-than signs which are HTML tag delimiters
+		"+":  "_",
 	}
 
 	// Apply all character replacements using the defined mapping

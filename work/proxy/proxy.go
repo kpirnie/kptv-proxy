@@ -17,6 +17,7 @@ import (
 
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -601,6 +602,11 @@ func (sp *StreamProxy) RestreamCleanup() {
 // Returns:
 //   - string: original channel name for channel store lookup, or safeName if not found
 func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
+	
+	// Decode URL encoding first
+	if decoded, err := url.QueryUnescape(safeName); err == nil {
+		safeName = decoded
+	}
 
 	// Attempt direct resolution with simple underscore-to-space conversion
 	simpleName := strings.ReplaceAll(safeName, "_", " ")
@@ -614,12 +620,11 @@ func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 		name := key.(string)
 		if utils.SanitizeChannelName(name) == safeName {
 			foundName = name
-			return false // Stop iteration when match found
+			return false
 		}
 		return true
 	})
 
-	// Return found name or original safe name if no match found
 	if foundName != "" {
 		return foundName
 	}
