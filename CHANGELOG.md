@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v]
+## [v10072025.15]
 
 * Implement more efficient caching methodologies
 * Cache XC API Responses
