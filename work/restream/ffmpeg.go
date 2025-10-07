@@ -93,7 +93,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 
 	var totalBytes int64
 	// Create a buffer pool instance and use it properly
-    bufferPool := bbuffer.NewBufferPool(64 * 1024)
+    bufferPool := bbuffer.NewBufferPool(32 * 1024)
     buf := bufferPool.Get()
     defer bufferPool.Put(buf)
 	lastActivityUpdate := time.Now()

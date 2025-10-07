@@ -495,7 +495,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	}
 
 	// Create a buffer pool instance and use it properly
-    bufferPool := bbuffer.NewBufferPool(64 * 1024)
+    bufferPool := bbuffer.NewBufferPool(32 * 1024)
     buf := bufferPool.Get()
     defer bufferPool.Put(buf)
     totalBytes := int64(0)
