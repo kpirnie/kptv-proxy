@@ -187,12 +187,11 @@ func (sp *StreamProxy) ImportStreams() {
 				channelName := stream.Name
 
 				// Create or retrieve channel object for this channel name
-				actual, _ := newChannels.LoadOrStore(channelName, &types.Channel{
+				channel, _ := newChannels.LoadOrStore(channelName, &types.Channel{
 					Name:                 channelName,
 					Streams:              []*types.Stream{},
 					PreferredStreamIndex: 0,
 				})
-				channel := actual.(*types.Channel)
 
 				// Thread-safe append of stream to channel's stream list
 				channel.Mu.Lock()
@@ -222,16 +221,15 @@ func (sp *StreamProxy) ImportStreams() {
 
 	// Finalize imported channels with sorting and preference preservation
 	count := 0
-	newChannels.Range(func(key, value interface{}) bool {
-		channelName := key.(string)
-		channel := value.(*types.Channel)
+	newChannels.Range(func(key string, value *types.Channel) bool {
+		channelName := key
+		channel := value
 
 		// Apply configured sorting rules for predictable stream ordering
 		parser.SortStreams(channel.Streams, sp.Config, channelName)
 
 		// Preserve existing preferred stream index from previous imports
-		if existing, exists := sp.Channels.Load(channelName); exists {
-			existingChannel := existing.(*types.Channel)
+		if existingChannel, exists := sp.Channels.Load(channelName); exists {
 			existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
 			atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
 		}
@@ -513,13 +511,13 @@ func (sp *StreamProxy) RestreamCleanup() {
 
 				} else {
 					clientCount := 0
-					channel.Restreamer.Clients.Range(func(ckey, cvalue interface{}) bool {
-						client := cvalue.(*types.RestreamClient)
+					channel.Restreamer.Clients.Range(func(ckey string, cvalue *types.RestreamClient) bool {
+						client := cvalue
 						lastSeen := client.LastSeen.Load()
 
 						if now-lastSeen > 600 {
 							if sp.Config.Debug {
-								sp.Logger.Printf("Removing inactive client: %s (last seen %d seconds ago)", ckey.(string), now-lastSeen)
+								sp.Logger.Printf("Removing inactive client: %s (last seen %d seconds ago)", ckey, now-lastSeen)
 							}
 							channel.Restreamer.Clients.Delete(ckey)
 

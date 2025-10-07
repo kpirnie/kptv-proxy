@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -354,7 +353,7 @@ func (sw *StreamWatcher) checkStreamHealth() {
 		timeSinceActivity := time.Now().Unix() - lastActivity
 
 		clientCount := 0
-		sw.restreamer.Clients.Range(func(_, _ interface{}) bool {
+		sw.restreamer.Clients.Range(func(key string, value *types.RestreamClient) bool {
 			clientCount++
 			return true
 		})
@@ -729,7 +728,7 @@ func (sw *StreamWatcher) triggerStreamSwitch(reason string) {
 
 	// Verify client presence before performing potentially disruptive switch operation
 	clientCount := 0
-	sw.restreamer.Clients.Range(func(_, _ interface{}) bool {
+	sw.restreamer.Clients.Range(func(key string, value *types.RestreamClient) bool {
 		clientCount++
 		return true
 	})
@@ -793,7 +792,7 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 
 	// Verify client connections before restart operation
 	clientCount := 0
-	sw.restreamer.Clients.Range(func(_, _ interface{}) bool {
+	sw.restreamer.Clients.Range(func(key string, value *types.RestreamClient) bool {
 		clientCount++
 		return true
 	})
