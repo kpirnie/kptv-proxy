@@ -8,6 +8,7 @@ import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
+	"kptv-proxy/work/cache"
 	"log"
 	"net/http"
 	"time"
@@ -71,9 +72,21 @@ type XCVODStream struct {
 //
 // Returns:
 //   - []*types.Stream: aggregated collection of streams from all three API endpoints
-func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []*types.Stream {
+func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
 	if cfg.Debug {
 		logger.Printf("Parsing Xtreme Codes API from %s with optimized processing", utils.LogURL(cfg, source.URL))
+	}
+
+	// Check cache first
+	cacheKey := fmt.Sprintf("xc:%s:%s:%s", source.URL, source.Username, source.Password)
+	if cached, found := cache.GetXCData(cacheKey); found {
+		if cfg.Debug {
+			logger.Printf("[XC_CACHE_HIT] Using cached XC API data for %s", source.Name)
+		}
+		var allStreams []*types.Stream
+		if err := json.Unmarshal([]byte(cached), &allStreams); err == nil {
+			return allStreams
+		}
 	}
 
 	// Create a context with timeout for the entire parsing operation
@@ -290,6 +303,20 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 
 	if cfg.Debug {
 		logger.Printf("[XC_DEBUG] XC API parsing complete: %d total streams kept, %d filtered out", filteredCount, skippedCount)
+	}
+
+	// make sure we have all streams
+	if len(allStreams) > 0 {
+
+		// make sure we have data
+		if data, err := json.Marshal(allStreams); err == nil {
+
+			// set to the cache
+			cache.SetXCData(cacheKey, string(data))
+			if cfg.Debug {
+				logger.Printf("[XC_CACHE_SET] Cached %d streams for %s", len(allStreams), source.Name)
+			}
+		}
 	}
 
 	return allStreams

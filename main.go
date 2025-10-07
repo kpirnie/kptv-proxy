@@ -54,8 +54,9 @@ func main() {
 	defer workerPool.Release()
 	defer bufferPool.Cleanup()
 
-	// Initialize cache
+	// Initialize cache and defer killing it.
 	cacheInstance := cache.NewCache(cfg.CacheDuration)
+	defer cacheInstance.Close()
 
 	// Create proxy instance
 	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, cacheInstance)

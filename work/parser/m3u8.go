@@ -10,11 +10,13 @@ import (
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"kptv-proxy/work/streamorder"
+	"kptv-proxy/work/cache"
 	"log"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
+	"encoding/json"
 
 	"github.com/grafana/regexp"
 	"github.com/grafov/m3u8"
@@ -83,9 +85,23 @@ func classifyStreamContent(streamName, streamURL string, existingGroup string) s
 //
 // Returns:
 //   - []*types.Stream: slice of parsed stream objects, or nil if parsing fails completely
-func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []*types.Stream {
+// work/parser/m3u8.go - replace the entire ParseM3U8 function around line 25
+
+func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
 	if cfg.Debug {
 		logger.Printf("Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
+	}
+
+	// Check cache first
+	cacheKey := fmt.Sprintf("m3u8:%s", source.URL)
+	if cached, found := cache.GetXCData(cacheKey); found {
+		if cfg.Debug {
+			logger.Printf("[M3U8_CACHE_HIT] Using cached M3U8 data for %s", source.Name)
+		}
+		var streams []*types.Stream
+		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
+			return streams
+		}
 	}
 
 	// Apply rate limiting before making request
@@ -140,7 +156,19 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 		if cfg.Debug {
 			logger.Printf("Successfully parsed with grafov parser: %s", utils.LogURL(cfg, source.URL))
 		}
-		return ParseWithGrafov(playlist, listType, source, cfg, logger)
+		streams := ParseWithGrafov(playlist, listType, source, cfg, logger, cache)
+		
+		// Cache the results
+		if len(streams) > 0 {
+			if data, err := json.Marshal(streams); err == nil {
+				cache.SetXCData(cacheKey, string(data))
+				if cfg.Debug {
+					logger.Printf("[M3U8_CACHE_SET] Cached %d streams for %s", len(streams), source.Name)
+				}
+			}
+		}
+		
+		return streams
 	}
 
 	// Log grafov parser failure and prepare for fallback parsing
@@ -189,7 +217,19 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 	}
 
 	// Execute custom fallback parser on fresh response body
-	return ParseM3U8Fallback(resp2.Body, source, cfg, logger)
+	streams := ParseM3U8Fallback(resp2.Body, source, cfg, logger)
+	
+	// Cache the results
+	if len(streams) > 0 {
+		if data, err := json.Marshal(streams); err == nil {
+			cache.SetXCData(cacheKey, string(data))
+			if cfg.Debug {
+				logger.Printf("[M3U8_CACHE_SET] Cached %d streams for %s", len(streams), source.Name)
+			}
+		}
+	}
+	
+	return streams
 }
 
 // ParseWithGrafov processes a successfully parsed M3U8 playlist using the grafov/m3u8 library,
@@ -211,8 +251,11 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 //
 // Returns:
 //   - []*types.Stream: slice of Stream objects extracted from the playlist variants or media
-func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *config.SourceConfig, cfg *config.Config, logger *log.Logger) []*types.Stream {
+func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *config.SourceConfig, cfg *config.Config, logger *log.Logger, cache *cache.Cache) []*types.Stream {
 	var streams []*types.Stream
+
+	// setup the cache key
+	cacheKey := fmt.Sprintf("m3u8:%s", source.URL)
 
 	switch listType {
 	case m3u8.MEDIA:
@@ -276,6 +319,20 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 
 	if cfg.Debug {
 		logger.Printf("Grafov parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
+	}
+
+	// make sure there's streams
+	if len(streams) > 0 {
+
+		// if we have data
+		if data, err := json.Marshal(streams); err == nil {
+
+			// set the data to cache
+			cache.SetXCData(cacheKey, string(data))
+			if cfg.Debug {
+				logger.Printf("[M3U8_CACHE_SET] Cached %d streams for %s", len(streams), source.Name)
+			}
+		}
 	}
 
 	return streams

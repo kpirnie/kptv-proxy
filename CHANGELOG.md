@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v]
+
+* Implement more efficient caching methodologies
+* Cache XC API Responses
+
+
 ## [v10072025.01]
 
 * Add a Scroll To Top button to footer of admin

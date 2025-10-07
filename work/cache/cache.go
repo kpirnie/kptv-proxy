@@ -1,111 +1,64 @@
+// work/cache/cache.go
 package cache
 
 import (
-	"sync"
 	"time"
+
+	"github.com/dgraph-io/ristretto/v2"
 )
 
-// Cache provides a thread-safe in-memory cache with time-based expiration.
-// It maintains separate cache stores for M3U8 data and channel data, and
-// supports automatic periodic clearing of expired entries.
+// Cache provides a thread-safe in-memory cache with time-based expiration using Ristretto.
 type Cache struct {
-	m3u8Cache    map[string]cacheEntry // Cache for M3U8 playlist data, keyed by identifier
-	channelCache map[string]cacheEntry // Cache for channel metadata, keyed by identifier
-	mu           sync.RWMutex          // Read-write mutex for concurrent safe access
-	duration     time.Duration         // Expiration duration for each cache entry
-	lastClear    time.Time             // Timestamp when the cache was last fully cleared
-}
-
-// cacheEntry represents a single cached item with its data and creation timestamp.
-type cacheEntry struct {
-	data      any       // The cached data payload (string for M3U8, struct for channels, etc.)
-	timestamp time.Time // When this entry was inserted into the cache
+	cache    *ristretto.Cache[string, string]
+	duration time.Duration
 }
 
 // NewCache creates and returns a new Cache instance with the specified expiration duration.
-// The cache is initialized with empty stores and is ready for immediate use.
-//
-// Parameters:
-//   - duration: how long entries are considered valid before expiring
-//
-// Returns:
-//   - *Cache: pointer to a new Cache object
 func NewCache(duration time.Duration) *Cache {
+	cache, err := ristretto.NewCache(&ristretto.Config[string, string]{
+		NumCounters: 1e7,     // number of keys to track frequency of (10M)
+		MaxCost:     1 << 30, // maximum cost of cache (1GB)
+		BufferItems: 64,      // number of keys per Get buffer
+	})
+	if err != nil {
+		panic(err)
+	}
+
 	return &Cache{
-		m3u8Cache:    make(map[string]cacheEntry), // initialize empty M3U8 cache
-		channelCache: make(map[string]cacheEntry), // initialize empty channel cache
-		duration:     duration,                    // set expiration duration
-		lastClear:    time.Now(),                  // record initialization time
+		cache:    cache,
+		duration: duration,
 	}
 }
 
 // GetM3U8 retrieves an M3U8 playlist from the cache by key.
-//
-// Behavior:
-//   - If the key exists and the entry has not expired → returns the cached string and true.
-//   - If the key is missing or expired → returns empty string and false.
-//
-// Parameters:
-//   - key: identifier for the cached M3U8 playlist
-//
-// Returns:
-//   - string: cached M3U8 playlist contents (if valid)
-//   - bool: true if entry exists and is not expired
 func (c *Cache) GetM3U8(key string) (string, bool) {
-
-	// acquire read lock for safe concurrent access and release it on return
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	entry, exists := c.m3u8Cache[key]
-
-	// Validate existence and expiration
-	if !exists || time.Since(entry.timestamp) > c.duration {
-		return "", false
-	}
-
-	// Safe to return as string since SetM3U8 enforces type
-	return entry.data.(string), true
+	value, found := c.cache.Get(key)
+	return value, found
 }
 
 // SetM3U8 stores an M3U8 playlist in the cache with the specified key.
-// The entry is stamped with the current time for expiration tracking.
-//
-// Parameters:
-//   - key: identifier for the playlist
-//   - value: the M3U8 playlist content to cache
 func (c *Cache) SetM3U8(key, value string) {
-
-	// acquire write lock for mutation and ensure its released
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Insert/overwrite entry with current timestamp
-	c.m3u8Cache[key] = cacheEntry{
-		data:      value,
-		timestamp: time.Now(),
-	}
+	c.cache.SetWithTTL(key, value, int64(len(value)), c.duration)
 }
 
-// ClearIfNeeded performs periodic cache clearance if the configured duration has elapsed
-// since the last clearance. This method completely clears both cache stores and
-// resets the last clearance timestamp.
-//
-// It is thread-safe and ensures no race conditions with concurrent readers/writers.
+// ClearIfNeeded performs cache clearance - with Ristretto this is handled automatically by TTL
 func (c *Cache) ClearIfNeeded() {
+	// Ristretto handles expiration automatically via TTL
+	// This method is kept for API compatibility
+}
 
-	// acquire write lock since we are resetting state and release it
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// Close closes the cache and frees resources
+func (c *Cache) Close() {
+	c.cache.Close()
+}
 
-	// If enough time has passed since last clear, reset the caches
-	if time.Since(c.lastClear) > c.duration {
+// GetXCData retrieves XC API response data from cache
+func (c *Cache) GetXCData(key string) (string, bool) {
+	value, found := c.cache.Get(key)
+	return value, found
+}
 
-		// Replace caches with fresh empty maps
-		c.m3u8Cache = make(map[string]cacheEntry)
-		c.channelCache = make(map[string]cacheEntry)
-
-		// Update lastClear timestamp
-		c.lastClear = time.Now()
-	}
+// SetXCData stores XC API response data in cache
+func (c *Cache) SetXCData(key, value string) {
+	c.cache.SetWithTTL(key, value, int64(len(value)), c.duration)
 }

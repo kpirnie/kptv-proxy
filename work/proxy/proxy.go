@@ -161,11 +161,11 @@ func (sp *StreamProxy) ImportStreams() {
 			if src.Username != "" && src.Password != "" {
 
 				// Use Xtreme Codes API parser when credentials are available
-				streams = parser.ParseXtremeCodesAPI(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter)
+				streams = parser.ParseXtremeCodesAPI(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter, sp.Cache)
 			} else {
 
 				// Use standard M3U8 parser
-				streams = parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter)
+				streams = parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter, sp.Cache)
 			}
 
 			// Apply content filtering
