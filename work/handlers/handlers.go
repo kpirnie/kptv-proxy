@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"kptv-proxy/work/proxy"
+	"kptv-proxy/work/middleware"
 	"net/http"
 
 	"github.com/gorilla/mux"
+	
 )
 
 // HandlePlaylist returns an HTTP handler function that generates a complete M3U8 playlist
@@ -23,9 +25,9 @@ import (
 //   - http.HandlerFunc: HTTP handler that processes playlist requests and writes M3U8 responses
 func HandlePlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		// Generate playlist with no group filtering (empty string = include all channels)
-		sp.GeneratePlaylist(w, r, "")
+		middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
+			sp.GeneratePlaylist(w, r, "")
+		})(w, r)
 	}
 }
 
@@ -47,13 +49,11 @@ func HandlePlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 //   - http.HandlerFunc: HTTP handler that processes group playlist requests and writes filtered M3U8 responses
 func HandleGroupPlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		// Extract group name from URL path variables
-		vars := mux.Vars(r)
-		group := vars["group"]
-
-		// Generate playlist filtered by the specified group
-		sp.GeneratePlaylist(w, r, group)
+		middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
+			vars := mux.Vars(r)
+			group := vars["group"]
+			sp.GeneratePlaylist(w, r, group)
+		})(w, r)
 	}
 }
 
@@ -80,18 +80,11 @@ func HandleGroupPlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 //   - http.HandlerFunc: HTTP handler that processes stream requests and manages client connections
 func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		// Extract URL-safe channel name from path variables
 		vars := mux.Vars(r)
 		safeName := vars["channel"]
-
-		// Resolve safe name back to original channel name using internal mapping
 		channelName := sp.FindChannelBySafeName(safeName)
-
-		// Attempt to load channel from the concurrent channel store
 		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
-			// Channel not found - log for debugging and return 404
 			if sp.Config.Debug {
 				sp.Logger.Printf("Channel not found: %s", channelName)
 			}
@@ -99,12 +92,10 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		// Log streaming mode selection for debugging
 		if sp.Config.Debug {
 			sp.Logger.Printf("Using RESTREAMING mode for channel: %s", channelName)
 		}
 
-		// Initiate restreaming client handling - this blocks until client disconnects
 		sp.HandleRestreamingClient(w, r, channel)
 	}
 }

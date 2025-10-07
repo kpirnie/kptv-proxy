@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v10072025.01]
+
+* Add a Scroll To Top button to footer of admin
+* Add compression methods for json and m3u responses
+* Fix sync MAP issue
+
 ## [v10072025]
 
 * Fixed channel name URL encoding for channels containing special characters like "+" (e.g., "MGM+ Hits", "MGM+ Marquee")

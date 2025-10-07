@@ -949,3 +949,27 @@ body.dragging .stream-card:hover {
 .stream-stats-badges .uk-text-meta {
     font-size: 0.75rem;
 }
+
+.in-totop {
+    font-size: 15px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: 45px;
+    height: 45px;
+    position: fixed;
+    right: 25px;
+    bottom: 25px;
+    background-color:var(--uk-warning);
+    border-radius: 50%;
+    opacity: 0;
+}
+
+.in-totop.uk-animation-slide-top {
+    opacity: 1;
+}
+
+a.in-totop {
+    color: #fff;
+    text-decoration: none;
+}

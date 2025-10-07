@@ -21,6 +21,7 @@ import (
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"kptv-proxy/work/streamorder"
+	"kptv-proxy/work/middleware"
 
 	"github.com/gorilla/mux"
 )
@@ -115,18 +116,18 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 	router.HandleFunc("/admin", handleAdminInterface).Methods("GET")
 	router.HandleFunc("/admin/", handleAdminInterface).Methods("GET")
 
-	router.HandleFunc("/api/config", corsMiddleware(handleGetConfig(proxyInstance))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/config", corsMiddleware(middleware.GzipMiddleware(handleGetConfig(proxyInstance)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/config", corsMiddleware(handleSetConfig(proxyInstance))).Methods("POST", "OPTIONS")
-	router.HandleFunc("/api/stats", corsMiddleware(handleGetStats(proxyInstance))).Methods("GET", "OPTIONS")
-	router.HandleFunc("/api/channels", corsMiddleware(handleGetAllChannels(proxyInstance))).Methods("GET", "OPTIONS")
-	router.HandleFunc("/api/channels/active", corsMiddleware(handleGetActiveChannels(proxyInstance))).Methods("GET", "OPTIONS")
-	router.HandleFunc("/api/channels/{channel}/streams", corsMiddleware(handleGetChannelStreams(proxyInstance))).Methods("GET", "OPTIONS")
-	router.HandleFunc("/api/channels/{channel}/stats", corsMiddleware(handleGetChannelStats(proxyInstance))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/stats", corsMiddleware(middleware.GzipMiddleware(handleGetStats(proxyInstance)))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels", corsMiddleware(middleware.GzipMiddleware(handleGetAllChannels(proxyInstance)))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels/active", corsMiddleware(middleware.GzipMiddleware(handleGetActiveChannels(proxyInstance)))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/streams", corsMiddleware(middleware.GzipMiddleware(handleGetChannelStreams(proxyInstance)))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/stats", corsMiddleware(middleware.GzipMiddleware(handleGetChannelStats(proxyInstance)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/stream", corsMiddleware(handleSetChannelStream(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/kill-stream", corsMiddleware(handleKillStream(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/revive-stream", corsMiddleware(handleReviveStream(proxyInstance))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/order", corsMiddleware(handleSetChannelOrder(proxyInstance))).Methods("POST", "OPTIONS")
-	router.HandleFunc("/api/logs", corsMiddleware(handleGetLogs)).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/logs", corsMiddleware(middleware.GzipMiddleware(handleGetLogs))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/logs", corsMiddleware(handleClearLogs)).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/api/restart", corsMiddleware(handleRestart)).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/watcher/toggle", corsMiddleware(handleToggleWatcher(proxyInstance))).Methods("POST", "OPTIONS")

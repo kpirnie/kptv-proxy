@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"go.uber.org/ratelimit"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 // Restream wraps types.Restreamer to allow adding methods in this package.
@@ -61,6 +62,10 @@ func NewRestreamer(channel *types.Channel, bufferSize int64, logger *log.Logger,
 // - w: the HTTP response writer
 // - flusher: the HTTP flusher to push data immediately
 func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flusher) {
+	if r.Clients == nil {
+		r.Clients = xsync.NewMapOf[string, *types.RestreamClient]()
+	}
+
 	client := &types.RestreamClient{
 		Id:      id,
 		Writer:  w,

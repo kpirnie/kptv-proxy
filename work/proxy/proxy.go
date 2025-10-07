@@ -645,8 +645,6 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	channel.Mu.Lock()
 	var restreamer *restream.Restream
 	if channel.Restreamer == nil {
-
-		// Get rate limiter for the first stream's source
 		var rateLimiter ratelimit.Limiter
 		if len(channel.Streams) > 0 {
 			rateLimiter = sp.getRateLimiterForSource(channel.Streams[0].Source)
@@ -655,9 +653,12 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 		if sp.Config.Debug {
 			sp.Logger.Printf("[RESTREAM_NEW] Channel %s: Creating new restreamer with rate limiting", channel.Name)
 		}
-		restreamer = restream.NewRestreamer(channel, (sp.Config.BufferSizePerStream  * 1024 * 1024), sp.Logger, sp.HttpClient, sp.Config, rateLimiter)
+		restreamer = restream.NewRestreamer(channel, (sp.Config.BufferSizePerStream * 1024 * 1024), sp.Logger, sp.HttpClient, sp.Config, rateLimiter)
 		channel.Restreamer = restreamer.Restreamer
 	} else {
+		if channel.Restreamer.Clients == nil {
+			channel.Restreamer.Clients = xsync.NewMapOf[string, *types.RestreamClient]()
+		}
 		restreamer = &restream.Restream{Restreamer: channel.Restreamer}
 	}
 	channel.Mu.Unlock()

@@ -24,12 +24,27 @@ class KPTVAdmin {
         this.loadActiveChannels();
         this.loadAllChannels();
         this.loadLogs();
+        this.toTop();
 
         // Setup event listeners
         this.setupEventListeners();
 
         // Start auto-refresh
         this.startAutoRefresh();
+    }
+
+    // Back to top button
+    toTop( ) {
+        const inTop = document.querySelector( '.in-totop' );
+        if ( inTop ) {
+            window.addEventListener( 'scroll', function( ) {
+                setTimeout( function( ) {
+                    window.scrollY > 100 ? 
+                        ( inTop.style.opacity = 1, inTop.classList.add( "uk-animation-slide-top" ) ) : 
+                        ( inTop.style.opacity -= .1, inTop.classList.remove( "uk-animation-slide-top" ) );
+                }, 400 );
+            } );
+        }
     }
 
     // setup the event listeners
