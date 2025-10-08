@@ -74,21 +74,73 @@ type StreamProxy struct {
 // Returns:
 //   - *StreamProxy: fully initialized proxy instance ready for operation
 func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, cache *cache.Cache) *StreamProxy {
-	return &StreamProxy{
+	sp := &StreamProxy{
 		Config:                cfg,
-		Channels:              xsync.NewMapOf[string, *types.Channel](), // Initialize empty thread-safe channel store
+		Channels:              xsync.NewMapOf[string, *types.Channel](),
 		Cache:                 cache,
 		Logger:                logger,
 		BufferPool:            bufferPool,
 		HttpClient:            httpClient,
 		WorkerPool:            workerPool,
 		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(logger, cfg),
-		importStopChan:        make(chan bool, 1), // Buffered channel for non-blocking stop signals
+		importStopChan:        make(chan bool, 1),
 		WatcherManager:        watcher.NewWatcherManager(logger),
 		SourceRateLimiters:    make(map[string]ratelimit.Limiter),
 		rateLimiterMutex:      sync.RWMutex{},
 		FilterManager:         filter.NewFilterManager(),
 	}
+	
+	// Initialize all rate limiters upfront to avoid runtime overhead
+	sp.initializeRateLimiters()
+	
+	return sp
+}
+
+// initializeRateLimiters pre-creates all rate limiters during proxy initialization
+// to avoid the overhead of double-check locking and on-demand creation during
+// runtime. Each source gets a dedicated rate limiter based on its MaxConnections
+// configuration, with a default of 5 requests per second for unconfigured sources.
+func (sp *StreamProxy) initializeRateLimiters() {
+	for i := range sp.Config.Sources {
+		source := &sp.Config.Sources[i]
+		rateLimit := source.MaxConnections
+		if rateLimit <= 0 {
+			rateLimit = 5
+		}
+		limiter := ratelimit.New(rateLimit)
+		sp.SourceRateLimiters[source.URL] = limiter
+		
+		if sp.Config.Debug {
+			sp.Logger.Printf("[RATE_LIMITER] Created rate limiter for source %s: %d req/sec",
+				source.Name, rateLimit)
+		}
+	}
+}
+
+// channelBatch represents a snapshot of a channel name and its associated Channel object
+// for batch processing operations. This struct enables efficient iteration over channels
+// by capturing the map contents once, avoiding repeated concurrent map access overhead
+// and reducing lock contention during operations like playlist generation.
+type channelBatch struct {
+	name    string           // Channel identifier used for routing and display
+	channel *types.Channel   // Reference to the channel's stream collection and metadata
+}
+
+// getChannelBatch creates a snapshot of all channels in the proxy's channel store,
+// returning them as a slice for efficient batch processing. This method reduces
+// lock contention and improves performance by capturing the concurrent map contents
+// once rather than holding locks during expensive operations like playlist generation.
+// Pre-allocates capacity for 1000 channels to minimize slice growth overhead.
+//
+// Returns:
+//   - []channelBatch: slice containing all channels at the time of snapshot
+func (sp *StreamProxy) getChannelBatch() []channelBatch {
+	batch := make([]channelBatch, 0, 1000)
+	sp.Channels.Range(func(name string, ch *types.Channel) bool {
+		batch = append(batch, channelBatch{name, ch})
+		return true
+	})
+	return batch
 }
 
 // ImportStreams performs comprehensive stream discovery and aggregation from all configured
@@ -268,7 +320,6 @@ func (sp *StreamProxy) ImportStreams() {
 func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, groupFilter string) {
 	var seenClients sync.Map
 
-	// Track unique clients for debugging and monitoring purposes
 	if sp.Config.Debug {
 		clientKey := r.RemoteAddr + "-" + r.Header.Get("User-Agent")
 		if _, seen := seenClients.LoadOrStore(clientKey, true); !seen {
@@ -277,13 +328,11 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	// Construct cache key incorporating group filter for separate caching
 	cacheKey := "playlist"
 	if groupFilter != "" {
 		cacheKey = "playlist_" + strings.ToLower(groupFilter)
 	}
 
-	// Attempt to serve cached playlist if available and caching is enabled
 	if sp.Config.CacheEnabled {
 		if cached, ok := sp.Cache.GetM3U8(cacheKey); ok {
 			w.Header().Set("Content-Type", "application/x-mpegURL")
@@ -293,26 +342,24 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	// Build M3U8 playlist content using efficient string builder
+	channels := sp.getChannelBatch()
+	estimatedSize := len(channels) * 250
 	var playlist strings.Builder
-	playlist.WriteString("#EXTM3U\n") // Required M3U8 header
+	playlist.Grow(estimatedSize)
+	playlist.WriteString("#EXTM3U\n")
 
 	filteredCount := 0
-	totalCount := 0
 
-	// Iterate through all channels in the concurrent channel store
-	sp.Channels.Range(func(channelName string, channel *types.Channel) bool {
-		totalCount++
-
-		channel.Mu.RLock()
-		if len(channel.Streams) > 0 {
-			attrs := channel.Streams[0].Attributes
+	for _, ch := range channels {
+		ch.channel.Mu.RLock()
+		if len(ch.channel.Streams) > 0 {
+			attrs := ch.channel.Streams[0].Attributes
 
 			if groupFilter != "" {
 				channelGroup := sp.GetChannelGroup(attrs)
 				if !strings.EqualFold(channelGroup, groupFilter) {
-					channel.Mu.RUnlock()
-					return true
+					ch.channel.Mu.RUnlock()
+					continue
 				}
 			}
 
@@ -328,34 +375,30 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 				}
 			}
 
-			cleanName := strings.Trim(channelName, "\"")
+			cleanName := strings.Trim(ch.name, "\"")
 			playlist.WriteString(fmt.Sprintf(",%s\n", cleanName))
-			safeName := utils.SanitizeChannelName(channelName)
+			safeName := utils.SanitizeChannelName(ch.name)
 			proxyURL := fmt.Sprintf("%s/stream/%s", sp.Config.BaseURL, safeName)
 			playlist.WriteString(proxyURL + "\n")
 		}
-		channel.Mu.RUnlock()
-		return true
-	})
+		ch.channel.Mu.RUnlock()
+	}
 	
 	result := playlist.String()
 
-	// Cache the generated playlist for future requests
 	if sp.Config.CacheEnabled {
 		sp.Cache.SetM3U8(cacheKey, result)
 	}
 
-	// Set appropriate HTTP headers for M3U8 content
 	w.Header().Set("Content-Type", "application/x-mpegURL")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(result))
 
-	// Log playlist generation statistics for debugging
 	if sp.Config.Debug {
 		if groupFilter == "" {
-			sp.Logger.Printf("Generated playlist with %d channels", totalCount)
+			sp.Logger.Printf("Generated playlist with %d channels", len(channels))
 		} else {
-			sp.Logger.Printf("Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, totalCount)
+			sp.Logger.Printf("Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, len(channels))
 		}
 	}
 }
@@ -820,14 +863,26 @@ func (sp *StreamProxy) GetChannelNameFromStream(stream *types.Stream) string {
 	return stream.Name
 }
 
+// getRateLimiterForSource retrieves the pre-initialized rate limiter for a given source.
+// Since all rate limiters are created during proxy initialization, this is now a simple
+// map lookup with read-lock protection. Falls back to creating a limiter if source was
+// added dynamically after initialization (rare edge case).
+//
+// Parameters:
+//   - source: source configuration to get rate limiter for
+//
+// Returns:
+//   - ratelimit.Limiter: rate limiter for the source
 func (sp *StreamProxy) getRateLimiterForSource(source *config.SourceConfig) ratelimit.Limiter {
 	sp.rateLimiterMutex.RLock()
-	if limiter, exists := sp.SourceRateLimiters[source.URL]; exists {
-		sp.rateLimiterMutex.RUnlock()
+	limiter, exists := sp.SourceRateLimiters[source.URL]
+	sp.rateLimiterMutex.RUnlock()
+	
+	if exists {
 		return limiter
 	}
-	sp.rateLimiterMutex.RUnlock()
 
+	// Edge case: source was added after initialization (e.g., config reload)
 	sp.rateLimiterMutex.Lock()
 	defer sp.rateLimiterMutex.Unlock()
 
@@ -836,18 +891,17 @@ func (sp *StreamProxy) getRateLimiterForSource(source *config.SourceConfig) rate
 		return limiter
 	}
 
-	// Create rate limiter based on MaxConnections
-	// Use MaxConnections as requests per second (reasonable default)
+	// Create rate limiter for dynamically added source
 	rateLimit := source.MaxConnections
 	if rateLimit <= 0 {
-		rateLimit = 5 // Fallback default
+		rateLimit = 5
 	}
 
-	limiter := ratelimit.New(rateLimit)
+	limiter = ratelimit.New(rateLimit)
 	sp.SourceRateLimiters[source.URL] = limiter
 
 	if sp.Config.Debug {
-		sp.Logger.Printf("[RATE_LIMITER] Created rate limiter for source %s: %d req/sec",
+		sp.Logger.Printf("[RATE_LIMITER] Created rate limiter for dynamic source %s: %d req/sec",
 			source.Name, rateLimit)
 	}
 

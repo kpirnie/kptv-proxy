@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"kptv-proxy/work/types"
 	"os/exec"
+	"math/rand"
 	"strconv"
 	"strings"
 	"syscall"
@@ -16,9 +17,17 @@ func (r *Restream) StartStatsCollection() {
 }
 
 func (r *Restream) collectStreamStats() {
-	ticker := time.NewTicker(30 * time.Second)
+	interval := 5 * time.Minute  // Default to 5 minutes
+	if r.Config.Debug {
+		interval = 1 * time.Minute  // Only 1 min in debug
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	// Also add jitter to prevent thundering herd
+	jitter := time.Duration(rand.Intn(30)) * time.Second
+	time.Sleep(jitter)
+	
 	for {
 		select {
 		case <-r.Ctx.Done():

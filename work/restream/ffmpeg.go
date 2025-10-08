@@ -91,7 +91,9 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	}()
 
 	var totalBytes int64
-	buf := make([]byte, 32*1024) // 32KB for live streams
+	bufPtr := getStreamBuffer()
+	buf := *bufPtr
+	defer putStreamBuffer(bufPtr)
 	lastActivityUpdate := time.Now()
 	lastMetricUpdate := time.Now()
 	consecutiveErrors := 0

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v10082025.11]
+
+* Fix buffer memory leak
+* Fix HLS segment possible memory leak
+* Utilize xsync in buffer ranges
+* Tone down stream stat checker
+* Tone down watcher ffprobe usage
+* Fix redundant m3u caching
+* Batch XC API efficiency fix
+* Fix ratelimiter initialization
+* More efficient buffer creation per stream
+
 ## [v10082025.01]
 
 * Improve connection pooling

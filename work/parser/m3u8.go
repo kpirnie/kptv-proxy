@@ -85,14 +85,11 @@ func classifyStreamContent(streamName, streamURL string, existingGroup string) s
 //
 // Returns:
 //   - []*types.Stream: slice of parsed stream objects, or nil if parsing fails completely
-// work/parser/m3u8.go - replace the entire ParseM3U8 function around line 25
-
 func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
 	if cfg.Debug {
 		logger.Printf("Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
 	}
 
-	// Check cache first
 	cacheKey := fmt.Sprintf("m3u8:%s", source.URL)
 	if cached, found := cache.GetXCData(cacheKey); found {
 		if cfg.Debug {
@@ -104,7 +101,6 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 		}
 	}
 
-	// Apply rate limiting before making request
 	if rateLimiter != nil {
 		rateLimiter.Take()
 		if cfg.Debug {
@@ -112,7 +108,6 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 		}
 	}
 
-	// Create HTTP request with reasonable timeout for playlist fetching
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -125,7 +120,6 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 	}
 	req = req.WithContext(ctx)
 
-	// Execute request with source-specific authentication headers
 	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		if cfg.Debug {
@@ -134,7 +128,6 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 		return nil
 	}
 
-	// Ensure HTTP response body is always closed to prevent connection leaks
 	defer func() {
 		resp.Body.Close()
 		if cfg.Debug {
@@ -142,7 +135,6 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 		}
 	}()
 
-	// Reject non-200 HTTP responses as invalid playlists
 	if resp.StatusCode != http.StatusOK {
 		if cfg.Debug {
 			logger.Printf("HTTP error %d when fetching %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
@@ -150,76 +142,57 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 		return nil
 	}
 
-	// Attempt primary parsing using grafov/m3u8 library
+	var streams []*types.Stream
 	playlist, listType, err := m3u8.DecodeFrom(bufio.NewReader(resp.Body), true)
 	if err == nil {
 		if cfg.Debug {
 			logger.Printf("Successfully parsed with grafov parser: %s", utils.LogURL(cfg, source.URL))
 		}
-		streams := ParseWithGrafov(playlist, listType, source, cfg, logger, cache)
-		
-		// Cache the results
-		if len(streams) > 0 {
-			if data, err := json.Marshal(streams); err == nil {
-				cache.SetXCData(cacheKey, string(data))
-				if cfg.Debug {
-					logger.Printf("[M3U8_CACHE_SET] Cached %d streams for %s", len(streams), source.Name)
-				}
+		streams = ParseWithGrafov(playlist, listType, source, cfg, logger)
+	} else {
+		if cfg.Debug {
+			logger.Printf("Grafov parser failed, using fallback parser: %v", err)
+		}
+
+		resp.Body.Close()
+
+		req2, err := http.NewRequest("GET", source.URL, nil)
+		if err != nil {
+			if cfg.Debug {
+				logger.Printf("Error creating fallback request for %s: %v", utils.LogURL(cfg, source.URL), err)
 			}
+			return nil
 		}
-		
-		return streams
-	}
+		req2 = req2.WithContext(ctx)
 
-	// Log grafov parser failure and prepare for fallback parsing
-	if cfg.Debug {
-		logger.Printf("Grafov parser failed, using fallback parser: %v", err)
-	}
+		resp2, err := httpClient.DoWithHeaders(req2, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
+		if err != nil {
+			if cfg.Debug {
+				logger.Printf("Error re-fetching for fallback parser: %v", err)
+			}
+			return nil
+		}
+		defer func() {
+			resp2.Body.Close()
+			if cfg.Debug {
+				logger.Printf("[PARSE_FALLBACK_CLOSE] Closed fallback connection for: %s", utils.LogURL(cfg, source.URL))
+			}
+		}()
 
-	// Close current response body before making new request
-	resp.Body.Close()
+		if resp2.StatusCode != http.StatusOK {
+			if cfg.Debug {
+				logger.Printf("HTTP error %d on fallback fetch from %s", resp2.StatusCode, utils.LogURL(cfg, source.URL))
+			}
+			return nil
+		}
 
-	// Create second request for fallback parser (grafov consumed the first body)
-	req2, err := http.NewRequest("GET", source.URL, nil)
-	if err != nil {
 		if cfg.Debug {
-			logger.Printf("Error creating fallback request for %s: %v", utils.LogURL(cfg, source.URL), err)
+			logger.Printf("Using fallback parser for: %s", utils.LogURL(cfg, source.URL))
 		}
-		return nil
-	}
-	req2 = req2.WithContext(ctx)
 
-	// Execute fallback request with same headers as primary attempt
-	resp2, err := httpClient.DoWithHeaders(req2, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
-	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Error re-fetching for fallback parser: %v", err)
-		}
-		return nil
-	}
-	defer func() {
-		resp2.Body.Close()
-		if cfg.Debug {
-			logger.Printf("[PARSE_FALLBACK_CLOSE] Closed fallback connection for: %s", utils.LogURL(cfg, source.URL))
-		}
-	}()
-
-	// Verify second request also succeeded
-	if resp2.StatusCode != http.StatusOK {
-		if cfg.Debug {
-			logger.Printf("HTTP error %d on fallback fetch from %s", resp2.StatusCode, utils.LogURL(cfg, source.URL))
-		}
-		return nil
+		streams = ParseM3U8Fallback(resp2.Body, source, cfg, logger)
 	}
 
-	if cfg.Debug {
-		logger.Printf("Using fallback parser for: %s", utils.LogURL(cfg, source.URL))
-	}
-
-	// Execute custom fallback parser on fresh response body
-	streams := ParseM3U8Fallback(resp2.Body, source, cfg, logger)
-	
-	// Cache the results
 	if len(streams) > 0 {
 		if data, err := json.Marshal(streams); err == nil {
 			cache.SetXCData(cacheKey, string(data))
@@ -228,7 +201,7 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 			}
 		}
 	}
-	
+
 	return streams
 }
 
@@ -251,16 +224,11 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 //
 // Returns:
 //   - []*types.Stream: slice of Stream objects extracted from the playlist variants or media
-func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *config.SourceConfig, cfg *config.Config, logger *log.Logger, cache *cache.Cache) []*types.Stream {
+func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *config.SourceConfig, cfg *config.Config, logger *log.Logger) []*types.Stream {
 	var streams []*types.Stream
-
-	// setup the cache key
-	cacheKey := fmt.Sprintf("m3u8:%s", source.URL)
 
 	switch listType {
 	case m3u8.MEDIA:
-
-		// Media playlists contain segments - use the original playlist URL as the stream
 		stream := &types.Stream{
 			URL:        source.URL,
 			Name:       "Direct Stream",
@@ -268,22 +236,18 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 			Attributes: make(map[string]string),
 		}
 
-		// Apply content classification
 		group := classifyStreamContent(stream.Name, stream.URL, "")
 		stream.Attributes["group-title"] = group
 
 		streams = append(streams, stream)
 
 	case m3u8.MASTER:
-
-		// Master playlists contain multiple variants - extract each as a separate stream
 		masterpl := playlist.(*m3u8.MasterPlaylist)
 		for _, variant := range masterpl.Variants {
 			if variant == nil {
-				break // End of variants list
+				break
 			}
 
-			// Generate meaningful name from variant metadata
 			name := variant.Name
 			if name == "" && variant.Resolution != "" {
 				name = fmt.Sprintf("Stream_%s", variant.Resolution)
@@ -291,7 +255,6 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 				name = fmt.Sprintf("Stream_%d", variant.Bandwidth)
 			}
 
-			// Create stream object with variant information
 			stream := &types.Stream{
 				URL:        variant.URI,
 				Name:       name,
@@ -299,17 +262,14 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 				Attributes: make(map[string]string),
 			}
 
-			// Extract and store bandwidth information for quality selection
 			if variant.Bandwidth > 0 {
 				stream.Attributes["bandwidth"] = fmt.Sprintf("%d", variant.Bandwidth)
 			}
 
-			// Store resolution for display and quality selection
 			if variant.Resolution != "" {
 				stream.Attributes["resolution"] = variant.Resolution
 			}
 
-			// Apply content classification
 			group := classifyStreamContent(stream.Name, stream.URL, "")
 			stream.Attributes["group-title"] = group
 
@@ -319,20 +279,6 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 
 	if cfg.Debug {
 		logger.Printf("Grafov parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
-	}
-
-	// make sure there's streams
-	if len(streams) > 0 {
-
-		// if we have data
-		if data, err := json.Marshal(streams); err == nil {
-
-			// set the data to cache
-			cache.SetXCData(cacheKey, string(data))
-			if cfg.Debug {
-				logger.Printf("[M3U8_CACHE_SET] Cached %d streams for %s", len(streams), source.Name)
-			}
-		}
 	}
 
 	return streams

@@ -33,13 +33,16 @@ func NewBufferPool(bufferSize int64) *BufferPool {
 // and minimal allocation overhead. Returns a fresh copy of a buffer with the configured
 // size, safe for concurrent use without interference from other buffer consumers.
 func (bp *BufferPool) Get() *bytebufferpool.ByteBuffer {
-	buf := bp.pool.Get()
-	// Ensure buffer has correct capacity
-	if cap(buf.B) < bp.bufferSize {
-		buf.B = make([]byte, 0, bp.bufferSize)
-	}
-	buf.Reset() // Clear any existing data
-	return buf
+    buf := bp.pool.Get()
+    buf.Reset() // Reset first
+    // Only grow if necessary, don't replace
+    if cap(buf.B) < bp.bufferSize {
+        buf.B = buf.B[:0]
+        if cap(buf.B) < bp.bufferSize {
+            buf.B = make([]byte, 0, bp.bufferSize)
+        }
+    }
+    return buf
 }
 
 // Put returns a byte slice to the pool. The valyala/bytebufferpool implementation
@@ -156,7 +159,7 @@ func (rb *RingBuffer) Reset() {
 
     rb.writePos.Store(0)
 
-    // Fix: Remove type-specific range function
+    // Use interface{} types for Range callback
     rb.readPos.Range(func(key, value interface{}) bool {
         rb.readPos.Delete(key)
         return true
@@ -173,7 +176,7 @@ func (rb *RingBuffer) Destroy() {
     rb.mu.Lock()
     defer rb.mu.Unlock()
 
-    // Fix: Remove type-specific range function  
+    // Use interface{} types for Range callback
     rb.readPos.Range(func(key, value interface{}) bool {
         rb.readPos.Delete(key)
         return true

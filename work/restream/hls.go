@@ -138,6 +138,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 
 	totalBytes := int64(0)
 	segmentTracker := NewSegmentTracker(20)
+	defer segmentTracker.Clear()
 	consecutiveEmptyRefresh := 0
 	maxEmptyRefresh := 10
 	lastSuccessfulSegment := time.Now()
@@ -493,8 +494,11 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	// Use 32KB buffer for live streams
-	buf := make([]byte, 32*1024)
+	// setup the buffer
+	bufPtr := getStreamBuffer()
+	buf := *bufPtr
+	defer putStreamBuffer(bufPtr)
+	
 	totalBytes := int64(0)
 	lastActivityUpdate := time.Now()
 	consecutiveErrors := 0

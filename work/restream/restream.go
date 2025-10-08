@@ -17,12 +17,43 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"go.uber.org/ratelimit"
 	"github.com/puzpuzpuz/xsync/v3"
 )
+
+// streamBufferPool provides a sync.Pool for reusing 32KB buffers during stream
+// processing operations. This reduces memory allocations and GC pressure by
+// recycling buffers across multiple stream reads instead of allocating new
+// buffers for each read operation.
+var streamBufferPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
+
+// getStreamBuffer retrieves a 32KB buffer from the pool for stream processing.
+// The buffer should be returned to the pool via putStreamBuffer when no longer needed.
+//
+// Returns:
+//   - *[]byte: pointer to a 32KB byte slice ready for use
+func getStreamBuffer() *[]byte {
+	return streamBufferPool.Get().(*[]byte)
+}
+
+// putStreamBuffer returns a buffer to the pool for reuse. The buffer contents
+// are not cleared, so callers should not assume zero-initialized buffers when
+// retrieving from the pool.
+//
+// Parameters:
+//   - buf: pointer to buffer to return to the pool
+func putStreamBuffer(buf *[]byte) {
+	streamBufferPool.Put(buf)
+}
 
 // Restream wraps types.Restreamer to allow adding methods in this package.
 // This enables higher-level restreaming logic without polluting the base struct.
@@ -841,7 +872,9 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 	}
 
 	var totalBytes int64
-	buf := make([]byte, 32*1024) // 32KB for live streams
+	bufPtr := getStreamBuffer()
+	buf := *bufPtr
+	defer putStreamBuffer(bufPtr)
 	lastActivityUpdate := time.Now()
 	lastMetricUpdate := time.Now()
 	consecutiveErrors := 0
@@ -1189,7 +1222,9 @@ func (r *Restream) streamSingleFallbackLoop(url string) {
 		return
 	}
 
-	buf := make([]byte, 32*1024)
+	bufPtr := getStreamBuffer()
+	buf := *bufPtr
+	defer putStreamBuffer(bufPtr)
 	lastActivityUpdate := time.Now()
 
 	for {

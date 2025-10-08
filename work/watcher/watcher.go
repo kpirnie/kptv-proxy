@@ -690,9 +690,9 @@ func (sw *StreamWatcher) evaluateFFProbeResults(health types.StreamHealthData) b
 //   - bool: true if FFprobe analysis should be performed in current health check cycle
 func (sw *StreamWatcher) shouldRunFFProbeCheck() bool {
 
-	// Perform FFprobe analysis every 2nd health check for balanced monitoring efficiency
+	// Perform FFprobe analysis every 10th health check for balanced monitoring efficiency
 	count := atomic.AddInt32(&sw.ffprobeCheckCount, 1)
-	return count%2 == 0
+	return count%10 == 0
 }
 
 // triggerStreamSwitch initiates automatic failover operations when stream health
