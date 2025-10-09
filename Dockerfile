@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     libva-x11-2 \
     vulkan-tools \
     va-driver-all \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create the render group that Debian doesn't have by default

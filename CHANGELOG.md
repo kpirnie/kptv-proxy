@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v10092025.01]
+
+* Add curl to final container
+
 ## [v10082025.11]
 
 * Fix buffer memory leak
