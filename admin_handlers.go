@@ -22,6 +22,7 @@ import (
 	"kptv-proxy/work/utils"
 	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/middleware"
+	"kptv-proxy/work/parser"
 
 	"github.com/gorilla/mux"
 )
@@ -98,8 +99,22 @@ type ChannelStreamsResponse struct {
 
 // Global variables for admin interface state management and operational tracking
 var (
-	adminStartTime = time.Now()                // Admin interface initialization timestamp for uptime calculation
-	logEntries     = make([]LogEntry, 0, 1000) // Circular buffer for recent log entries (1000 entry limit)
+	// adminStartTime records the admin interface initialization timestamp for uptime
+	// calculation and performance monitoring across the administrative interface lifecycle.
+	adminStartTime = time.Now()
+	
+	// logEntries maintains a circular buffer of recent log entries with a 1000 entry limit,
+	// providing real-time debugging information through the admin interface without
+	// unbounded memory growth during long-running operations.
+	logEntries     = make([]LogEntry, 0, 1000)
+)
+
+// Global restart coordination channel
+var (
+	// restartChan provides a signaling mechanism for graceful application restart
+	// operations initiated through the admin interface, enabling coordinated shutdown
+	// and restart sequences without abrupt process termination.
+	restartChan = make(chan bool, 1)
 )
 
 // setupAdminRoutes configures all HTTP routes for the administrative web interface,
@@ -159,6 +174,16 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// handleSetChannelOrder processes requests to update the custom ordering of streams within
+// a channel, validating the new order against channel configuration and persisting changes
+// to the stream order database. The handler applies changes immediately without requiring
+// application restart for seamless user experience.
+//
+// Parameters:
+//   - sp: StreamProxy instance for channel access and configuration
+//
+// Returns:
+//   - http.HandlerFunc: handler for stream ordering update requests
 func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -204,11 +229,9 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		if isDefault {
-			// Remove custom order if it's back to default
 			if sp.Config.Debug {
 				addLogEntry("info", fmt.Sprintf("Removing custom order for channel %s (back to default)", channelName))
 			}
-			// You might want to implement a remove function in streamorder package
 		} else {
 			err = streamorder.SetChannelStreamOrder(channelName, request.StreamOrder)
 			if err != nil {
@@ -219,10 +242,15 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 			addLogEntry("info", fmt.Sprintf("Stream order updated for channel %s: %v", channelName, request.StreamOrder))
 		}
 
+		// Apply the new order immediately without restart
+		channel.Mu.Lock()
+		parser.SortStreams(channel.Streams, sp.Config, channelName)
+		channel.Mu.Unlock()
+
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "success",
-			"message": "Stream order updated",
+			"message": "Stream order updated and applied immediately",
 		})
 	}
 }
@@ -287,6 +315,9 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
+// handleGetChannelStats retrieves real-time streaming statistics for a specific channel,
+// including codec information, resolution, bitrate, and stream quality metrics gathered
+// through FFprobe analysis for monitoring and quality assessment.
 func handleGetChannelStats(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -415,7 +446,15 @@ func handleSetChannelStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
-// handle the watcher toggle to stream while watching proper
+// handleToggleWatcher processes requests to enable or disable the stream watcher system,
+// persisting the configuration change to disk and starting or stopping the watcher
+// infrastructure immediately without requiring application restart.
+//
+// Parameters:
+//   - sp: StreamProxy instance containing watcher manager
+//
+// Returns:
+//   - http.HandlerFunc: handler for watcher toggle requests
 func handleToggleWatcher(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -839,11 +878,6 @@ func handleClearLogs(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
-
-// Global restart coordination channel
-var (
-	restartChan = make(chan bool, 1)
-)
 
 // handleRestart initiates a graceful application restart through coordination
 // channel signaling, allowing the main application to handle the restart sequence

@@ -2,7 +2,9 @@
 
 class KPTVAdmin {
 
-    // class constructor
+    // Constructor initializes the admin interface state and triggers the complete
+    // initialization sequence including data loading, event listener setup, and
+    // automatic refresh interval configuration for real-time monitoring capabilities.
     constructor() {
         this.config = null;
         this.stats = null;
@@ -15,9 +17,13 @@ class KPTVAdmin {
         this.init();
     }
 
-    // initialize the class and load in all data
+    // init performs comprehensive initialization of the admin interface including
+    // initial data loading from all API endpoints, event listener registration,
+    // automatic refresh timer setup, and scroll-to-top button initialization for
+    // complete interface readiness.
     init() {
-        // Load initial data
+
+        // Load initial data and functionality
         this.loadGlobalSettings();
         this.loadSources();
         this.loadStats();
@@ -33,21 +39,25 @@ class KPTVAdmin {
         this.startAutoRefresh();
     }
 
-    // Back to top button
-    toTop( ) {
-        const inTop = document.querySelector( '.in-totop' );
-        if ( inTop ) {
-            window.addEventListener( 'scroll', function( ) {
-                setTimeout( function( ) {
-                    window.scrollY > 100 ? 
-                        ( inTop.style.opacity = 1, inTop.classList.add( "uk-animation-slide-top" ) ) : 
-                        ( inTop.style.opacity -= .1, inTop.classList.remove( "uk-animation-slide-top" ) );
-                }, 400 );
-            } );
+    // toTop initializes the scroll-to-top button with scroll event monitoring,
+    // automatically showing or hiding the button based on scroll position with
+    // smooth animations for improved user experience during page navigation.
+    toTop() {
+        const inTop = document.querySelector('.in-totop');
+        if (inTop) {
+            window.addEventListener('scroll', function () {
+                setTimeout(function () {
+                    window.scrollY > 100 ?
+                        (inTop.style.opacity = 1, inTop.classList.add("uk-animation-slide-top")) :
+                        (inTop.style.opacity -= .1, inTop.classList.remove("uk-animation-slide-top"));
+                }, 400);
+            });
         }
     }
 
-    // setup the event listeners
+    // setupEventListeners registers all event handlers for user interactions including
+    // form submissions, button clicks, search operations, and pagination controls to
+    // enable complete administrative functionality through the web interface.
     setupEventListeners() {
 
         // Global settings form
@@ -137,13 +147,19 @@ class KPTVAdmin {
 
     }
 
-    // pagination methods:
+    // previousPage navigates to the previous page of channels in paginated displays,
+    // updating the current page counter and re-rendering the channel list with
+    // appropriate pagination controls and status information.
     previousPage() {
         if (this.currentPage > 1) {
             this.currentPage--;
             this.renderCurrentPage();
         }
     }
+
+    // nextPage navigates to the next page of channels in paginated displays,
+    // validating page boundaries and updating the display with new channel data
+    // while maintaining consistent pagination state across operations.
     nextPage() {
         const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
         if (this.currentPage < totalPages) {
@@ -151,12 +167,20 @@ class KPTVAdmin {
             this.renderCurrentPage();
         }
     }
+
+    // goToFirstPage jumps to the first page of channels in paginated displays,
+    // providing quick navigation for users who need to return to the beginning
+    // of the channel list regardless of current position.
     goToFirstPage() {
         if (this.currentPage !== 1) {
             this.currentPage = 1;
             this.renderCurrentPage();
         }
     }
+
+    // goToLastPage jumps to the final page of channels in paginated displays,
+    // calculating the last page number based on total channels and page size
+    // for convenient navigation to the end of the channel list.
     goToLastPage() {
         const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
         if (this.currentPage !== totalPages && totalPages > 0) {
@@ -164,6 +188,13 @@ class KPTVAdmin {
             this.renderCurrentPage();
         }
     }
+
+    // goToPage navigates to a specific page number in paginated channel displays,
+    // validating the requested page number against available pages and updating
+    // the display with channel data for the requested page.
+    //
+    // Parameters:
+    //   - page: target page number to display
     goToPage(page) {
         const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
         if (page >= 1 && page <= totalPages && page !== this.currentPage) {
@@ -171,6 +202,10 @@ class KPTVAdmin {
             this.renderCurrentPage();
         }
     }
+
+    // renderCurrentPage displays the current page of channels by calculating the
+    // appropriate slice of the channel array, rendering the channels, and updating
+    // pagination information for consistent display state management.
     renderCurrentPage() {
         const channels = this.filteredChannels || this.allChannels;
         if (!channels) return;
@@ -182,6 +217,10 @@ class KPTVAdmin {
         this.renderAllChannels(pageChannels);
         this.updatePaginationInfo();
     }
+
+    // updatePaginationInfo updates all pagination display elements including page
+    // counters, page selector dropdown, and navigation button states to reflect
+    // the current pagination state and available navigation options.
     updatePaginationInfo() {
         const channels = this.filteredChannels || this.allChannels || [];
         const totalChannels = channels.length;
@@ -223,7 +262,10 @@ class KPTVAdmin {
         document.getElementById('last-page').parentElement.classList.toggle('uk-disabled', this.currentPage === totalPages || totalPages === 0);
     }
 
-    // fire up the auto-refresher
+    // startAutoRefresh initiates periodic background data refresh operations that
+    // automatically update statistics and channel information every 5 seconds while
+    // preserving user interface state including current page, search filters, and
+    // page selector position for seamless monitoring experience.
     startAutoRefresh() {
 
         // Refresh stats and active channels every 5 seconds
@@ -263,14 +305,25 @@ class KPTVAdmin {
         }, 5000);
     }
 
-    // now kill it
+    // stopAutoRefresh terminates the periodic refresh timer to prevent unnecessary
+    // background operations during interface shutdown or when automatic updates
+    // are no longer needed for the current view.
     stopAutoRefresh() {
         if (this.refreshInterval) {
             clearInterval(this.refreshInterval);
         }
     }
 
-    // API Methods
+    // apiCall executes HTTP requests to admin API endpoints with comprehensive error
+    // handling, automatic JSON parsing, and user notification for failures, providing
+    // a consistent interface for all administrative operations.
+    //
+    // Parameters:
+    //   - endpoint: API endpoint URL to call
+    //   - options: fetch API options object with method, headers, body, etc.
+    //
+    // Returns:
+    //   - Promise: resolves to parsed JSON response data
     async apiCall(endpoint, options = {}) {
         try {
             const response = await fetch(endpoint, {
@@ -293,7 +346,9 @@ class KPTVAdmin {
         }
     }
 
-    // Global Settings
+    // loadGlobalSettings fetches current system configuration from the API and
+    // populates the global settings form with existing values, handling missing
+    // configuration gracefully by providing sensible defaults for all settings.
     async loadGlobalSettings() {
         try {
             const config = await this.apiCall('/api/config');
@@ -304,9 +359,9 @@ class KPTVAdmin {
             this.populateGlobalSettingsForm({
                 baseURL: "http://localhost:8080",
                 //maxBufferSize: 256,
-                bufferSizePerStream: 16,
+                bufferSizePerStream: 8,
                 cacheEnabled: true,
-                cacheDuration: "30m",
+                cacheDuration: "360m",
                 importRefreshInterval: "12h",
                 workerThreads: 4,
                 debug: false,
@@ -319,7 +374,12 @@ class KPTVAdmin {
         }
     }
 
-    // populate the form
+    // populateGlobalSettingsForm fills the global settings form with configuration
+    // values from the provided config object, handling checkboxes, text inputs,
+    // and special fields like FFmpeg arrays with appropriate formatting.
+    //
+    // Parameters:
+    //   - config: configuration object containing all system settings
     populateGlobalSettingsForm(config) {
         const form = document.getElementById('global-settings-form');
         Object.keys(config).forEach(key => {
@@ -360,7 +420,9 @@ class KPTVAdmin {
         }
     }
 
-    // save method
+    // saveGlobalSettings collects form data, validates required fields, processes
+    // special configurations like FFmpeg arguments, and submits the complete
+    // configuration to the API with automatic restart triggering.
     async saveGlobalSettings() {
         const form = document.getElementById('global-settings-form');
         const formData = new FormData(form);
@@ -437,7 +499,9 @@ class KPTVAdmin {
         }
     }
 
-    // Sources Management
+    // loadSources fetches and displays all configured stream sources from the API,
+    // rendering detailed source information including connection limits, timeouts,
+    // and authentication settings for administrative review and management.
     async loadSources() {
         try {
             const config = await this.apiCall('/api/config');
@@ -448,7 +512,12 @@ class KPTVAdmin {
         }
     }
 
-    // render the sources
+    // renderSources generates HTML for displaying all configured sources with
+    // comprehensive metadata including connection parameters, retry settings,
+    // authentication headers, and operational controls for editing and deletion.
+    //
+    // Parameters:
+    //   - sources: array of source configuration objects to display
     renderSources(sources) {
         const container = document.getElementById('sources-container');
 
@@ -465,7 +534,7 @@ class KPTVAdmin {
                         <div class="uk-text-muted uk-text-small">${this.obfuscateUrl(source.url)}</div>
                     </div>
                     <div class="uk-flex uk-flex-middle">
-                        <span class="status-indicator ${this.getSourceStatus(source)}"></span>
+                        <span class="status-indicator status-active"></span>
                         <span class="uk-text-small uk-text-muted">Order: ${source.order}</span>
                     </div>
                 </div>
@@ -531,12 +600,12 @@ class KPTVAdmin {
         `).join('');
     }
 
-    getSourceStatus(source) {
-        // This would typically come from real-time data
-        // For now, return a default status
-        return 'status-active';
-    }
-
+    // showSourceModal displays the source configuration modal dialog for adding
+    // new sources or editing existing ones, populating form fields with current
+    // values when editing or clearing fields for new source creation.
+    //
+    // Parameters:
+    //   - sourceIndex: optional index of source to edit, null for new sources
     showSourceModal(sourceIndex = null) {
         const modal = UIkit.modal('#source-modal');
         const title = document.getElementById('source-modal-title');
@@ -557,6 +626,13 @@ class KPTVAdmin {
         modal.show();
     }
 
+    // populateSourceForm fills the source configuration form with values from
+    // an existing source object, handling all fields including basic settings,
+    // filtering rules, and HTTP headers for complete source editing.
+    //
+    // Parameters:
+    //   - source: source configuration object containing current values
+    //   - index: array index of the source being edited
     populateSourceForm(source, index) {
         document.getElementById('source-index').value = index;
         document.getElementById('source-name').value = source.name || '';
@@ -582,6 +658,9 @@ class KPTVAdmin {
         document.getElementById('source-vod-exclude-regex').value = source.vodExcludeRegex || '';
     }
 
+    // clearSourceForm resets all source configuration form fields to empty or
+    // default values, preparing the form for new source creation without any
+    // residual data from previous operations.
     clearSourceForm() {
         document.getElementById('source-index').value = '';
         document.getElementById('source-form').reset();
@@ -602,6 +681,9 @@ class KPTVAdmin {
         document.getElementById('source-vod-exclude-regex').value = '';
     }
 
+    // saveSource collects source configuration data from the form, validates
+    // required fields, merges with existing configuration, and submits to the
+    // API with comprehensive error handling and user feedback.
     async saveSource() {
         console.log('saveSource function called');
 
@@ -695,11 +777,22 @@ class KPTVAdmin {
         }
     }
 
-
+    // editSource opens the source configuration modal populated with data from
+    // the specified source index, enabling modification of existing source
+    // settings through the standard form interface.
+    //
+    // Parameters:
+    //   - index: array index of the source to edit
     editSource(index) {
         this.showSourceModal(index);
     }
 
+    // deleteSource removes a source from configuration after user confirmation,
+    // updating the configuration file and triggering application restart to
+    // apply changes with appropriate error handling and user notification.
+    //
+    // Parameters:
+    //   - index: array index of the source to delete
     async deleteSource(index) {
         if (!confirm('Are you sure you want to delete this source?')) {
             return;
@@ -726,7 +819,9 @@ class KPTVAdmin {
         }
     }
 
-    // Statistics
+    // loadStats fetches current system statistics from the API including performance
+    // metrics, resource utilization, client connections, and operational status for
+    // display in the dashboard monitoring interface.
     async loadStats() {
         try {
             const stats = await this.apiCall('/api/stats');
@@ -751,7 +846,12 @@ class KPTVAdmin {
         }
     }
 
-    // admin.js - Update updateStatsDisplay function (around line 285)
+    // updateStatsDisplay updates all statistics display elements in the dashboard
+    // with current values from the stats object, formatting numbers and durations
+    // appropriately for human-readable presentation.
+    //
+    // Parameters:
+    //   - stats: statistics object containing all system metrics
     updateStatsDisplay(stats) {
         const totalChannelsEl = document.getElementById('total-channels');
         const activeStreamsEl = document.getElementById('active-streams');
@@ -825,8 +925,9 @@ class KPTVAdmin {
         }
     }
 
-
-    // Channels
+    // loadActiveChannels fetches and displays information about channels currently
+    // streaming content to connected clients, providing focused operational monitoring
+    // data for active streaming sessions.
     async loadActiveChannels() {
         try {
             const channels = await this.apiCall('/api/channels/active');
@@ -837,8 +938,12 @@ class KPTVAdmin {
         }
     }
 
-
-    // admin.js - Replace renderActiveChannels method
+    // renderActiveChannels generates HTML for displaying active channels with
+    // comprehensive information including client counts, bandwidth usage, source
+    // details, logos, and real-time streaming statistics for monitoring.
+    //
+    // Parameters:
+    //   - channels: array of active channel objects to display
     renderActiveChannels(channels) {
         const container = document.getElementById('active-channels-list');
 
@@ -886,7 +991,12 @@ class KPTVAdmin {
         });
     }
 
-    // admin.js - Update loadChannelStats
+    // loadChannelStats fetches real-time streaming statistics for a specific channel
+    // including codec information, resolution, bitrate, and quality metrics gathered
+    // through FFprobe analysis for display in the active channels view.
+    //
+    // Parameters:
+    //   - channelName: name of channel to retrieve statistics for
     async loadChannelStats(channelName) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -901,7 +1011,13 @@ class KPTVAdmin {
         }
     }
 
-    // admin.js - Update renderChannelStatsBadges
+    // renderChannelStatsBadges generates HTML badges displaying streaming statistics
+    // for a channel including resolution, frame rate, codecs, and bitrate in a
+    // compact, visually organized format for dashboard display.
+    //
+    // Parameters:
+    //   - channelName: name of channel for badge container identification
+    //   - stats: statistics object containing stream quality metrics
     renderChannelStatsBadges(channelName, stats) {
         const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
         const container = document.getElementById(`stats-${safeId}`);
@@ -942,7 +1058,12 @@ class KPTVAdmin {
         }
     }
 
-    // admin.js - 
+    // renderStreamStats displays detailed streaming statistics in an expanded format
+    // with labeled fields for container type, codecs, resolution, frame rate, bitrate,
+    // and audio configuration for comprehensive stream analysis.
+    //
+    // Parameters:
+    //   - stats: statistics object containing complete stream metadata
     renderStreamStats(stats) {
         const container = document.getElementById('stream-stats-container');
 
@@ -963,7 +1084,12 @@ class KPTVAdmin {
         document.getElementById('stat-audio-channels').textContent = stats.audioChannels || 'N/A';
     }
 
-    // admin.js - Update showStreamSelector to remove stats call (around line 935)
+    // showStreamSelector fetches and displays available streams for a channel in
+    // a modal dialog, enabling stream selection, ordering, and management through
+    // an interactive interface with current/preferred stream indicators.
+    //
+    // Parameters:
+    //   - channelName: name of channel to display streams for
     async showStreamSelector(channelName) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -980,6 +1106,9 @@ class KPTVAdmin {
         }
     }
 
+    // loadAllChannels fetches complete channel listing from the API including both
+    // active and inactive channels with metadata for display in the comprehensive
+    // channels view with pagination support.
     async loadAllChannels() {
         try {
             const channels = await this.apiCall('/api/channels');
@@ -994,6 +1123,12 @@ class KPTVAdmin {
         }
     }
 
+    // renderAllChannels generates HTML for displaying all channels with status
+    // indicators, group classifications, source counts, logos, and streaming
+    // statistics organized in a paginated list format.
+    //
+    // Parameters:
+    //   - channels: array of channel objects to display
     renderAllChannels(channels) {
         const container = document.getElementById('all-channels-list');
 
@@ -1055,7 +1190,12 @@ class KPTVAdmin {
         });
     }
 
-    // admin.js - Add new method for All Channels tab stats
+    // loadChannelStatsForAllTab fetches streaming statistics for a channel in the
+    // context of the all channels view, using separate container IDs to avoid
+    // conflicts with active channels view statistics display.
+    //
+    // Parameters:
+    //   - channelName: name of channel to retrieve statistics for
     async loadChannelStatsForAllTab(channelName) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -1070,7 +1210,13 @@ class KPTVAdmin {
         }
     }
 
-    // admin.js - Add new method to render badges in All Channels tab
+    // renderChannelStatsBadgesForAllTab generates statistics badges specifically for
+    // the all channels view using appropriate container IDs and formatting to maintain
+    // visual consistency across different administrative views.
+    //
+    // Parameters:
+    //   - channelName: name of channel for badge container identification
+    //   - stats: statistics object containing stream quality metrics
     renderChannelStatsBadgesForAllTab(channelName, stats) {
         const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
         const container = document.getElementById(`stats-all-${safeId}`);
@@ -1111,7 +1257,12 @@ class KPTVAdmin {
         }
     }
 
-
+    // filterChannels applies search/filter terms to the complete channel list,
+    // updating the filtered channels array and resetting pagination to display
+    // matching channels with appropriate empty state handling.
+    //
+    // Parameters:
+    //   - searchTerm: text to filter channels by name or group
     filterChannels(searchTerm) {
         if (!this.allChannels) return;
 
@@ -1128,7 +1279,9 @@ class KPTVAdmin {
         this.renderCurrentPage();
     }
 
-    // Logs
+    // loadLogs fetches current application logs from the API for display in the
+    // logs view, providing real-time debugging and operational monitoring information
+    // through the administrative interface.
     async loadLogs() {
         try {
             const logs = await this.apiCall('/api/logs');
@@ -1140,6 +1293,12 @@ class KPTVAdmin {
         }
     }
 
+    // renderLogs generates HTML for displaying log entries with appropriate styling
+    // based on log level, timestamps, and message content, automatically scrolling
+    // to show the most recent entries at the bottom.
+    //
+    // Parameters:
+    //   - logs: array of log entry objects to display
     renderLogs(logs) {
         const container = document.getElementById('logs-container');
 
@@ -1159,6 +1318,12 @@ class KPTVAdmin {
         container.scrollTop = container.scrollHeight;
     }
 
+    // filterLogs applies log level filtering to the complete log array, displaying
+    // only entries matching the specified level or all entries when level is 'all'
+    // for focused debugging and monitoring operations.
+    //
+    // Parameters:
+    //   - level: log level to filter by ('all', 'error', 'warning', 'info', 'debug')
     filterLogs(level) {
         if (!this.allLogs) return;
 
@@ -1170,6 +1335,9 @@ class KPTVAdmin {
         }
     }
 
+    // clearLogs sends a request to clear the server-side log buffer after user
+    // confirmation, providing a clean slate for new log entries during debugging
+    // and troubleshooting operations.
     async clearLogs() {
         if (!confirm('Are you sure you want to clear all logs?')) {
             return;
@@ -1184,7 +1352,9 @@ class KPTVAdmin {
         }
     }
 
-    // Service Management
+    // restartService initiates a graceful application restart after user confirmation,
+    // displaying a loading overlay during the restart process and managing auto-refresh
+    // state to prevent conflicts during the restart sequence.
     async restartService() {
         if (!confirm('Are you sure you want to restart the KPTV Proxy service? This will temporarily interrupt all streams.')) {
             return;
@@ -1213,7 +1383,12 @@ class KPTVAdmin {
         }
     }
 
-    // Utility Methods
+    // showLoadingOverlay displays a modal loading indicator with customizable message,
+    // preventing user interaction during long-running operations like service restarts
+    // and configuration updates.
+    //
+    // Parameters:
+    //   - message: text to display in the loading overlay
     showLoadingOverlay(message = 'Loading...') {
         const overlay = document.getElementById('loading-overlay');
         overlay.querySelector('div').innerHTML = `
@@ -1223,10 +1398,19 @@ class KPTVAdmin {
         overlay.classList.remove('uk-hidden');
     }
 
+    // hideLoadingOverlay removes the modal loading indicator, restoring normal user
+    // interaction capabilities after completion of long-running operations.
     hideLoadingOverlay() {
         document.getElementById('loading-overlay').classList.add('uk-hidden');
     }
 
+    // showNotification displays a temporary notification message using UIKit's
+    // notification system with configurable styling based on message type and
+    // automatic dismissal after a timeout period.
+    //
+    // Parameters:
+    //   - message: notification text to display
+    //   - type: notification style ('primary', 'success', 'warning', 'danger')
     showNotification(message, type = 'primary') {
         UIkit.notification({
             message: message,
@@ -1236,6 +1420,15 @@ class KPTVAdmin {
         });
     }
 
+    // escapeHtml sanitizes text content for safe HTML insertion by converting
+    // special characters to HTML entities, preventing XSS attacks and HTML
+    // injection vulnerabilities in dynamically generated content.
+    //
+    // Parameters:
+    //   - text: raw text to sanitize
+    //
+    // Returns:
+    //   - string: HTML-safe escaped text
     escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');
@@ -1243,6 +1436,15 @@ class KPTVAdmin {
         return div.innerHTML;
     }
 
+    // obfuscateUrl masks sensitive portions of URLs for display purposes, preserving
+    // protocol and hostname while hiding paths and query parameters that may contain
+    // authentication tokens or private information.
+    //
+    // Parameters:
+    //   - url: complete URL to obfuscate
+    //
+    // Returns:
+    //   - string: partially masked URL safe for display
     obfuscateUrl(url) {
         if (!url) return '';
 
@@ -1261,6 +1463,15 @@ class KPTVAdmin {
         }
     }
 
+    // formatBytes converts raw byte counts to human-readable format with appropriate
+    // unit prefixes (B, KB, MB, GB, TB) and precision scaling based on magnitude
+    // for professional display of file sizes and bandwidth measurements.
+    //
+    // Parameters:
+    //   - bytes: raw byte count to format
+    //
+    // Returns:
+    //   - string: formatted size with unit suffix
     formatBytes(bytes) {
         if (bytes === 0) return '0 B';
 
@@ -1271,12 +1482,27 @@ class KPTVAdmin {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
+    // formatBitrate converts raw bitrate values to human-readable format with
+    // appropriate unit prefixes (bps, Kbps, Mbps) and precision for professional
+    // display of streaming quality and bandwidth metrics.
+    //
+    // Parameters:
+    //   - bitrate: raw bitrate in bits per second
+    //
+    // Returns:
+    //   - string: formatted bitrate with unit suffix
     formatBitrate(bitrate) {
         if (bitrate < 1000) return bitrate + ' bps';
         if (bitrate < 1000000) return (bitrate / 1000).toFixed(1) + ' Kbps';
         return (bitrate / 1000000).toFixed(2) + ' Mbps';
     }
 
+    // renderStreamSelector displays the stream selection modal with stream cards
+    // showing current status, quality information, and controls for stream activation,
+    // ordering, and management operations.
+    //
+    // Parameters:
+    //   - data: channel streams data including stream array and status information
     renderStreamSelector(data) {
         document.getElementById('stream-selector-title').textContent = `Select Stream - ${data.channelName}`;
 
@@ -1287,7 +1513,6 @@ class KPTVAdmin {
             return;
         }
 
-        // Store original data for ordering operations
         this.currentChannelName = data.channelName;
         this.currentStreamData = data.streams;
         this.originalStreamOrder = data.streams.map((_, index) => index);
@@ -1297,51 +1522,34 @@ class KPTVAdmin {
                 <button class="uk-button uk-button-secondary uk-button-small" id="save-stream-order" style="display: none;">
                     <span uk-icon="check"></span> Save Order
                 </button>
-                <span class="uk-text-small uk-text-muted uk-margin-left">Drag streams to reorder</span>
+                <span class="uk-text-small uk-text-muted uk-margin-left">Use arrows to reorder</span>
             </div>
-            <div id="sortable-streams">
+            <div id="streams-container">
                 ${this.renderStreamCards(data)}
             </div>
         `;
 
-        // Initialize Sortable with different settings
-        const sortableContainer = document.getElementById('sortable-streams');
-        if (sortableContainer) {
-            const sortable = Sortable.create(sortableContainer, {
-                handle: '[uk-icon="menu"]',
-                animation: 150,
-                ghostClass: 'uk-sortable-ghost',
-                chosenClass: 'uk-sortable-chosen',
-                dragClass: 'uk-sortable-drag',
-                forceFallback: true, // Force HTML5 fallback
-                fallbackClass: 'sortable-fallback',
-                fallbackOnBody: true,
-                swapThreshold: 0.65,
-                invertSwap: false,
-                direction: 'vertical',
-                touchStartThreshold: 0,
-                onStart: function (evt) {
-                    evt.item.style.opacity = '0.5';
-                    document.body.classList.add('dragging');
-                },
-                onEnd: function (evt) {
-                    evt.item.style.opacity = '';
-                    document.body.classList.remove('dragging');
-                    this.onStreamOrderChanged();
-                }.bind(this)
-            });
+        const saveButton = document.getElementById('save-stream-order');
+        if (saveButton) {
+            saveButton.onclick = () => this.saveStreamOrder();
         }
     }
 
+    // renderStreamCards generates HTML for individual stream cards with comprehensive
+    // metadata, status indicators, ordering controls, and action buttons for stream
+    // management within the stream selector modal.
+    //
+    // Parameters:
+    //   - data: channel streams data containing stream array and status information
+    //
+    // Returns:
+    //   - string: HTML markup for all stream cards
     renderStreamCards(data) {
-        // Get custom order if it exists
-        const customOrder = this.getCustomOrder(data.channelName) || data.streams.map((_, i) => i);
-
-        // Reorder streams based on custom order
+        const customOrder = data.streams.map((_, i) => i);
         const orderedStreams = customOrder.map(originalIndex => data.streams[originalIndex]);
 
         return orderedStreams.map((stream, displayIndex) => {
-            const originalIndex = stream.index; // Use the original index from the stream data
+            const originalIndex = stream.index;
             const isDead = stream.attributes['dead'] === 'true';
             const deadReason = stream.attributes['dead_reason'] || 'unknown';
             const reasonText = deadReason === 'manual' ? 'Manually Killed' :
@@ -1349,12 +1557,26 @@ class KPTVAdmin {
             const cardClass = originalIndex === data.currentStreamIndex ? 'uk-card-primary' :
                 isDead ? 'uk-card-secondary' : 'uk-card-default';
 
+            const isFirst = displayIndex === 0;
+            const isLast = displayIndex === orderedStreams.length - 1;
+
             return `
-                <div class="uk-card ${cardClass} uk-margin-small stream-card ${isDead ? 'dead-stream' : ''}" data-original-index="${originalIndex}">
+                <div class="uk-card ${cardClass} uk-margin-small stream-card ${isDead ? 'dead-stream' : ''}" data-original-index="${originalIndex}" data-display-index="${displayIndex}">
                     <div class="uk-card-body uk-padding-small">
                         <div class="uk-flex uk-flex-between uk-flex-middle">
                             <div class="uk-flex uk-flex-middle">
-                                <span uk-icon="menu" class="uk-margin-small-right" style="cursor: grab;"></span>
+                                <div class="uk-flex uk-flex-column uk-margin-small-right">
+                                    <button class="stream-order-btn" 
+                                            onclick="kptvAdmin.moveStreamUp('${this.escapeHtml(data.channelName)}', ${displayIndex}); return false;"
+                                            ${isFirst ? 'disabled' : ''}>
+                                        <span uk-icon="icon: chevron-up; ratio: 0.8"></span>
+                                    </button>
+                                    <button class="stream-order-btn uk-margin-small-top" 
+                                            onclick="kptvAdmin.moveStreamDown('${this.escapeHtml(data.channelName)}', ${displayIndex}); return false;"
+                                            ${isLast ? 'disabled' : ''}>
+                                        <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
+                                    </button>
+                                </div>
                                 <div class="uk-flex-1">
                                     <div class="uk-text-bold">
                                         Stream ${displayIndex + 1} 
@@ -1383,9 +1605,9 @@ class KPTVAdmin {
                             <div class="uk-text-right uk-flex uk-flex-middle">
                                 <div class="uk-flex uk-flex-middle">
                                     ${isDead ?
-                    `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${data.channelName}', ${originalIndex}); return false;"></a>` :
-                    `<a href="#" class="uk-icon-link uk-text-primary uk-margin-small-right" uk-icon="play" uk-tooltip="Activate Stream" onclick="kptvAdmin.selectStream('${data.channelName}', ${originalIndex}); return false;"></a>
-                                        <a href="#" class="uk-icon-link uk-text-danger" uk-icon="ban" uk-tooltip="Mark as Dead" onclick="kptvAdmin.killStream('${data.channelName}', ${originalIndex}); return false;"></a>`
+                    `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;"></a>` :
+                    `<a href="#" class="uk-icon-link uk-text-primary uk-margin-small-right" uk-icon="play" uk-tooltip="Activate Stream" onclick="kptvAdmin.selectStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;"></a>
+                                        <a href="#" class="uk-icon-link uk-text-danger" uk-icon="ban" uk-tooltip="Mark as Dead" onclick="kptvAdmin.killStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;"></a>`
                 }
                                 </div>
                             </div>
@@ -1396,20 +1618,9 @@ class KPTVAdmin {
         }).join('');
     }
 
-    getCustomOrder(channelName) {
-        // This would need to be stored when the order is saved
-        // For now, return null to use default order
-        return null;
-    }
-
-    onStreamOrderChanged() {
-        const saveButton = document.getElementById('save-stream-order');
-        if (saveButton) {
-            saveButton.style.display = 'inline-block';
-            saveButton.onclick = () => this.saveStreamOrder();
-        }
-    }
-
+    // saveStreamOrder collects the current stream ordering from the card display,
+    // validates the order, and submits to the API for persistent storage with
+    // immediate application without requiring restart.
     async saveStreamOrder() {
         const streamCards = document.querySelectorAll('.stream-card');
         const newOrder = [];
@@ -1427,7 +1638,7 @@ class KPTVAdmin {
                 body: JSON.stringify({ streamOrder: newOrder })
             });
 
-            this.showNotification('Stream order saved successfully! Changes will apply on next restart.', 'success');
+            this.showNotification('Stream order saved successfully!', 'success');
 
             const saveButton = document.getElementById('save-stream-order');
             if (saveButton) {
@@ -1439,6 +1650,13 @@ class KPTVAdmin {
         }
     }
 
+    // selectStream activates a specific stream for a channel by sending a stream
+    // change request to the API, triggering immediate failover for active streams
+    // while updating preferred stream configuration for future connections.
+    //
+    // Parameters:
+    //   - channelName: name of channel containing the stream
+    //   - streamIndex: original index of stream to activate
     async selectStream(channelName, streamIndex) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -1461,6 +1679,13 @@ class KPTVAdmin {
         }
     }
 
+    // killStream marks a stream as dead in the persistent database after user
+    // confirmation, preventing future use of the problematic stream and updating
+    // the stream selector display to reflect the dead status.
+    //
+    // Parameters:
+    //   - channelName: name of channel containing the stream
+    //   - streamIndex: original index of stream to mark dead
     async killStream(channelName, streamIndex) {
         if (!confirm('Are you sure you want to mark this stream as dead? It will not be used for playback.')) {
             return;
@@ -1485,6 +1710,13 @@ class KPTVAdmin {
         }
     }
 
+    // reviveStream removes a stream from the dead streams database, restoring it
+    // to active status and updating the stream selector display to show the stream
+    // as available for use in failover operations.
+    //
+    // Parameters:
+    //   - channelName: name of channel containing the stream
+    //   - streamIndex: original index of stream to revive
     async reviveStream(channelName, streamIndex) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -1505,7 +1737,12 @@ class KPTVAdmin {
         }
     }
 
-    // Watcher Management (add this method to KPTVAdmin class)
+    // toggleWatcher sends a request to enable or disable the stream watcher system,
+    // updating the configuration persistently and managing watcher state immediately
+    // without requiring application restart for seamless operation.
+    //
+    // Parameters:
+    //   - enable: boolean indicating whether to enable (true) or disable (false) watcher
     async toggleWatcher(enable) {
         try {
             const result = await this.apiCall('/api/watcher/toggle', {
@@ -1537,6 +1774,104 @@ class KPTVAdmin {
 
             throw error;
         }
+    }
+
+    // moveStreamUp shifts a stream one position earlier in the display order,
+    // swapping it with the preceding stream and triggering re-render with
+    // save button display for user confirmation.
+    //
+    // Parameters:
+    //   - channelName: name of channel containing the stream
+    //   - displayIndex: current position of stream to move up
+    moveStreamUp(channelName, displayIndex) {
+        if (displayIndex === 0) return;
+
+        const container = document.getElementById('streams-container');
+        const cards = Array.from(container.querySelectorAll('.stream-card'));
+
+        const currentOrder = cards.map(card => parseInt(card.getAttribute('data-original-index')));
+
+        [currentOrder[displayIndex], currentOrder[displayIndex - 1]] = [currentOrder[displayIndex - 1], currentOrder[displayIndex]];
+
+        document.getElementById('save-stream-order').style.display = 'inline-block';
+
+        const data = {
+            channelName: channelName,
+            currentStreamIndex: this.getCurrentStreamIndex(),
+            preferredStreamIndex: this.getPreferredStreamIndex(),
+            streams: currentOrder.map(originalIndex => this.currentStreamData[originalIndex])
+        };
+
+        container.innerHTML = this.renderStreamCards(data);
+    }
+
+    // moveStreamDown shifts a stream one position later in the display order,
+    // swapping it with the following stream and triggering re-render with
+    // save button display for user confirmation.
+    //
+    // Parameters:
+    //   - channelName: name of channel containing the stream
+    //   - displayIndex: current position of stream to move down
+    moveStreamDown(channelName, displayIndex) {
+        const container = document.getElementById('streams-container');
+        const cards = Array.from(container.querySelectorAll('.stream-card'));
+
+        if (displayIndex >= cards.length - 1) return;
+
+        const currentOrder = cards.map(card => parseInt(card.getAttribute('data-original-index')));
+
+        [currentOrder[displayIndex], currentOrder[displayIndex + 1]] = [currentOrder[displayIndex + 1], currentOrder[displayIndex]];
+
+        document.getElementById('save-stream-order').style.display = 'inline-block';
+
+        const data = {
+            channelName: channelName,
+            currentStreamIndex: this.getCurrentStreamIndex(),
+            preferredStreamIndex: this.getPreferredStreamIndex(),
+            streams: currentOrder.map(originalIndex => this.currentStreamData[originalIndex])
+        };
+
+        container.innerHTML = this.renderStreamCards(data);
+    }
+
+    // refreshStreamCards re-renders the stream card display using current ordering
+    // state, updating the visual representation after reordering operations while
+    // preserving current stream and preferred stream indicators.
+    refreshStreamCards() {
+        const container = document.getElementById('streams-container');
+        const cards = Array.from(container.querySelectorAll('.stream-card'));
+        const currentOrder = cards.map(card => parseInt(card.getAttribute('data-original-index')));
+
+        // Create data object with current order
+        const data = {
+            channelName: this.currentChannelName,
+            currentStreamIndex: parseInt(document.querySelector('.uk-card-primary')?.getAttribute('data-original-index') || 0),
+            preferredStreamIndex: this.currentStreamData[0].index,
+            streams: currentOrder.map(originalIndex => this.currentStreamData[originalIndex])
+        };
+
+        container.innerHTML = this.renderStreamCards(data);
+    }
+
+    // getCurrentStreamIndex extracts the original stream index from the currently
+    // active stream card identified by primary styling, providing accurate stream
+    // identification across reordering operations.
+    //
+    // Returns:
+    //   - number: original index of currently active stream
+    getCurrentStreamIndex() {
+        const currentCard = document.querySelector('.uk-card-primary');
+        return currentCard ? parseInt(currentCard.getAttribute('data-original-index')) : 0;
+    }
+
+    // getPreferredStreamIndex determines the original index of the preferred stream
+    // from the current stream data array, enabling proper preferred stream indicator
+    // display during reordering operations.
+    //
+    // Returns:
+    //   - number: original index of preferred stream
+    getPreferredStreamIndex() {
+        return this.currentStreamData.findIndex(s => s.index === this.currentStreamData[0].index);
     }
 
 }

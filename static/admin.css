@@ -6,11 +6,11 @@
     --uk-background-muted: #232323;
     --uk-text-primary: #ffffff;
     --uk-text-muted: #b0b0b0;
-    --uk-border-color: #4a4a4a;
-    --uk-success: #3e8a41;
-    --uk-warning: #b96f00;
-    --uk-danger: #a52d25;
-    --uk-primary: #1b639e;
+    --uk-border-color: #636363;
+    --uk-success: #265228;
+    --uk-warning: #7e4b00;
+    --uk-danger: #76211b;
+    --uk-primary: #154872;
 }
 
 body {
@@ -890,46 +890,6 @@ h4 {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* Disable hover transform during drag */
-.stream-card.uk-sortable-chosen:hover {
-    transform: none !important;
-}
-
-[uk-icon="menu"] {
-    cursor: grab;
-    color: var(--uk-text-muted);
-    transition: color 0.2s ease;
-}
-
-[uk-icon="menu"]:hover {
-    color: var(--uk-primary);
-}
-
-[uk-icon="menu"]:active {
-    cursor: grabbing;
-}
-
-/* Ensure sortable container doesn't interfere */
-#sortable-streams {
-    position: relative;
-}
-
-/* Fix for drag positioning */
-.sortable-fallback {
-    cursor: grabbing !important;
-    transform: none !important;
-    opacity: 0.8;
-}
-
-/* Disable hover transforms during drag */
-body.dragging .stream-card {
-    transition: none !important;
-}
-
-body.dragging .stream-card:hover {
-    transform: none !important;
-}
-
 /* admin.css - Add after existing badge styles (around line 300) */
 .stream-stats-badges {
     display: flex;
@@ -960,7 +920,7 @@ body.dragging .stream-card:hover {
     position: fixed;
     right: 25px;
     bottom: 25px;
-    background-color:var(--uk-warning);
+    background-color: var(--uk-warning);
     border-radius: 50%;
     opacity: 0;
 }
@@ -972,4 +932,90 @@ body.dragging .stream-card:hover {
 a.in-totop {
     color: #fff;
     text-decoration: none;
+}
+
+/* Drag and Drop Fixes */
+.uk-sortable-ghost {
+    opacity: 0.4;
+    transform: none !important;
+}
+
+.uk-sortable-chosen {
+    cursor: grabbing !important;
+    transform: none !important;
+}
+
+.uk-sortable-drag {
+    cursor: grabbing !important;
+    transform: none !important;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3) !important;
+}
+
+.stream-card {
+    transition: all 0.2s ease;
+    position: relative;
+    transform: none;
+}
+
+.stream-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.stream-card.uk-sortable-chosen:hover {
+    transform: none !important;
+}
+
+[uk-icon="menu"] {
+    cursor: grab;
+    color: var(--uk-text-muted);
+    transition: color 0.2s ease;
+}
+
+[uk-icon="menu"]:hover {
+    color: var(--uk-primary);
+}
+
+[uk-icon="menu"]:active {
+    cursor: grabbing;
+}
+
+#sortable-streams {
+    position: relative;
+}
+
+.sortable-fallback {
+    cursor: grabbing !important;
+    transform: none !important;
+    opacity: 0.8;
+}
+
+body.dragging .stream-card {
+    transition: none !important;
+}
+
+body.dragging .stream-card:hover {
+    transform: none !important;
+}
+
+/* Stream ordering buttons */
+.stream-order-btn {
+    padding: 2px 6px !important;
+    line-height: 1;
+    background: var(--uk-background-muted) !important;
+    border: 1px solid var(--uk-border-color) !important;
+}
+
+.stream-order-btn:hover:not(:disabled) {
+    background: var(--uk-primary) !important;
+    border-color: var(--uk-primary) !important;
+}
+
+.stream-order-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.stream-order-btn svg {
+    color: var(--uk-text-primary) !important;
 }

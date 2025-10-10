@@ -7,24 +7,46 @@ import (
 	"sync"
 )
 
+// ChannelStreamOrder represents the custom ordering configuration for a single channel's
+// streams, storing the channel identifier and an ordered array of stream indices that
+// define the user's preferred sequence for stream selection and display.
 type ChannelStreamOrder struct {
 	Channel     string `json:"channel"`
 	StreamOrder []int  `json:"streamOrder"` // Array of stream indexes in custom order
 }
 
+// StreamOrderFile represents the complete persistent storage structure for all channel
+// stream ordering configurations, wrapping an array of ChannelStreamOrder objects to
+// provide a consistent file format and enable future extension with additional metadata.
 type StreamOrderFile struct {
 	ChannelOrders []ChannelStreamOrder `json:"channelOrders"`
 }
 
 var (
+	// orderMutex provides thread-safe access to stream order file operations, protecting
+	// against race conditions during concurrent read and write operations from multiple
+	// goroutines handling admin interface requests.
 	orderMutex sync.RWMutex
 )
 
+// LoadStreamOrders reads and parses the stream ordering database from disk, creating
+// an empty structure if the file doesn't exist and handling corrupted data gracefully
+// by returning an empty configuration rather than failing completely.
+//
+// Returns:
+//   - *StreamOrderFile: parsed stream orders or empty structure on error
+//   - error: non-nil only for serious I/O failures that prevent operation
 func LoadStreamOrders() (*StreamOrderFile, error) {
 	orderPath := "/settings/stream-orders.json"
 
 	if _, err := os.Stat(orderPath); os.IsNotExist(err) {
-		return &StreamOrderFile{ChannelOrders: []ChannelStreamOrder{}}, nil
+		// Create empty file with proper permissions
+		emptyFile := &StreamOrderFile{ChannelOrders: []ChannelStreamOrder{}}
+		data, _ := json.MarshalIndent(emptyFile, "", "  ")
+		if err := os.WriteFile(orderPath, data, 0644); err != nil {
+			return nil, fmt.Errorf("failed to create stream orders file: %w", err)
+		}
+		return emptyFile, nil
 	}
 
 	data, err := os.ReadFile(orderPath)
@@ -48,6 +70,15 @@ func LoadStreamOrders() (*StreamOrderFile, error) {
 	return &orders, nil
 }
 
+// SaveStreamOrders persists the provided stream ordering data to disk as formatted JSON,
+// writing atomically with consistent formatting to ensure the file remains readable and
+// maintainable across application restarts.
+//
+// Parameters:
+//   - orders: complete stream ordering data structure to persist
+//
+// Returns:
+//   - error: non-nil if the file cannot be written to disk
 func SaveStreamOrders(orders *StreamOrderFile) error {
 	orderPath := "/settings/stream-orders.json"
 
@@ -59,6 +90,17 @@ func SaveStreamOrders(orders *StreamOrderFile) error {
 	return os.WriteFile(orderPath, data, 0644)
 }
 
+// SetChannelStreamOrder updates or creates the custom stream ordering for a specific
+// channel, atomically modifying the persistent database to reflect the new stream
+// sequence. If an order already exists for the channel, it is replaced; otherwise
+// a new entry is created.
+//
+// Parameters:
+//   - channelName: unique channel identifier for the ordering configuration
+//   - streamOrder: array of stream indices in the desired display order
+//
+// Returns:
+//   - error: non-nil if database operations fail
 func SetChannelStreamOrder(channelName string, streamOrder []int) error {
 	orderMutex.Lock()
 	defer orderMutex.Unlock()
@@ -83,6 +125,16 @@ func SetChannelStreamOrder(channelName string, streamOrder []int) error {
 	return SaveStreamOrders(orders)
 }
 
+// GetChannelStreamOrder retrieves the custom stream ordering for a specific channel
+// from the persistent database, returning nil if no custom order exists for the
+// requested channel (indicating default ordering should be used).
+//
+// Parameters:
+//   - channelName: unique channel identifier to retrieve ordering for
+//
+// Returns:
+//   - []int: array of stream indices in custom order, or nil if no custom order exists
+//   - error: non-nil if database operations fail
 func GetChannelStreamOrder(channelName string) ([]int, error) {
 	orderMutex.RLock()
 	defer orderMutex.RUnlock()

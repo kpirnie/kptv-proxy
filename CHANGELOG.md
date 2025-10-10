@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v10102025.01]
+
+* change stream sorter from drag/drop
+* fixed order saving
+* fixed permissions for initial order save
+* shrink final container a bit more
+
 ## [v10092025.01]
 
 * Add curl to final container
