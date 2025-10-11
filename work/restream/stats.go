@@ -12,11 +12,41 @@ import (
 	"time"
 )
 
+// StartStatsCollection initiates background statistics gathering for the active stream,
+// launching a goroutine that performs periodic FFprobe analysis to collect codec information,
+// resolution, bitrate, and other stream characteristics for monitoring and display purposes.
 func (r *Restream) StartStatsCollection() {
 	go r.collectStreamStats()
 }
 
+// collectStreamStats performs immediate initial stream analysis followed by periodic
+// monitoring at configured intervals, using FFprobe to gather comprehensive stream
+// metadata including container format, video/audio codecs, resolution, frame rate,
+// and bitrate information for operational monitoring and quality assessment.
 func (r *Restream) collectStreamStats() {
+	// Run initial stats collection immediately
+	stats := r.analyzeStreamStats()
+	if stats.Valid {
+		r.Restreamer.Stats.Mu.Lock()
+		r.Restreamer.Stats.Container = stats.Container
+		r.Restreamer.Stats.VideoCodec = stats.VideoCodec
+		r.Restreamer.Stats.AudioCodec = stats.AudioCodec
+		r.Restreamer.Stats.VideoResolution = stats.VideoResolution
+		r.Restreamer.Stats.FPS = stats.FPS
+		r.Restreamer.Stats.AudioChannels = stats.AudioChannels
+		r.Restreamer.Stats.Bitrate = stats.Bitrate
+		r.Restreamer.Stats.StreamType = stats.StreamType
+		r.Restreamer.Stats.Valid = true
+		r.Restreamer.Stats.LastUpdated = time.Now().Unix()
+		r.Restreamer.Stats.Mu.Unlock()
+
+		if r.Config.Debug {
+			r.Logger.Printf("[STATS] Channel %s: Container=%s, Video=%s@%s (%.2f fps), Audio=%s (%s), Bitrate=%d",
+				r.Channel.Name, stats.Container, stats.VideoCodec, stats.VideoResolution,
+				stats.FPS, stats.AudioCodec, stats.AudioChannels, stats.Bitrate)
+		}
+	}
+	
 	interval := 5 * time.Minute  // Default to 5 minutes
 	if r.Config.Debug {
 		interval = 1 * time.Minute  // Only 1 min in debug
@@ -24,7 +54,7 @@ func (r *Restream) collectStreamStats() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Also add jitter to prevent thundering herd
+	// Add jitter to prevent thundering herd
 	jitter := time.Duration(rand.Intn(30)) * time.Second
 	time.Sleep(jitter)
 	
@@ -62,6 +92,10 @@ func (r *Restream) collectStreamStats() {
 	}
 }
 
+// analyzeStreamStats executes FFprobe analysis on buffered stream data to extract
+// comprehensive stream characteristics including container format, video codec,
+// audio codec, resolution, frame rate, bitrate, and channel configuration, returning
+// a StreamStats structure with validity flag indicating successful analysis completion.
 func (r *Restream) analyzeStreamStats() types.StreamStats {
 	stats := types.StreamStats{}
 
@@ -177,6 +211,10 @@ func (r *Restream) analyzeStreamStats() types.StreamStats {
 	return stats
 }
 
+// parseFrameRate converts FFprobe frame rate strings in "numerator/denominator" format
+// to decimal floating-point values for accurate frame rate representation, handling
+// various standard and non-standard frame rate specifications while returning zero
+// for invalid or unparseable frame rate strings.
 func (r *Restream) parseFrameRate(frameRate string) float64 {
 	parts := strings.Split(frameRate, "/")
 	if len(parts) != 2 {
