@@ -12,6 +12,7 @@ import (
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"kptv-proxy/work/watcher"
+	"kptv-proxy/work/streamorder"
 	"runtime"
 	"strconv"
 
@@ -271,7 +272,7 @@ func (sp *StreamProxy) ImportStreams() {
 		}
 	}
 
-	// Finalize imported channels with sorting and preference preservation
+		// Finalize imported channels with sorting and preference preservation
 	count := 0
 	newChannels.Range(func(key string, value *types.Channel) bool {
 		channelName := key
@@ -281,9 +282,16 @@ func (sp *StreamProxy) ImportStreams() {
 		parser.SortStreams(channel.Streams, sp.Config, channelName)
 
 		// Preserve existing preferred stream index from previous imports
-		if existingChannel, exists := sp.Channels.Load(channelName); exists {
-			existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
-			atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
+		// But ONLY if no custom order exists - custom order always sets preferred to 0
+		customOrder, _ := streamorder.GetChannelStreamOrder(channelName)
+		if customOrder == nil {
+			if existingChannel, exists := sp.Channels.Load(channelName); exists {
+				existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
+				atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
+			}
+		} else {
+			// Custom order exists - always start at index 0 (first in custom order)
+			atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
 		}
 
 		// Atomically update channel store with new channel data

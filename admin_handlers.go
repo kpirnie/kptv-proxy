@@ -204,7 +204,6 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		// Validate the stream order array
 		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
 			http.Error(w, "Channel not found", http.StatusNotFound)
@@ -232,6 +231,8 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 			if sp.Config.Debug {
 				addLogEntry("info", fmt.Sprintf("Removing custom order for channel %s (back to default)", channelName))
 			}
+			// Delete the custom order if it exists
+			streamorder.DeleteChannelStreamOrder(channelName)
 		} else {
 			err = streamorder.SetChannelStreamOrder(channelName, request.StreamOrder)
 			if err != nil {
@@ -245,6 +246,9 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 		// Apply the new order immediately without restart
 		channel.Mu.Lock()
 		parser.SortStreams(channel.Streams, sp.Config, channelName)
+		
+		// Update preferred stream index to match the new first position
+		atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
 		channel.Mu.Unlock()
 
 		w.WriteHeader(http.StatusOK)

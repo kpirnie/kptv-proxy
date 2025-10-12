@@ -486,7 +486,6 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 			orderedStreams := make([]*types.Stream, len(streams))
 			for newPosition, originalIndex := range customOrder {
 				orderedStreams[newPosition] = streams[originalIndex]
-				orderedStreams[newPosition].CustomOrder = newPosition
 			}
 			
 			// Copy back to original slice
@@ -503,17 +502,15 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 		}
 	}
 
-	// ORIGINAL DEFAULT SORTING LOGIC - UNCHANGED
+	// ORIGINAL DEFAULT SORTING LOGIC
 	sort.SliceStable(streams, func(i, j int) bool {
 		stream1 := streams[i]
 		stream2 := streams[j]
 
-		// Primary sort: by source order (lower order = higher priority for failover)
 		if stream1.Source.Order != stream2.Source.Order {
 			return stream1.Source.Order < stream2.Source.Order
 		}
 
-		// Secondary sort: by configured field and direction for quality selection
 		val1 := stream1.Attributes[cfg.SortField]
 		val2 := stream2.Attributes[cfg.SortField]
 
@@ -522,11 +519,6 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 		}
 		return val1 < val2
 	})
-
-	// Set custom order based on final position after default sorting
-	for i, stream := range streams {
-		stream.CustomOrder = i
-	}
 
 	if cfg.Debug && len(streams) > 1 {
 		log.Printf("[SORT_AFTER] Channel %s: Applied default sorting", channelName)

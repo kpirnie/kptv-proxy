@@ -125,6 +125,30 @@ func SetChannelStreamOrder(channelName string, streamOrder []int) error {
 	return SaveStreamOrders(orders)
 }
 
+// DeleteChannelStreamOrder removes the custom stream ordering for a specific channel
+// from the persistent database, reverting to default ordering behavior.
+func DeleteChannelStreamOrder(channelName string) error {
+	orderMutex.Lock()
+	defer orderMutex.Unlock()
+
+	orders, err := LoadStreamOrders()
+	if err != nil {
+		return err
+	}
+
+	// Find and remove the channel order
+	for i, order := range orders.ChannelOrders {
+		if order.Channel == channelName {
+			// Remove this entry
+			orders.ChannelOrders = append(orders.ChannelOrders[:i], orders.ChannelOrders[i+1:]...)
+			return SaveStreamOrders(orders)
+		}
+	}
+
+	// If not found, that's okay - it's already not in the file
+	return nil
+}
+
 // GetChannelStreamOrder retrieves the custom stream ordering for a specific channel
 // from the persistent database, returning nil if no custom order exists for the
 // requested channel (indicating default ordering should be used).
