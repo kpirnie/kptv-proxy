@@ -921,7 +921,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			totalBytes += int64(n)
 
 			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 5*time.Second {
+			if now.Sub(lastActivityUpdate) > 1*time.Second {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
 			}
@@ -1249,7 +1249,7 @@ func (r *Restream) streamSingleFallbackLoop(url string) {
 
 			// Update activity timestamp periodically
 			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 10*time.Second {
+			if now.Sub(lastActivityUpdate) > 1*time.Second {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
 			}

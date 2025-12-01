@@ -23,6 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"sort"
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/puzpuzpuz/xsync/v3"
@@ -284,14 +285,37 @@ func (sp *StreamProxy) ImportStreams() {
 		// Preserve existing preferred stream index from previous imports
 		// But ONLY if no custom order exists - custom order always sets preferred to 0
 		customOrder, _ := streamorder.GetChannelStreamOrder(channelName)
-		if customOrder == nil {
+		if customOrder != nil && len(customOrder) > 0 {
+			// Apply custom order to streams
+			reorderedStreams := make([]*types.Stream, 0, len(channel.Streams))
+			
+			// Add streams in custom order (customOrder contains indices)
+			for _, idx := range customOrder {
+				if idx >= 0 && idx < len(channel.Streams) {
+					reorderedStreams = append(reorderedStreams, channel.Streams[idx])
+				}
+			}
+			
+			// Add any remaining streams not in custom order
+			usedIndices := make(map[int]bool)
+			for _, idx := range customOrder {
+				usedIndices[idx] = true
+			}
+			
+			for i, stream := range channel.Streams {
+				if !usedIndices[i] {
+					reorderedStreams = append(reorderedStreams, stream)
+				}
+			}
+			
+			channel.Streams = reorderedStreams
+			atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
+		} else {
+			// No custom order - preserve existing preferred index
 			if existingChannel, exists := sp.Channels.Load(channelName); exists {
 				existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
 				atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
 			}
-		} else {
-			// Custom order exists - always start at index 0 (first in custom order)
-			atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
 		}
 
 		// Atomically update channel store with new channel data
@@ -351,6 +375,18 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	}
 
 	channels := sp.getChannelBatch()
+
+	// Sort channels based on config
+	sort.SliceStable(channels, func(i, j int) bool {
+		iVal := sp.getChannelSortValue(channels[i])
+		jVal := sp.getChannelSortValue(channels[j])
+		
+		if sp.Config.SortDirection == "desc" {
+			return iVal > jVal
+		}
+		return iVal < jVal
+	})
+
 	estimatedSize := len(channels) * 250
 	var playlist strings.Builder
 	playlist.Grow(estimatedSize)
@@ -566,7 +602,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 						client := cvalue
 						lastSeen := client.LastSeen.Load()
 
-						if now-lastSeen > 600 {
+						if now-lastSeen > 120 {
 							if sp.Config.Debug {
 								sp.Logger.Printf("Removing inactive client: %s (last seen %d seconds ago)", ckey, now-lastSeen)
 							}
@@ -914,4 +950,25 @@ func (sp *StreamProxy) getRateLimiterForSource(source *config.SourceConfig) rate
 	}
 
 	return limiter
+}
+
+// getChannelSortValue extracts the sort value from a channel
+func (sp *StreamProxy) getChannelSortValue(ch channelBatch) string {
+	ch.channel.Mu.RLock()
+	defer ch.channel.Mu.RUnlock()
+	
+	if len(ch.channel.Streams) == 0 {
+		return ""
+	}
+	
+	sortField := sp.Config.SortField
+	if sortField == "" {
+		sortField = "tvg-name"
+	}
+	
+	if value, exists := ch.channel.Streams[0].Attributes[sortField]; exists {
+		return strings.ToLower(value)
+	}
+	
+	return strings.ToLower(ch.name)
 }
