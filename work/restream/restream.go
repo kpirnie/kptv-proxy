@@ -1,6 +1,7 @@
 package restream
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -14,15 +15,17 @@ import (
 	"kptv-proxy/work/types"
 	"log"
 	"net/http"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
-	"go.uber.org/ratelimit"
 	"github.com/puzpuzpuz/xsync/v3"
+	"go.uber.org/ratelimit"
 )
 
 // streamBufferPool provides a sync.Pool for reusing 32KB buffers during stream
@@ -135,46 +138,46 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 func (r *Restream) RemoveClient(id string) {
 
 	// Attempt to load and delete the client from the map
-    if client, ok := r.Clients.LoadAndDelete(id); ok {
+	if client, ok := r.Clients.LoadAndDelete(id); ok {
 
 		// Mark client as finished by closing its Done channel
-        select {
-        case <-client.Done:
-            // Already closed
-        default:
-            close(client.Done)
-        }
+		select {
+		case <-client.Done:
+			// Already closed
+		default:
+			close(client.Done)
+		}
 
-        // Remove the client from the buffer's internal tracking - with nil check
-        if r.Buffer != nil && !r.Buffer.IsDestroyed() {
-            r.Buffer.RemoveClient(id)
-        }
+		// Remove the client from the buffer's internal tracking - with nil check
+		if r.Buffer != nil && !r.Buffer.IsDestroyed() {
+			r.Buffer.RemoveClient(id)
+		}
 
-        // Count remaining clients
-        clientCount := 0
-        r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-            clientCount++
-            return true
-        })
+		// Count remaining clients
+		clientCount := 0
+		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
+			clientCount++
+			return true
+		})
 
-        // Update Prometheus metrics for clients
-        metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(clientCount))
+		// Update Prometheus metrics for clients
+		metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(clientCount))
 
-        // Debug logging
-        if r.Config.Debug {
-            r.Logger.Printf("[CLIENT_DISCONNECT] Channel %s: Client: %s", r.Channel.Name, id)
-            r.Logger.Printf("[METRIC] clients_connected: %d [%s]", clientCount, r.Channel.Name)
-            r.Logger.Printf("[CLIENT_REMOVE] Channel %s: Client %s removed, remaining: %d", r.Channel.Name, id, clientCount)
-        }
+		// Debug logging
+		if r.Config.Debug {
+			r.Logger.Printf("[CLIENT_DISCONNECT] Channel %s: Client: %s", r.Channel.Name, id)
+			r.Logger.Printf("[METRIC] clients_connected: %d [%s]", clientCount, r.Channel.Name)
+			r.Logger.Printf("[CLIENT_REMOVE] Channel %s: Client %s removed, remaining: %d", r.Channel.Name, id, clientCount)
+		}
 
-        // If no clients remain, stop the stream immediately
-        if clientCount == 0 {
-            if r.Config.Debug {
-                r.Logger.Printf("[RESTREAM_STOP] Channel %s: No more clients", r.Channel.Name)
-            }
-            r.stopStream()
-        }
-    }
+		// If no clients remain, stop the stream immediately
+		if clientCount == 0 {
+			if r.Config.Debug {
+				r.Logger.Printf("[RESTREAM_STOP] Channel %s: No more clients", r.Channel.Name)
+			}
+			r.stopStream()
+		}
+	}
 }
 
 // stopStream forces the restreamer to stop streaming immediately.
@@ -279,7 +282,7 @@ func (r *Restream) Stream() {
 
 			if r.Config.Debug {
 
-				r.Logger.Printf("[STREAM_CONTEXT_CHECK] Channel %s: Context done, manual=%v, attempts=%d/%d", 
+				r.Logger.Printf("[STREAM_CONTEXT_CHECK] Channel %s: Context done, manual=%v, attempts=%d/%d",
 					r.Channel.Name, isManualSwitch, totalAttempts, maxTotalAttempts)
 
 				if isManualSwitch {
@@ -378,7 +381,7 @@ func (r *Restream) Stream() {
 
 		// if the stream was successful
 		if success {
-			
+
 			// Check if this was a very brief success (likely a failure)
 			if bytesTransferred < 1024*1024 { // Less than 1MB suggests very brief connection
 				consecutiveFailures[currentIdx]++
@@ -488,7 +491,7 @@ func (r *Restream) Stream() {
 		select {
 		case <-r.Ctx.Done():
 			isManualSwitch := r.ManualSwitch.Load()
-			
+
 			if r.Config.Debug {
 				if isManualSwitch {
 					r.Logger.Printf("[STREAM_RETRY_MANUAL_SWITCH] Channel %s: Manual switch during retry delay", r.Channel.Name)
@@ -496,37 +499,37 @@ func (r *Restream) Stream() {
 					r.Logger.Printf("[STREAM_RETRY_CONTEXT_CANCELLED] Channel %s: Context cancelled during retry", r.Channel.Name)
 				}
 			}
-			
+
 			// Count clients
 			clientCount := 0
 			r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 				clientCount++
 				return true
 			})
-			
+
 			// If we have clients, restart the loop
 			if clientCount > 0 {
 				if r.Config.Debug {
 					r.Logger.Printf("[STREAM_RETRY_RESTART] Channel %s: %d clients connected, continuing failover", r.Channel.Name, clientCount)
 				}
-				
+
 				// Create fresh context
 				r.Ctx, r.Cancel = context.WithCancel(context.Background())
-				
+
 				// For manual switches, reset the flag
 				if isManualSwitch {
 					r.ManualSwitch.Store(false)
 				}
-				
+
 				// Brief pause then continue
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
-			
+
 			return
 		case <-time.After(500 * time.Millisecond): // only .5 seconds
 		}
-		
+
 	}
 
 	// If we reached here, all streams failed
@@ -552,7 +555,7 @@ func (r *Restream) Stream() {
 	if clientCount > 0 {
 		r.streamFallbackVideo()
 	}
-	
+
 }
 
 // StreamFromSource attempts to stream from a specific source index.
@@ -583,14 +586,14 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		}
 		streamURL := r.Channel.Streams[index].URL
 		r.Channel.Mu.RUnlock()
-		
+
 		if r.Config.Debug {
 			r.Logger.Printf("[FFMPEG_MODE] Channel %s", r.Channel.Name)
 		}
 		return r.streamWithFFmpeg(streamURL)
 	}
 
-	// Acquire read lock to access the channel’s stream list safely
+	// Acquire read lock to access the channel's stream list safely
 	r.Channel.Mu.RLock()
 	if index >= len(r.Channel.Streams) {
 
@@ -811,7 +814,7 @@ func (r *Restream) shouldCheckForMasterPlaylist(resp *http.Response) bool {
 		return true
 	}
 
-	// If length is very small, it’s likely a playlist
+	// If length is very small, it's likely a playlist
 	if contentLength != "" {
 		if length, err := strconv.ParseInt(contentLength, 10, 64); err == nil {
 			if length > 0 && length < 100*1024 { // under 100 KB
@@ -921,7 +924,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			totalBytes += int64(n)
 
 			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 5*time.Second {
+			if now.Sub(lastActivityUpdate) > 1*time.Second {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
 			}
@@ -1155,9 +1158,10 @@ func (r *Restream) trackStreamStart() time.Time {
 }
 
 // streamFallbackVideo streams the offline video in a loop when all streams fail
+// This version uses FFmpeg to properly transcode to MPEG-TS format
 func (r *Restream) streamFallbackVideo() {
-	fallbackURL := "https://cdn.kcp.im/tv/loading.mkv"
-	
+	fallbackURL := "https://cdn.kcp.im/tv/loading.ts"
+
 	if r.Config.Debug {
 		r.Logger.Printf("[FALLBACK] Channel %s: Starting fallback video loop", r.Channel.Name)
 	}
@@ -1190,8 +1194,9 @@ func (r *Restream) streamFallbackVideo() {
 			r.Logger.Printf("[FALLBACK] Channel %s: Starting fallback video playback for %d clients", r.Channel.Name, clientCount)
 		}
 
-		// Stream the fallback video
-		r.streamSingleFallbackLoop(fallbackURL)
+		// Use FFmpeg to transcode the fallback video to MPEG-TS format
+		// This fixes the container format mismatch (MKV vs MPEG-TS)
+		r.streamFallbackWithFFmpeg(fallbackURL)
 
 		// Brief pause before restarting loop
 		select {
@@ -1203,29 +1208,206 @@ func (r *Restream) streamFallbackVideo() {
 	}
 }
 
-// streamSingleFallbackLoop streams the fallback video once
+// streamFallbackWithFFmpeg uses FFmpeg to fetch and transcode the fallback video
+// to MPEG-TS format for proper playback in clients expecting video/mp2t content
+func (r *Restream) streamFallbackWithFFmpeg(url string) {
+	if r.Config.Debug {
+		r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Starting FFmpeg for fallback video from %s", r.Channel.Name, url)
+	}
+
+	// Build FFmpeg command to fetch and transcode to MPEG-TS
+	// -re: Read input at native frame rate (for looping playback)
+	// -i: Input URL
+	// -c copy: Copy codecs without re-encoding (fast, but may fail if codecs are incompatible)
+	// -f mpegts: Output format MPEG-TS
+	// pipe:1: Output to stdout
+	args := []string{
+		"-hide_banner",
+		"-loglevel", "warning",
+		"-reconnect", "1",
+		"-reconnect_streamed", "1",
+		"-reconnect_delay_max", "5",
+		"-re",     // Read at native frame rate
+		"-i", url, // Input URL
+		"-c", "copy", // Copy codecs (fast)
+		"-f", "mpegts", // Output format: MPEG-TS
+		"-mpegts_flags", "resend_headers",
+		"pipe:1", // Output to stdout
+	}
+
+	ctx, cancel := context.WithCancel(r.Ctx)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		if r.Config.Debug {
+			r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Failed to create stdout pipe: %v", r.Channel.Name, err)
+		}
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		if r.Config.Debug {
+			r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Failed to create stderr pipe: %v", r.Channel.Name, err)
+		}
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		if r.Config.Debug {
+			r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Failed to start FFmpeg: %v", r.Channel.Name, err)
+		}
+		return
+	}
+
+	// Ensure cleanup on exit
+	defer func() {
+		if cmd.Process != nil {
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			cmd.Wait()
+		}
+	}()
+
+	// Log FFmpeg errors in background
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if r.Config.Debug {
+				r.Logger.Printf("[FALLBACK_FFMPEG_STDERR] Channel %s: %s", r.Channel.Name, line)
+			}
+		}
+	}()
+
+	// Stream the output to clients
+	bufPtr := getStreamBuffer()
+	buf := *bufPtr
+	defer putStreamBuffer(bufPtr)
+
+	lastActivityUpdate := time.Now()
+	totalBytes := int64(0)
+
+	for {
+		select {
+		case <-r.Ctx.Done():
+			if r.Config.Debug {
+				r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
+			}
+			return
+		default:
+		}
+
+		// Check if we still have clients
+		clientCount := 0
+		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
+			clientCount++
+			return true
+		})
+
+		if clientCount == 0 {
+			if r.Config.Debug {
+				r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: No clients remaining after %d bytes", r.Channel.Name, totalBytes)
+			}
+			return
+		}
+
+		n, err := stdout.Read(buf)
+		if n > 0 {
+			totalBytes += int64(n)
+			chunk := buf[:n]
+
+			if !r.SafeBufferWrite(chunk) {
+				if r.Config.Debug {
+					r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Buffer write failed after %d bytes", r.Channel.Name, totalBytes)
+				}
+				return
+			}
+
+			activeClients := r.DistributeToClients(chunk)
+			if activeClients == 0 {
+				if r.Config.Debug {
+					r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: No active clients after distribute", r.Channel.Name)
+				}
+				return
+			}
+
+			// Update activity timestamp periodically
+			now := time.Now()
+			if now.Sub(lastActivityUpdate) > 1*time.Second {
+				r.LastActivity.Store(now.Unix())
+				lastActivityUpdate = now
+			}
+
+			// Log progress periodically
+			if r.Config.Debug && totalBytes%(1024*1024) < int64(n) {
+				r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Streamed %d KB so far", r.Channel.Name, totalBytes/1024)
+			}
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				if r.Config.Debug {
+					r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Fallback video finished (%d bytes)", r.Channel.Name, totalBytes)
+				}
+				return
+			}
+			if r.Config.Debug {
+				r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Read error: %v (after %d bytes)", r.Channel.Name, err, totalBytes)
+			}
+			return
+		}
+	}
+}
+
+// streamSingleFallbackLoop streams the fallback video once (legacy - kept for reference)
+// NOTE: This function is no longer used - replaced by streamFallbackWithFFmpeg
+// The issue was that this streamed MKV data directly while the client expects MPEG-TS
 func (r *Restream) streamSingleFallbackLoop(url string) {
+	if r.Config.Debug {
+		r.Logger.Printf("[FALLBACK_LEGACY] Channel %s: Using legacy fallback (deprecated) from %s", r.Channel.Name, url)
+	}
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		if r.Config.Debug {
+			r.Logger.Printf("[FALLBACK_LEGACY_ERROR] Channel %s: Failed to create request: %v", r.Channel.Name, err)
+		}
 		return
 	}
 
 	req = req.WithContext(r.Ctx)
+	req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
+	req.Header.Set("Accept", "*/*")
 
 	resp, err := r.HttpClient.Do(req)
 	if err != nil {
+		if r.Config.Debug {
+			r.Logger.Printf("[FALLBACK_LEGACY_ERROR] Channel %s: HTTP request failed: %v", r.Channel.Name, err)
+		}
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if r.Config.Debug {
+			r.Logger.Printf("[FALLBACK_LEGACY_ERROR] Channel %s: HTTP status %d", r.Channel.Name, resp.StatusCode)
+		}
 		return
+	}
+
+	if r.Config.Debug {
+		r.Logger.Printf("[FALLBACK_LEGACY] Channel %s: Streaming %s bytes", r.Channel.Name, resp.Header.Get("Content-Length"))
 	}
 
 	bufPtr := getStreamBuffer()
 	buf := *bufPtr
 	defer putStreamBuffer(bufPtr)
 	lastActivityUpdate := time.Now()
+	totalBytes := int64(0)
 
 	for {
 		select {
@@ -1236,6 +1418,7 @@ func (r *Restream) streamSingleFallbackLoop(url string) {
 
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			totalBytes += int64(n)
 			chunk := buf[:n]
 
 			if !r.SafeBufferWrite(chunk) {
@@ -1249,7 +1432,7 @@ func (r *Restream) streamSingleFallbackLoop(url string) {
 
 			// Update activity timestamp periodically
 			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 10*time.Second {
+			if now.Sub(lastActivityUpdate) > 1*time.Second {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
 			}
@@ -1257,8 +1440,13 @@ func (r *Restream) streamSingleFallbackLoop(url string) {
 
 		if err != nil {
 			if err == io.EOF {
-				// Video finished, return to restart loop
+				if r.Config.Debug {
+					r.Logger.Printf("[FALLBACK_LEGACY] Channel %s: Finished (%d bytes)", r.Channel.Name, totalBytes)
+				}
 				return
+			}
+			if r.Config.Debug {
+				r.Logger.Printf("[FALLBACK_LEGACY_ERROR] Channel %s: Read error: %v", r.Channel.Name, err)
 			}
 			return
 		}
