@@ -1,7 +1,6 @@
 package restream
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -15,13 +14,12 @@ import (
 	"kptv-proxy/work/types"
 	"log"
 	"net/http"
-	"os/exec"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/puzpuzpuz/xsync/v3"
@@ -1158,9 +1156,9 @@ func (r *Restream) trackStreamStart() time.Time {
 }
 
 // streamFallbackVideo streams the offline video in a loop when all streams fail
-// This version uses FFmpeg to properly transcode to MPEG-TS format
 func (r *Restream) streamFallbackVideo() {
-	fallbackURL := "https://cdn.kcp.im/tv/loading.ts"
+	// Local path inside container - copy loading.ts here
+	fallbackPath := "/static/loading.ts"
 
 	if r.Config.Debug {
 		r.Logger.Printf("[FALLBACK] Channel %s: Starting fallback video loop", r.Channel.Name)
@@ -1194,9 +1192,8 @@ func (r *Restream) streamFallbackVideo() {
 			r.Logger.Printf("[FALLBACK] Channel %s: Starting fallback video playback for %d clients", r.Channel.Name, clientCount)
 		}
 
-		// Use FFmpeg to transcode the fallback video to MPEG-TS format
-		// This fixes the container format mismatch (MKV vs MPEG-TS)
-		r.streamFallbackWithFFmpeg(fallbackURL)
+		// Stream the local fallback video
+		r.streamLocalFallback(fallbackPath)
 
 		// Brief pause before restarting loop
 		select {
@@ -1208,82 +1205,21 @@ func (r *Restream) streamFallbackVideo() {
 	}
 }
 
-// streamFallbackWithFFmpeg uses FFmpeg to fetch and transcode the fallback video
-// to MPEG-TS format for proper playback in clients expecting video/mp2t content
-func (r *Restream) streamFallbackWithFFmpeg(url string) {
+// streamLocalFallback streams a local .ts file in a loop
+func (r *Restream) streamLocalFallback(filePath string) {
 	if r.Config.Debug {
-		r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Starting FFmpeg for fallback video from %s", r.Channel.Name, url)
+		r.Logger.Printf("[FALLBACK_LOCAL] Channel %s: Starting local fallback from %s", r.Channel.Name, filePath)
 	}
 
-	// Build FFmpeg command to fetch and transcode to MPEG-TS
-	// -re: Read input at native frame rate (for looping playback)
-	// -i: Input URL
-	// -c copy: Copy codecs without re-encoding (fast, but may fail if codecs are incompatible)
-	// -f mpegts: Output format MPEG-TS
-	// pipe:1: Output to stdout
-	args := []string{
-		"-hide_banner",
-		"-loglevel", "warning",
-		"-reconnect", "1",
-		"-reconnect_streamed", "1",
-		"-reconnect_delay_max", "5",
-		"-re",     // Read at native frame rate
-		"-i", url, // Input URL
-		"-c", "copy", // Copy codecs (fast)
-		"-f", "mpegts", // Output format: MPEG-TS
-		"-mpegts_flags", "resend_headers",
-		"pipe:1", // Output to stdout
-	}
-
-	ctx, cancel := context.WithCancel(r.Ctx)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-	stdout, err := cmd.StdoutPipe()
+	file, err := os.Open(filePath)
 	if err != nil {
 		if r.Config.Debug {
-			r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Failed to create stdout pipe: %v", r.Channel.Name, err)
+			r.Logger.Printf("[FALLBACK_LOCAL] Channel %s: Failed to open file: %v", r.Channel.Name, err)
 		}
 		return
 	}
+	defer file.Close()
 
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Failed to create stderr pipe: %v", r.Channel.Name, err)
-		}
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Failed to start FFmpeg: %v", r.Channel.Name, err)
-		}
-		return
-	}
-
-	// Ensure cleanup on exit
-	defer func() {
-		if cmd.Process != nil {
-			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			cmd.Wait()
-		}
-	}()
-
-	// Log FFmpeg errors in background
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if r.Config.Debug {
-				r.Logger.Printf("[FALLBACK_FFMPEG_STDERR] Channel %s: %s", r.Channel.Name, line)
-			}
-		}
-	}()
-
-	// Stream the output to clients
 	bufPtr := getStreamBuffer()
 	buf := *bufPtr
 	defer putStreamBuffer(bufPtr)
@@ -1295,7 +1231,7 @@ func (r *Restream) streamFallbackWithFFmpeg(url string) {
 		select {
 		case <-r.Ctx.Done():
 			if r.Config.Debug {
-				r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
+				r.Logger.Printf("[FALLBACK_LOCAL] Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
 			}
 			return
 		default:
@@ -1310,19 +1246,19 @@ func (r *Restream) streamFallbackWithFFmpeg(url string) {
 
 		if clientCount == 0 {
 			if r.Config.Debug {
-				r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: No clients remaining after %d bytes", r.Channel.Name, totalBytes)
+				r.Logger.Printf("[FALLBACK_LOCAL] Channel %s: No clients remaining", r.Channel.Name)
 			}
 			return
 		}
 
-		n, err := stdout.Read(buf)
+		n, err := file.Read(buf)
 		if n > 0 {
 			totalBytes += int64(n)
 			chunk := buf[:n]
 
 			if !r.SafeBufferWrite(chunk) {
 				if r.Config.Debug {
-					r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Buffer write failed after %d bytes", r.Channel.Name, totalBytes)
+					r.Logger.Printf("[FALLBACK_LOCAL] Channel %s: Buffer write failed", r.Channel.Name)
 				}
 				return
 			}
@@ -1330,7 +1266,7 @@ func (r *Restream) streamFallbackWithFFmpeg(url string) {
 			activeClients := r.DistributeToClients(chunk)
 			if activeClients == 0 {
 				if r.Config.Debug {
-					r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: No active clients after distribute", r.Channel.Name)
+					r.Logger.Printf("[FALLBACK_LOCAL] Channel %s: No active clients after distribute", r.Channel.Name)
 				}
 				return
 			}
@@ -1342,111 +1278,22 @@ func (r *Restream) streamFallbackWithFFmpeg(url string) {
 				lastActivityUpdate = now
 			}
 
-			// Log progress periodically
-			if r.Config.Debug && totalBytes%(1024*1024) < int64(n) {
-				r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Streamed %d KB so far", r.Channel.Name, totalBytes/1024)
-			}
+			// Throttle to approximate real-time playback (~1MB/sec for typical streams)
+			time.Sleep(time.Duration(n) * time.Microsecond / 2)
 		}
 
 		if err != nil {
 			if err == io.EOF {
 				if r.Config.Debug {
-					r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Fallback video finished (%d bytes)", r.Channel.Name, totalBytes)
+					r.Logger.Printf("[FALLBACK_LOCAL] Channel %s: Finished loop (%d bytes), restarting", r.Channel.Name, totalBytes)
 				}
-				return
+				// Seek back to beginning for loop
+				file.Seek(0, 0)
+				totalBytes = 0
+				continue
 			}
 			if r.Config.Debug {
-				r.Logger.Printf("[FALLBACK_FFMPEG] Channel %s: Read error: %v (after %d bytes)", r.Channel.Name, err, totalBytes)
-			}
-			return
-		}
-	}
-}
-
-// streamSingleFallbackLoop streams the fallback video once (legacy - kept for reference)
-// NOTE: This function is no longer used - replaced by streamFallbackWithFFmpeg
-// The issue was that this streamed MKV data directly while the client expects MPEG-TS
-func (r *Restream) streamSingleFallbackLoop(url string) {
-	if r.Config.Debug {
-		r.Logger.Printf("[FALLBACK_LEGACY] Channel %s: Using legacy fallback (deprecated) from %s", r.Channel.Name, url)
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[FALLBACK_LEGACY_ERROR] Channel %s: Failed to create request: %v", r.Channel.Name, err)
-		}
-		return
-	}
-
-	req = req.WithContext(r.Ctx)
-	req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
-	req.Header.Set("Accept", "*/*")
-
-	resp, err := r.HttpClient.Do(req)
-	if err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[FALLBACK_LEGACY_ERROR] Channel %s: HTTP request failed: %v", r.Channel.Name, err)
-		}
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		if r.Config.Debug {
-			r.Logger.Printf("[FALLBACK_LEGACY_ERROR] Channel %s: HTTP status %d", r.Channel.Name, resp.StatusCode)
-		}
-		return
-	}
-
-	if r.Config.Debug {
-		r.Logger.Printf("[FALLBACK_LEGACY] Channel %s: Streaming %s bytes", r.Channel.Name, resp.Header.Get("Content-Length"))
-	}
-
-	bufPtr := getStreamBuffer()
-	buf := *bufPtr
-	defer putStreamBuffer(bufPtr)
-	lastActivityUpdate := time.Now()
-	totalBytes := int64(0)
-
-	for {
-		select {
-		case <-r.Ctx.Done():
-			return
-		default:
-		}
-
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			totalBytes += int64(n)
-			chunk := buf[:n]
-
-			if !r.SafeBufferWrite(chunk) {
-				return
-			}
-
-			activeClients := r.DistributeToClients(chunk)
-			if activeClients == 0 {
-				return
-			}
-
-			// Update activity timestamp periodically
-			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 1*time.Second {
-				r.LastActivity.Store(now.Unix())
-				lastActivityUpdate = now
-			}
-		}
-
-		if err != nil {
-			if err == io.EOF {
-				if r.Config.Debug {
-					r.Logger.Printf("[FALLBACK_LEGACY] Channel %s: Finished (%d bytes)", r.Channel.Name, totalBytes)
-				}
-				return
-			}
-			if r.Config.Debug {
-				r.Logger.Printf("[FALLBACK_LEGACY_ERROR] Channel %s: Read error: %v", r.Channel.Name, err)
+				r.Logger.Printf("[FALLBACK_LOCAL] Channel %s: Read error: %v", r.Channel.Name, err)
 			}
 			return
 		}

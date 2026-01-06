@@ -31,6 +31,7 @@ COPY --from=docker.io/mwader/static-ffmpeg:latest /ffmpeg /usr/local/bin/
 COPY --from=docker.io/mwader/static-ffmpeg:latest /ffprobe /usr/local/bin/
 COPY --from=builder /app/kptv-proxy /usr/local/bin/kptv-proxy
 COPY --from=builder /app/static /static
+COPY loading.ts /static/
 
 RUN mkdir -p /dev/dri && \
     addgroup --gid 1000 kptv && \
