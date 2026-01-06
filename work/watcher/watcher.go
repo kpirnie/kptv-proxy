@@ -375,7 +375,7 @@ func (sw *StreamWatcher) checkStreamHealth() {
 		}
 
 		// CHANGED: REQUIRE BOTH CONDITIONS AND HIGHER THRESHOLDS
-		if consecutiveFailures >= 5 && totalFailures >= 5 {
+		if consecutiveFailures >= 3 && totalFailures >= 3 {
 			reason := "persistent_failures"
 			sw.triggerStreamSwitch(reason)
 
@@ -419,8 +419,8 @@ func (sw *StreamWatcher) checkStreamHealth() {
 // Returns:
 //   - bool: true if health issues detected, false if stream appears healthy
 func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
-	// Increase grace period to 120 seconds
-	if time.Since(sw.lastStreamStart) < 120*time.Second {
+	// Increase grace period to 30 seconds
+	if time.Since(sw.lastStreamStart) < 30*time.Second {
 		if sw.restreamer.Config.Debug {
 			sw.logger.Printf("[WATCHER] Channel %s: In grace period, skipping health check", sw.channelName)
 		}
@@ -439,8 +439,8 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	lastActivity := sw.restreamer.LastActivity.Load()
 	timeSinceActivity := time.Now().Unix() - lastActivity
 
-	// Increase activity timeout to 600 seconds (10 minutes)
-	if timeSinceActivity > 600 {
+	// Increase activity timeout to 30 seconds
+	if timeSinceActivity > 30 {
 		if sw.restreamer.Config.Debug {
 			sw.logger.Printf("[WATCHER] Channel %s: No activity for %d seconds", sw.channelName, timeSinceActivity)
 		}

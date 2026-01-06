@@ -37,7 +37,7 @@ func NewHeaderSettingClient() *HeaderSettingClient {
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 			DisableKeepAlives:     false,
-			ResponseHeaderTimeout: 30 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
 			ForceAttemptHTTP2:     true,             // Enable HTTP/2 where available
 			DisableCompression:    false,            // Allow compression
 			WriteBufferSize:       32 * 1024,        // 32KB write buffer

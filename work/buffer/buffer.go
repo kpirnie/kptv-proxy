@@ -199,6 +199,14 @@ func (rb *RingBuffer) IsDestroyed() bool {
 	return rb.destroyed.Load()
 }
 
+// for monitoring
+func (rb *RingBuffer) GetWritePosition() int64 {
+    if rb.destroyed.Load() {
+        return 0
+    }
+    return rb.writePos.Load()
+}
+
 // PeekRecentData returns the most recent data from the buffer up to maxBytes.
 // Returns nil if the buffer is destroyed, empty, or contains no data.
 // The returned data is a copy and safe for modification.
