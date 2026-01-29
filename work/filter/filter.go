@@ -1,7 +1,6 @@
 package filter
 
 import (
-	"fmt"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
@@ -111,8 +110,8 @@ func (fm *FilterManager) RemoveFilter(sourceURL string) {
 func FilterStreams(streams []*types.Stream, source *config.SourceConfig, filterManager *FilterManager, debug bool) []*types.Stream {
 
 	// Debug logging to see if filtering is being called
-	if debug && len(streams) > 0 && streams[0].Source != nil && streams[0].Source.Name != "" {
-		fmt.Printf("[FILTER_DEBUG] Source: %s, Streams: %d, LiveInclude: %s, LiveExclude: %s, SeriesInclude: %s, SeriesExclude: %s, VODInclude: %s, VODExclude: %s\n",
+	if len(streams) > 0 && streams[0].Source != nil && streams[0].Source.Name != "" {
+		logger.Debug("[FILTER_DEBUG] Source: %s, Streams: %d, LiveInclude: %s, LiveExclude: %s, SeriesInclude: %s, SeriesExclude: %s, VODInclude: %s, VODExclude: %s\n",
 			source.Name, len(streams), source.LiveIncludeRegex, source.LiveExcludeRegex,
 			source.SeriesIncludeRegex, source.SeriesExcludeRegex, source.VODIncludeRegex, source.VODExcludeRegex)
 	}
@@ -235,11 +234,9 @@ func getContentType(stream *types.Stream, debug bool) string {
 	seriesURLMatch := seriesRegex.MatchString(streamURL)
 	vodURLMatch := vodRegex.MatchString(streamURL)
 
-	if debug {
-		fmt.Printf("[FILTER_DEBUG] Content type detection for '%s':\n", streamName)
-		fmt.Printf("[FILTER_DEBUG]   SeriesName: %v, VODName: %v, SeriesURL: %v, VODURL: %v\n",
-			seriesNameMatch, vodNameMatch, seriesURLMatch, vodURLMatch)
-	}
+	logger.Debug("[FILTER_DEBUG] Content type detection for '%s':\n", streamName)
+	logger.Debug("[FILTER_DEBUG]   SeriesName: %v, VODName: %v, SeriesURL: %v, VODURL: %v\n",
+		seriesNameMatch, vodNameMatch, seriesURLMatch, vodURLMatch)
 
 	// Apply same logic as import parsing
 	if seriesNameMatch || seriesURLMatch {

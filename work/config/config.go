@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/logger"
 	"log"
 	"net/url"
 	"os"
@@ -131,15 +132,17 @@ func EnsureConfigExists() error {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Ensure directory exists
 		if err := os.MkdirAll("/settings", 0755); err != nil {
-			return fmt.Errorf("failed to create settings directory: %w", err)
+			logger.Error("failed to create settings directory: %v", err)
+			return err
 		}
 
 		// Create default config file
 		log.Println("Config file not found, creating default config at", configPath)
 		if err := CreateExampleConfig(configPath); err != nil {
-			return fmt.Errorf("failed to create default config: %w", err)
+			logger.Error("failed to create default config: %v", err)
+			return err
 		}
-		log.Println("Default config file created successfully")
+		logger.Debug("Default config file created successfully")
 	}
 
 	return nil
@@ -175,8 +178,8 @@ func LoadConfig() *Config {
 	configPath := "/settings/config.json"
 	config, err := loadFromFile(configPath)
 	if err != nil {
-		log.Printf("Failed to load config from %s: %v", configPath, err)
-		log.Printf("Falling back to default configuration...")
+		logger.Error("Failed to load config from %s: %v", configPath, err)
+		logger.Error("Falling back to default configuration...")
 		config = getDefaultConfig()
 	}
 
@@ -187,19 +190,7 @@ func LoadConfig() *Config {
 	configCache = config
 
 	// Debug logging of loaded config
-	if config.Debug {
-		log.Printf("Configuration loaded:")
-		log.Printf("  Sources: %d configured", len(config.Sources))
-		for i := range config.Sources {
-			src := &config.Sources[i]
-			urlToLog := obfuscateURL(src.URL)
-			log.Printf("    Source %d (%s): %s (max connections: %d, order: %d)",
-				i+1, src.Name, urlToLog, src.MaxConnections, src.Order)
-		}
-		log.Printf("  Debug: %v", config.Debug)
-		log.Printf("  Obfuscate URLs: %v", config.ObfuscateUrls)
-		log.Printf("  Max Connections to App: %d", config.MaxConnectionsToApp)
-	}
+	logger.Debug("Configuration loaded")
 
 	return config
 }
@@ -217,13 +208,15 @@ func loadFromFile(path string) (*Config, error) {
 	// read from tthe file
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		logger.Error("failed to read config file: %v", err)
+		return nil, err
 	}
 
 	// unmarshal the config file
 	var configFile ConfigFile
 	if err := json.Unmarshal(data, &configFile); err != nil {
-		return nil, fmt.Errorf("failed to parse config JSON: %w", err)
+		logger.Error("failed to parse config JSON: %v", err)
+		return nil, err
 	}
 
 	// convert to our settings
@@ -253,13 +246,16 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 	// Parse duration fields
 	var err error
 	if config.CacheDuration, err = time.ParseDuration(cf.CacheDuration); err != nil {
-		return nil, fmt.Errorf("invalid cacheDuration: %w", err)
+		logger.Error("invalid cacheDuration: %v", err)
+		return nil, err
 	}
 	if config.ImportRefreshInterval, err = time.ParseDuration(cf.ImportRefreshInterval); err != nil {
-		return nil, fmt.Errorf("invalid importRefreshInterval: %w", err)
+		logger.Error("invalid importRefreshInterval: %v", err)
+		return nil, err
 	}
 	if config.StreamTimeout, err = time.ParseDuration(cf.StreamTimeout); err != nil {
-		return nil, fmt.Errorf("invalid streamTimeout: %w", err)
+		logger.Error("invalid streamTimeout: %v", err)
+		return nil, err
 	}
 
 	// Convert sources
@@ -287,10 +283,12 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 
 		// Parse per-source durations
 		if src.MaxStreamTimeout, err = time.ParseDuration(srcFile.MaxStreamTimeout); err != nil {
-			return nil, fmt.Errorf("invalid maxStreamTimeout for source %s: %w", src.Name, err)
+			logger.Error("invalid maxStreamTimeout for source %s: %v", src.Name, err)
+			return nil, err
 		}
 		if src.RetryDelay, err = time.ParseDuration(srcFile.RetryDelay); err != nil {
-			return nil, fmt.Errorf("invalid retryDelay for source %s: %w", src.Name, err)
+			logger.Error("invalid retryDelay for source %s: %v", src.Name, err)
+			return nil, err
 		}
 	}
 
@@ -496,6 +494,7 @@ func CreateExampleConfig(path string) error {
 	// setup the data properly
 	data, err := json.MarshalIndent(example, "", "  ")
 	if err != nil {
+		logger.Error("Example config: %v", err)
 		return err
 	}
 

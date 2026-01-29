@@ -882,7 +882,6 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			consecutiveErrors++
 			if consecutiveErrors >= maxConsecutiveErrors {
 				logger.Error("[STREAM_READ_ERROR] Channel %s: %v (consecutive: %d)", r.Channel.Name, err, consecutiveErrors)
-
 				return false, totalBytes
 			}
 

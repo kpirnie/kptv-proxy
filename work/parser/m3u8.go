@@ -13,7 +13,6 @@ import (
 	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
-	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -464,8 +463,8 @@ func ParseEXTINF(line string) map[string]string {
 //   - cfg: application configuration containing sort field and direction preferences
 //   - channelName: channel name for debug logging context
 func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string) {
-	if cfg.Debug && len(streams) > 1 {
-		log.Printf("[SORT_BEFORE] Channel %s: Sorting %d streams", channelName, len(streams))
+	if len(streams) > 1 {
+		logger.Debug("[SORT_BEFORE] Channel %s: Sorting %d streams", channelName, len(streams))
 	}
 
 	// Check if there's a custom order for this channel
