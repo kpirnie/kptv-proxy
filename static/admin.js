@@ -988,6 +988,7 @@ class KPTVAdmin {
                 totalChannels: 0,
                 activeStreams: 0,
                 totalSources: 0,
+                totalEpgs: 0,
                 connectedClients: 0,
                 uptime: "0m",
                 memoryUsage: "0 MB",
@@ -1012,11 +1013,13 @@ class KPTVAdmin {
         const totalChannelsEl = document.getElementById('total-channels');
         const activeStreamsEl = document.getElementById('active-streams');
         const totalSourcesEl = document.getElementById('total-sources');
+        const totalEPGsEl = document.getElementById('total-epgs');
         const connectedClientsEl = document.getElementById('connected-clients');
 
         if (totalChannelsEl) totalChannelsEl.textContent = stats.totalChannels || 0;
         if (activeStreamsEl) activeStreamsEl.textContent = stats.activeStreams || 0;
         if (totalSourcesEl) totalSourcesEl.textContent = stats.totalSources || 0;
+        if (totalEPGsEl) totalEPGsEl.textContent = stats.totalEpgs || 0;
         if (connectedClientsEl) connectedClientsEl.textContent = stats.connectedClients || 0;
 
         const uptimeEl = document.getElementById('uptime');

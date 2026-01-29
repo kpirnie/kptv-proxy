@@ -16,13 +16,13 @@ import (
 
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/deadstreams"
-	"kptv-proxy/work/proxy"
-	"kptv-proxy/work/restream"
-	"kptv-proxy/work/types"
-	"kptv-proxy/work/utils"
-	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/middleware"
 	"kptv-proxy/work/parser"
+	"kptv-proxy/work/proxy"
+	"kptv-proxy/work/restream"
+	"kptv-proxy/work/streamorder"
+	"kptv-proxy/work/types"
+	"kptv-proxy/work/utils"
 
 	"github.com/gorilla/mux"
 )
@@ -32,22 +32,22 @@ import (
 // The structure includes real-time performance data, resource utilization measurements,
 // and system health indicators essential for IPTV proxy administration.
 type StatsResponse struct {
-	TotalChannels       int    `json:"totalChannels"`
-	ActiveStreams       int    `json:"activeStreams"`
-	TotalSources        int    `json:"totalSources"`
-	ConnectedClients    int    `json:"connectedClients"`
-	Uptime              string `json:"uptime"`
-	MemoryUsage         string `json:"memoryUsage"`
-	CacheStatus         string `json:"cacheStatus"`
-	WorkerThreads       int    `json:"workerThreads"`
-	TotalConnections    int    `json:"totalConnections"`
-	BytesTransferred    string `json:"bytesTransferred"`
-	ActiveRestreamers   int    `json:"activeRestreamers"`
-	StreamErrors        int    `json:"streamErrors"`
-	ResponseTime        string `json:"responseTime"`
-	WatcherEnabled      bool   `json:"watcherEnabled"`
-	UpstreamConnections int    `json:"upstreamConnections"`
-	ActiveChannels      int    `json:"activeChannels"`        
+	TotalChannels       int     `json:"totalChannels"`
+	ActiveStreams       int     `json:"activeStreams"`
+	TotalSources        int     `json:"totalSources"`
+	ConnectedClients    int     `json:"connectedClients"`
+	Uptime              string  `json:"uptime"`
+	MemoryUsage         string  `json:"memoryUsage"`
+	CacheStatus         string  `json:"cacheStatus"`
+	WorkerThreads       int     `json:"workerThreads"`
+	TotalConnections    int     `json:"totalConnections"`
+	BytesTransferred    string  `json:"bytesTransferred"`
+	ActiveRestreamers   int     `json:"activeRestreamers"`
+	StreamErrors        int     `json:"streamErrors"`
+	ResponseTime        string  `json:"responseTime"`
+	WatcherEnabled      bool    `json:"watcherEnabled"`
+	UpstreamConnections int     `json:"upstreamConnections"`
+	ActiveChannels      int     `json:"activeChannels"`
 	AvgClientsPerStream float64 `json:"avgClientsPerStream"`
 }
 
@@ -102,11 +102,11 @@ var (
 	// adminStartTime records the admin interface initialization timestamp for uptime
 	// calculation and performance monitoring across the administrative interface lifecycle.
 	adminStartTime = time.Now()
-	
+
 	// logEntries maintains a circular buffer of recent log entries with a 1000 entry limit,
 	// providing real-time debugging information through the admin interface without
 	// unbounded memory growth during long-running operations.
-	logEntries     = make([]LogEntry, 0, 1000)
+	logEntries = make([]LogEntry, 0, 1000)
 )
 
 // Global restart coordination channel
@@ -246,7 +246,7 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 		// Apply the new order immediately without restart
 		channel.Mu.Lock()
 		parser.SortStreams(channel.Streams, sp.Config, channelName)
-		
+
 		// Update preferred stream index to match the new first position
 		atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
 		channel.Mu.Unlock()
@@ -350,17 +350,17 @@ func handleGetChannelStats(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		channel.Restreamer.Stats.Mu.RLock()
 		stats := map[string]interface{}{
-			"streaming":        true,
-			"container":        channel.Restreamer.Stats.Container,
-			"videoCodec":       channel.Restreamer.Stats.VideoCodec,
-			"audioCodec":       channel.Restreamer.Stats.AudioCodec,
-			"videoResolution":  channel.Restreamer.Stats.VideoResolution,
-			"fps":              channel.Restreamer.Stats.FPS,
-			"audioChannels":    channel.Restreamer.Stats.AudioChannels,
-			"bitrate":          channel.Restreamer.Stats.Bitrate,
-			"streamType":       channel.Restreamer.Stats.StreamType,
-			"valid":            channel.Restreamer.Stats.Valid,
-			"lastUpdated":      channel.Restreamer.Stats.LastUpdated,
+			"streaming":       true,
+			"container":       channel.Restreamer.Stats.Container,
+			"videoCodec":      channel.Restreamer.Stats.VideoCodec,
+			"audioCodec":      channel.Restreamer.Stats.AudioCodec,
+			"videoResolution": channel.Restreamer.Stats.VideoResolution,
+			"fps":             channel.Restreamer.Stats.FPS,
+			"audioChannels":   channel.Restreamer.Stats.AudioChannels,
+			"bitrate":         channel.Restreamer.Stats.Bitrate,
+			"streamType":      channel.Restreamer.Stats.StreamType,
+			"valid":           channel.Restreamer.Stats.Valid,
+			"lastUpdated":     channel.Restreamer.Stats.LastUpdated,
 		}
 		channel.Restreamer.Stats.Mu.RUnlock()
 
@@ -659,7 +659,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 		connectedClients := 0
 		activeRestreamers := 0
 		upstreamConnections := 0
-		activeChannels := 0  // NEW
+		activeChannels := 0 // NEW
 
 		sp.Channels.Range(func(key string, value *types.Channel) bool {
 			totalChannels++
@@ -669,7 +669,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 				activeStreams++
 				activeRestreamers++
 				upstreamConnections++
-				activeChannels++  // NEW - count active channels
+				activeChannels++ // NEW - count active channels
 				channel.Restreamer.Clients.Range(func(_ string, _ *types.RestreamClient) bool {
 					connectedClients++
 					return true
@@ -701,6 +701,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			TotalChannels:       totalChannels,
 			ActiveStreams:       activeStreams,
 			TotalSources:        len(sp.Config.Sources),
+			TotalEpgs:           len(sp.Config.EPGs),
 			ConnectedClients:    connectedClients,
 			Uptime:              uptimeStr,
 			MemoryUsage:         memoryUsage,
@@ -713,8 +714,8 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			ResponseTime:        "< 1ms",
 			WatcherEnabled:      sp.Config.WatcherEnabled,
 			UpstreamConnections: upstreamConnections,
-			ActiveChannels:      activeChannels,        // NEW
-			AvgClientsPerStream: avgClientsPerStream,   // NEW
+			ActiveChannels:      activeChannels,      // NEW
+			AvgClientsPerStream: avgClientsPerStream, // NEW
 		}
 
 		if err := json.NewEncoder(w).Encode(stats); err != nil {
@@ -765,7 +766,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				} else if g, ok := channel.Streams[0].Attributes["tvg-group"]; ok && g != "" {
 					group = g
 				}
-				
+
 				// Get logo URL
 				if logo, ok := channel.Streams[0].Attributes["tvg-logo"]; ok && logo != "" {
 					logoURL = logo
