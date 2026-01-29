@@ -44,7 +44,7 @@ type StreamProxy struct {
 	Config                *config.Config                       // Application configuration with source URLs and operational parameters
 	Channels              *xsync.MapOf[string, *types.Channel] // Thread-safe map of channel name -> *types.Channel for concurrent access
 	Cache                 *cache.Cache                         // Playlist and metadata caching system for performance optimization
-	EPGCache              *cache.EPGCache                      // EPG caching system
+	EPGCache              *cache.Cache                         // EPG caching system
 	Logger                *log.Logger                          // Centralized logging system for debugging and operational monitoring
 	BufferPool            *buffer.BufferPool                   // Reusable buffer pool for TS segment processing and memory management
 	HttpClient            *client.HeaderSettingClient          // HTTP client with custom header support for source authentication
@@ -80,7 +80,7 @@ func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, 
 	sp := &StreamProxy{
 		Config:                cfg,
 		Channels:              xsync.NewMapOf[string, *types.Channel](),
-		Cache:                 cache,
+		Cache:                 cacheInstance,
 		EPGCache:              cache.NewCache(60 * time.Minute),
 		Logger:                logger,
 		BufferPool:            bufferPool,

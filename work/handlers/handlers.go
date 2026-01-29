@@ -8,7 +8,6 @@ import (
 	"kptv-proxy/work/proxy"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -108,31 +107,15 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 // HandleEPG serves combined EPG data from all XC sources, M3U8 sources with EPG URLs, and manually configured EPGs
 func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if cached, ok := sp.EPGCache.GetEPG(); ok {
-			sp.Logger.Debug("[EPG] Serving from cache (%d bytes)", len(cached))
-			w.Header().Set("Content-Type", "application/xml")
-			w.Header().Set("Cache-Control", "public, max-age=3600")
-			w.Write([]byte(cached))
-			return
-		}
 
-		sp.Logger.Debug("[EPG] Cache miss, generating fresh EPG")
-		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		w.Header().Set("Transfer-Encoding", "chunked")
-
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
-			return
-		}
-
+		// Find all sources with EPG (XC, M3U8 with EPG URL, or manual EPGs)
 		var epgSources []struct {
 			url        string
 			name       string
-			sourceType string
+			sourceType string // "xc", "m3u8", or "manual"
 		}
 
+		// 1. Collect XC sources
 		for i := range sp.Config.Sources {
 			src := &sp.Config.Sources[i]
 			if src.Username != "" && src.Password != "" {
@@ -148,6 +131,7 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 			}
 		}
 
+		// 2. Collect M3U8 sources with EPG URLs
 		for i := range sp.Config.Sources {
 			src := &sp.Config.Sources[i]
 			if src.EPGURL != "" {
@@ -163,6 +147,7 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 			}
 		}
 
+		// 3. Collect manually configured EPGs
 		for i := range sp.Config.EPGs {
 			epg := &sp.Config.EPGs[i]
 			epgSources = append(epgSources, struct {
@@ -177,121 +162,104 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		if len(epgSources) == 0 {
-			sp.Logger.Warn("[EPG] No EPG sources available")
+			http.Error(w, "No EPG sources available", http.StatusNotFound)
 			return
 		}
 
-		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n"))
-		w.Write([]byte(`<tv generator-info-name="KPTV-Proxy">` + "\n"))
-		flusher.Flush()
+		if sp.Config.Debug {
+			sp.Logger.Printf("[EPG] Found %d total EPG sources (%d XC, %d M3U8, %d manual)",
+				len(epgSources),
+				countSourceType(epgSources, "xc"),
+				countSourceType(epgSources, "m3u8"),
+				countSourceType(epgSources, "manual"))
+		}
 
-		var cacheBuf strings.Builder
-		cacheBuf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-		cacheBuf.WriteString(`<tv generator-info-name="KPTV-Proxy">` + "\n")
+		// Fetch EPG from all sources concurrently
+		type epgResult struct {
+			data []byte
+			err  error
+			name string
+		}
 
-		channelChan := make(chan []byte, len(epgSources))
-		programmeChan := make(chan []byte, len(epgSources))
-		var wg sync.WaitGroup
+		results := make(chan epgResult, len(epgSources))
 
 		for _, epgSrc := range epgSources {
-			wg.Add(1)
 			go func(source struct {
 				url        string
 				name       string
 				sourceType string
 			}) {
-				defer wg.Done()
-
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
 
 				req, err := http.NewRequestWithContext(ctx, "GET", source.url, nil)
 				if err != nil {
-					sp.Logger.Error("[EPG] Failed to create request for %s: %v", source.name, err)
+					results <- epgResult{err: err, name: source.name}
 					return
 				}
 
 				resp, err := sp.HttpClient.Do(req)
 				if err != nil {
-					sp.Logger.Error("[EPG] Failed to fetch from %s: %v", source.name, err)
+					results <- epgResult{err: err, name: source.name}
 					return
 				}
 				defer resp.Body.Close()
 
 				if resp.StatusCode != http.StatusOK {
-					sp.Logger.Error("[EPG] HTTP %d from %s", resp.StatusCode, source.name)
+					results <- epgResult{err: fmt.Errorf("HTTP %d", resp.StatusCode), name: source.name}
 					return
 				}
 
 				data, err := io.ReadAll(resp.Body)
-				if err != nil {
-					sp.Logger.Error("[EPG] Failed to read from %s: %v", source.name, err)
-					return
-				}
-
-				docStr := string(data)
-
-				channelStart := 0
-				for {
-					start := strings.Index(docStr[channelStart:], "<channel ")
-					if start == -1 {
-						break
-					}
-					start += channelStart
-					end := strings.Index(docStr[start:], "</channel>")
-					if end == -1 {
-						break
-					}
-					end += start + len("</channel>")
-					channelChan <- []byte(docStr[start:end] + "\n")
-					channelStart = end
-				}
-
-				progStart := 0
-				for {
-					start := strings.Index(docStr[progStart:], "<programme ")
-					if start == -1 {
-						break
-					}
-					start += progStart
-					end := strings.Index(docStr[start:], "</programme>")
-					if end == -1 {
-						break
-					}
-					end += start + len("</programme>")
-					programmeChan <- []byte(docStr[start:end] + "\n")
-					progStart = end
-				}
-
-				sp.Logger.Debug("[EPG] Successfully processed %s (%d bytes)", source.name, len(data))
+				results <- epgResult{data: data, err: err, name: source.name}
 			}(epgSrc)
 		}
 
-		go func() {
-			wg.Wait()
-			close(channelChan)
-			close(programmeChan)
-		}()
-
-		for channelData := range channelChan {
-			w.Write(channelData)
-			cacheBuf.Write(channelData)
-			flusher.Flush()
+		// Collect results
+		var epgDataList [][]byte
+		for i := 0; i < len(epgSources); i++ {
+			result := <-results
+			if result.err == nil && len(result.data) > 0 {
+				epgDataList = append(epgDataList, result.data)
+				if sp.Config.Debug {
+					sp.Logger.Printf("[EPG] Successfully fetched EPG from: %s (%d bytes)", result.name, len(result.data))
+				}
+			} else if sp.Config.Debug && result.err != nil {
+				sp.Logger.Printf("[EPG] Failed to fetch from %s: %v", result.name, result.err)
+			}
 		}
 
-		for programmeData := range programmeChan {
-			w.Write(programmeData)
-			cacheBuf.Write(programmeData)
-			flusher.Flush()
+		if len(epgDataList) == 0 {
+			http.Error(w, "Failed to fetch EPG from any source", http.StatusBadGateway)
+			return
 		}
 
-		w.Write([]byte("</tv>"))
-		cacheBuf.WriteString("</tv>")
-		flusher.Flush()
+		// Merge XMLTV data
+		merged := mergeXMLTV(epgDataList)
 
-		sp.EPGCache.SetEPG(cacheBuf.String())
-		sp.Logger.Debug("[EPG] Cached merged EPG (%d bytes)", cacheBuf.Len())
+		if sp.Config.Debug {
+			sp.Logger.Printf("[EPG] Merged %d EPG sources into final response (%d bytes)", len(epgDataList), len(merged))
+		}
+
+		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Write(merged)
 	}
+}
+
+// countSourceType is a helper function to count sources by type for debug logging
+func countSourceType(sources []struct {
+	url        string
+	name       string
+	sourceType string
+}, sourceType string) int {
+	count := 0
+	for _, src := range sources {
+		if src.sourceType == sourceType {
+			count++
+		}
+	}
+	return count
 }
 
 // countSourceType is a helper function to count sources by type for debug logging
