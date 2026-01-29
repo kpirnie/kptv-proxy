@@ -76,12 +76,12 @@ type StreamProxy struct {
 //
 // Returns:
 //   - *StreamProxy: fully initialized proxy instance ready for operation
-func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, cache *cache.Cache) *StreamProxy {
+func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, cacheInstance *cache.Cache) *StreamProxy {
 	sp := &StreamProxy{
 		Config:                cfg,
 		Channels:              xsync.NewMapOf[string, *types.Channel](),
 		Cache:                 cache,
-		EPGCache:              cache.NewEPGCache(60 * time.Minute),
+		EPGCache:              cache.NewCache(60 * time.Minute),
 		Logger:                logger,
 		BufferPool:            bufferPool,
 		HttpClient:            httpClient,

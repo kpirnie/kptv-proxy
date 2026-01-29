@@ -108,7 +108,7 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 // HandleEPG serves combined EPG data from all XC sources, M3U8 sources with EPG URLs, and manually configured EPGs
 func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if cached, ok := sp.EPGCache.Get(); ok {
+		if cached, ok := sp.EPGCache.GetEPG(); ok {
 			sp.Logger.Debug("[EPG] Serving from cache (%d bytes)", len(cached))
 			w.Header().Set("Content-Type", "application/xml")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
@@ -289,7 +289,7 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 		cacheBuf.WriteString("</tv>")
 		flusher.Flush()
 
-		sp.EPGCache.Set(cacheBuf.String())
+		sp.EPGCache.SetEPG(cacheBuf.String())
 		sp.Logger.Debug("[EPG] Cached merged EPG (%d bytes)", cacheBuf.Len())
 	}
 }

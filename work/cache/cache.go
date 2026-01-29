@@ -38,6 +38,15 @@ func NewCache(duration time.Duration) *Cache {
 	}
 }
 
+func (c *Cache) GetEPG(key string) (string, bool) {
+	value, found := c.cache.Get(hashKey(key))
+	return value, found
+}
+
+func (c *Cache) SetEPG(key, value string) {
+	c.cache.SetWithTTL(hashKey(key), value, int64(len(value)), c.duration)
+}
+
 // GetM3U8 retrieves an M3U8 playlist from the cache by key.
 func (c *Cache) GetM3U8(key string) (string, bool) {
 	value, found := c.cache.Get(hashKey(key))
@@ -46,6 +55,17 @@ func (c *Cache) GetM3U8(key string) (string, bool) {
 
 // SetM3U8 stores an M3U8 playlist in the cache with the specified key.
 func (c *Cache) SetM3U8(key, value string) {
+	c.cache.SetWithTTL(hashKey(key), value, int64(len(value)), c.duration)
+}
+
+// GetXCData retrieves XC API response data from cache
+func (c *Cache) GetXCData(key string) (string, bool) {
+	value, found := c.cache.Get(hashKey(key))
+	return value, found
+}
+
+// SetXCData stores XC API response data in cache
+func (c *Cache) SetXCData(key, value string) {
 	c.cache.SetWithTTL(hashKey(key), value, int64(len(value)), c.duration)
 }
 
@@ -58,15 +78,4 @@ func (c *Cache) ClearIfNeeded() {
 // Close closes the cache and frees resources
 func (c *Cache) Close() {
 	c.cache.Close()
-}
-
-// GetXCData retrieves XC API response data from cache
-func (c *Cache) GetXCData(key string) (string, bool) {
-	value, found := c.cache.Get(hashKey(key))
-	return value, found
-}
-
-// SetXCData stores XC API response data in cache
-func (c *Cache) SetXCData(key, value string) {
-	c.cache.SetWithTTL(hashKey(key), value, int64(len(value)), c.duration)
 }

@@ -11,7 +11,7 @@ import (
 )
 
 func (sp *StreamProxy) RefreshEPGCache() {
-	sp.Logger.Debug("[EPG_REFRESH] Starting background EPG refresh")
+	//sp.Logger.Debug("[EPG_REFRESH] Starting background EPG refresh")
 
 	var epgSources []struct {
 		url        string
@@ -169,6 +169,6 @@ func (sp *StreamProxy) RefreshEPGCache() {
 
 	result.WriteString("</tv>")
 
-	sp.EPGCache.Set([]byte(result.String()))
-	sp.Logger.Debug("[EPG_REFRESH] Background refresh complete (%d bytes)", result.Len())
+	sp.EPGCache.SetEPG([]byte(result.String()))
+	//sp.Logger.Debug("[EPG_REFRESH] Background refresh complete (%d bytes)", result.Len())
 }
