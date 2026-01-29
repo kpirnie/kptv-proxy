@@ -368,7 +368,6 @@ class KPTVAdmin {
             // Fallback to default values if API fails
             this.populateGlobalSettingsForm({
                 baseURL: "http://localhost:8080",
-                //maxBufferSize: 256,
                 bufferSizePerStream: 8,
                 cacheEnabled: true,
                 cacheDuration: "360m",
@@ -409,6 +408,18 @@ class KPTVAdmin {
             watcherCheckbox.checked = config.watcherEnabled;
         }
 
+        // Handle LogLevel radio buttons
+        if (config.logLevel) {
+            const logLevelRadios = form.querySelectorAll('input[name="logLevel"]');
+            logLevelRadios.forEach(radio => {
+                radio.checked = radio.value === config.logLevel.toUpperCase();
+            });
+        } else {
+            // Default to INFO if not set
+            const infoRadio = form.querySelector('input[name="logLevel"][value="INFO"]');
+            if (infoRadio) infoRadio.checked = true;
+        }
+
         // Handle FFmpeg settings
         if (config.ffmpegMode !== undefined) {
             const ffmpegCheckbox = form.querySelector('input[name="ffmpegMode"]');
@@ -445,6 +456,9 @@ class KPTVAdmin {
                 newConfig[key] = input.checked;
             } else if (input.type === 'number') {
                 newConfig[key] = parseInt(value) || 0;
+            } else if (input.type === 'radio') {
+                // Radio buttons - only save the checked one
+                newConfig[key] = value;
             } else {
                 newConfig[key] = value;
             }
@@ -456,6 +470,15 @@ class KPTVAdmin {
                 newConfig[checkbox.name] = false;
             }
         });
+
+        // Explicitly set Debug to true (we manage logging via LogLevel now)
+        newConfig.debug = true;
+
+        // Ensure logLevel is set (default to INFO if missing)
+        if (!newConfig.logLevel) {
+            const checkedLogLevel = form.querySelector('input[name="logLevel"]:checked');
+            newConfig.logLevel = checkedLogLevel ? checkedLogLevel.value : 'INFO';
+        }
 
         // EXPLICITLY HANDLE FFMPEG SETTINGS
         const ffmpegModeCheckbox = form.querySelector('input[name="ffmpegMode"]');

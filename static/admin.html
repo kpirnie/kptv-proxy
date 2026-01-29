@@ -281,8 +281,29 @@
                                 </div>
                                 <div class="uk-width-1-2@s">
                                     <h4 class="uk-heading-divider">System Settings</h4>
-                                    <label><input class="uk-checkbox" type="checkbox" name="debug"> Debug
-                                        Mode</label><br />
+                                    <div class="uk-margin">
+                                        <label class="uk-form-label">Log Level</label>
+                                        <div class="uk-grid-small" uk-grid>
+                                            <div class="uk-width-1-4@s">
+                                                <label><input class="uk-radio" type="radio" name="logLevel"
+                                                        value="ERROR"> ERROR</label>
+                                            </div>
+                                            <div class="uk-width-1-4@s">
+                                                <label><input class="uk-radio" type="radio" name="logLevel"
+                                                        value="WARN"> WARN</label>
+                                            </div>
+                                            <div class="uk-width-1-4@s">
+                                                <label><input class="uk-radio" type="radio" name="logLevel" value="INFO"
+                                                        checked> INFO</label>
+                                            </div>
+                                            <div class="uk-width-1-4@s">
+                                                <label><input class="uk-radio" type="radio" name="logLevel"
+                                                        value="DEBUG"> DEBUG</label>
+                                            </div>
+                                        </div>
+                                        <div class="uk-text-meta uk-margin-small-top">Controls verbosity of application
+                                            logs</div>
+                                    </div>
                                     <label><input class="uk-checkbox" type="checkbox" name="obfuscateUrls"> Obfuscate
                                         URLs in Logs</label><br />
                                     <label><input class="uk-checkbox" type="checkbox" name="watcherEnabled"> Enable
