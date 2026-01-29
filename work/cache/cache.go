@@ -38,11 +38,13 @@ func NewCache(duration time.Duration) *Cache {
 	}
 }
 
+// GetM3U8 retrieves an EPG from the cache by key.
 func (c *Cache) GetEPG(key string) (string, bool) {
 	value, found := c.cache.Get(hashKey(key))
 	return value, found
 }
 
+// stores an EPG in the cache with the specified key.
 func (c *Cache) SetEPG(key, value string) {
 	c.cache.SetWithTTL(hashKey(key), value, int64(len(value)), c.duration)
 }

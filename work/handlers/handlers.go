@@ -106,6 +106,7 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 
 // HandleEPG serves combined EPG data from all XC sources, M3U8 sources with EPG URLs, and manually configured EPGs
 func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
+
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		// Find all sources with EPG (XC, M3U8 with EPG URL, or manual EPGs)
@@ -245,21 +246,6 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		w.Write(merged)
 	}
-}
-
-// countSourceType is a helper function to count sources by type for debug logging
-func countSourceType(sources []struct {
-	url        string
-	name       string
-	sourceType string
-}, sourceType string) int {
-	count := 0
-	for _, src := range sources {
-		if src.sourceType == sourceType {
-			count++
-		}
-	}
-	return count
 }
 
 // countSourceType is a helper function to count sources by type for debug logging
