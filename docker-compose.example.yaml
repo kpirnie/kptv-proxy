@@ -1,7 +1,7 @@
 services:
   kptv-proxy:
     image: ghcr.io/kpirnie/kptv-proxy:latest
-    container_name: kptv_proxy
+    container_name: kptv_test
     restart: unless-stopped
     ports:
       - 9500:8080
@@ -13,8 +13,8 @@ services:
 
     # Health check
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/playlist"]
+      test: [ "CMD", "curl", "-v", "http://127.0.0.1:8080/api/stats" ]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
