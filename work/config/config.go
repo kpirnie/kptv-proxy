@@ -27,13 +27,14 @@ type Config struct {
 	ImportRefreshInterval time.Duration  `json:"importRefreshInterval"` // Interval for refreshing imported content
 	WorkerThreads         int            `json:"workerThreads"`         // Number of worker threads for background tasks
 	Debug                 bool           `json:"debug"`                 // Enable debug logging
-	ObfuscateUrls         bool           `json:"obfuscateUrls"`         // Obfuscate URLs in logs for security
-	SortField             string         `json:"sortField"`             // Field to sort channels by (e.g., tvg-name)
-	SortDirection         string         `json:"sortDirection"`         // Sort direction: "asc" or "desc"
-	StreamTimeout         time.Duration  `json:"streamTimeout"`         // Timeout for stream operations
-	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"`   // Maximum concurrent connections allowed to the app
-	Sources               []SourceConfig `json:"sources"`               // List of configured stream sources
-	EPGs                  []EPGConfig    `json:"epgs"`                  // List of configured epg sources
+	LogLevel              string         `json:"logLevel"`
+	ObfuscateUrls         bool           `json:"obfuscateUrls"`       // Obfuscate URLs in logs for security
+	SortField             string         `json:"sortField"`           // Field to sort channels by (e.g., tvg-name)
+	SortDirection         string         `json:"sortDirection"`       // Sort direction: "asc" or "desc"
+	StreamTimeout         time.Duration  `json:"streamTimeout"`       // Timeout for stream operations
+	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"` // Maximum concurrent connections allowed to the app
+	Sources               []SourceConfig `json:"sources"`             // List of configured stream sources
+	EPGs                  []EPGConfig    `json:"epgs"`                // List of configured epg sources
 	WatcherEnabled        bool           `json:"watcherEnabled"`
 	FFmpegMode            bool           `json:"ffmpegMode"`      // Use FFmpeg instead of Go proxy/restreamer
 	FFmpegPreInput        []string       `json:"ffmpegPreInput"`  // FFmpeg arguments before -i
@@ -78,6 +79,7 @@ type ConfigFile struct {
 	ImportRefreshInterval string             `json:"importRefreshInterval"` // Duration as string (e.g., "12h")
 	WorkerThreads         int                `json:"workerThreads"`
 	Debug                 bool               `json:"debug"`
+	LogLevel              string             `json:"logLevel"`
 	ObfuscateUrls         bool               `json:"obfuscateUrls"`
 	SortField             string             `json:"sortField"`
 	SortDirection         string             `json:"sortDirection"`
@@ -237,6 +239,7 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		CacheEnabled:        true,
 		WorkerThreads:       cf.WorkerThreads,
 		Debug:               cf.Debug,
+		LogLevel:            cf.LogLevel,
 		ObfuscateUrls:       cf.ObfuscateUrls,
 		SortField:           cf.SortField,
 		SortDirection:       cf.SortDirection,
@@ -307,7 +310,8 @@ func getDefaultConfig() *Config {
 		CacheDuration:         30 * time.Minute, // Default 30 min expiration
 		ImportRefreshInterval: 12 * time.Hour,   // Default: refresh imports every 12 hours
 		WorkerThreads:         8,                // Default worker threads
-		Debug:                 false,            // Debug disabled
+		Debug:                 true,             // Debug disabled
+		LogLevel:              "INFO",
 		ObfuscateUrls:         false,            // Do not obfuscate by default
 		SortField:             "tvg-name",       // Default sort field
 		SortDirection:         "asc",            // Default ascending order
@@ -325,9 +329,6 @@ func validateAndSetDefaults(config *Config) {
 	if config.BaseURL == "" {
 		config.BaseURL = "http://localhost:8080"
 	}
-	/*if config.MaxBufferSize <= 0 {
-		config.MaxBufferSize = 16
-	}*/
 	if config.BufferSizePerStream <= 0 {
 		config.BufferSizePerStream = 1
 	}
@@ -352,7 +353,9 @@ func validateAndSetDefaults(config *Config) {
 	if config.MaxConnectionsToApp <= 0 {
 		config.MaxConnectionsToApp = 100
 	}
-
+	if config.LogLevel == "" { // ADD THIS
+		config.LogLevel = "INFO"
+	}
 	// Validate each source
 	for i := range config.Sources {
 		src := &config.Sources[i]
@@ -436,7 +439,8 @@ func CreateExampleConfig(path string) error {
 		CacheDuration:         "30m",
 		ImportRefreshInterval: "12h",
 		WorkerThreads:         4,
-		Debug:                 false,
+		Debug:                 true,
+		LogLevel:              "INFO",
 		ObfuscateUrls:         true,
 		SortField:             "tvg-name",
 		SortDirection:         "asc",
