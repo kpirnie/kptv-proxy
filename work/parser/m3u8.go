@@ -3,20 +3,20 @@ package parser
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
-	"kptv-proxy/work/streamorder"
-	"kptv-proxy/work/cache"
 	"log"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
-	"encoding/json"
 
 	"github.com/grafana/regexp"
 	"github.com/grafov/m3u8"
@@ -318,6 +318,40 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 		// Process EXTINF lines containing stream metadata
 		if strings.HasPrefix(line, "#EXTINF:") {
 			currentAttrs = ParseEXTINF(line)
+
+			// Check for EPG URL in header
+			if strings.HasPrefix(line, "#EXTM3U") {
+
+				// Parse x-tvg-url or url-tvg attributes
+				if strings.Contains(line, "x-tvg-url=") {
+					start := strings.Index(line, "x-tvg-url=\"")
+					if start != -1 {
+						start += len("x-tvg-url=\"")
+						end := strings.Index(line[start:], "\"")
+						if end != -1 {
+							epgURL := line[start : start+end]
+							source.EPGURL = epgURL
+							if cfg.Debug {
+								logger.Printf("[EPG_URL] Found EPG URL for %s: %s", source.Name, epgURL)
+							}
+						}
+					}
+				} else if strings.Contains(line, "url-tvg=") {
+					start := strings.Index(line, "url-tvg=\"")
+					if start != -1 {
+						start += len("url-tvg=\"")
+						end := strings.Index(line[start:], "\"")
+						if end != -1 {
+							epgURL := line[start : start+end]
+							source.EPGURL = epgURL
+							if cfg.Debug {
+								logger.Printf("[EPG_URL] Found EPG URL for %s: %s", source.Name, epgURL)
+							}
+						}
+					}
+				}
+			}
+
 			if cfg.Debug {
 				logger.Printf("Parsed EXTINF attributes: %+v", currentAttrs)
 			}
@@ -476,21 +510,21 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 			}
 			usedIndices[idx] = true
 		}
-		
+
 		if valid {
 			if cfg.Debug {
 				log.Printf("[SORT_CUSTOM] Channel %s: Applying custom order %v", channelName, customOrder)
 			}
-			
+
 			// Create a new slice with the custom order
 			orderedStreams := make([]*types.Stream, len(streams))
 			for newPosition, originalIndex := range customOrder {
 				orderedStreams[newPosition] = streams[originalIndex]
 			}
-			
+
 			// Copy back to original slice
 			copy(streams, orderedStreams)
-			
+
 			if cfg.Debug {
 				log.Printf("[SORT_AFTER] Channel %s: Applied custom ordering", channelName)
 			}

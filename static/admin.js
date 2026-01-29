@@ -26,6 +26,7 @@ class KPTVAdmin {
         // Load initial data and functionality
         this.loadGlobalSettings();
         this.loadSources();
+        this.loadEPGs();
         this.loadStats();
         this.loadActiveChannels();
         this.loadAllChannels();
@@ -81,6 +82,15 @@ class KPTVAdmin {
 
         document.getElementById('save-source-btn').addEventListener('click', () => {
             this.saveSource();
+        });
+
+        // EPG management
+        document.getElementById('add-epg-btn').addEventListener('click', () => {
+            this.showEPGModal();
+        });
+
+        document.getElementById('save-epg-btn').addEventListener('click', () => {
+            this.saveEPG();
         });
 
         // Refresh buttons
@@ -816,6 +826,152 @@ class KPTVAdmin {
             }, 1000);
         } catch (error) {
             this.showNotification('Failed to delete source', 'danger');
+        }
+    }
+
+    // After loadSources() method, add:
+
+    // Load EPGs from configuration
+    async loadEPGs() {
+        try {
+            const config = await this.apiCall('/api/config');
+            this.renderEPGs(config.epgs || []);
+        } catch (error) {
+            document.getElementById('epgs-container').innerHTML =
+                '<div class="uk-alert uk-alert-danger">Failed to load EPGs</div>';
+        }
+    }
+
+    // Render EPGs list
+    renderEPGs(epgs) {
+        const container = document.getElementById('epgs-container');
+
+        if (epgs.length === 0) {
+            container.innerHTML = '<div class="uk-alert uk-alert-warning">No EPGs configured</div>';
+            return;
+        }
+
+        container.innerHTML = epgs.map((epg, index) => `
+        <div class="source-item fade-in">
+            <div class="uk-flex uk-flex-between uk-flex-middle">
+                <div class="uk-flex-1">
+                    <h4 class="uk-margin-remove-bottom">${this.escapeHtml(epg.name)}</h4>
+                    <div class="uk-text-muted uk-text-small">${this.obfuscateUrl(epg.url)}</div>
+                </div>
+                <div class="uk-flex uk-flex-middle">
+                    <span class="status-indicator status-active"></span>
+                    <span class="uk-text-small uk-text-muted">Order: ${epg.order}</span>
+                </div>
+            </div>
+            <div class="source-actions">
+                <button class="uk-button uk-button-primary uk-button-small" onclick="kptvAdmin.editEPG(${index})">
+                    <span uk-icon="pencil"></span> Edit
+                </button>
+                <button class="uk-button uk-button-danger uk-button-small uk-margin-small-left" onclick="kptvAdmin.deleteEPG(${index})">
+                    <span uk-icon="trash"></span> Delete
+                </button>
+            </div>
+        </div>
+    `).join('');
+    }
+
+    // Show EPG modal
+    showEPGModal(epgIndex = null) {
+        const modal = UIkit.modal('#epg-modal');
+        const title = document.getElementById('epg-modal-title');
+
+        if (epgIndex !== null) {
+            title.textContent = 'Edit EPG';
+            if (this.config && this.config.epgs && this.config.epgs[epgIndex]) {
+                this.populateEPGForm(this.config.epgs[epgIndex], epgIndex);
+            }
+        } else {
+            title.textContent = 'Add EPG';
+            this.clearEPGForm();
+        }
+
+        modal.show();
+    }
+
+    // Populate EPG form
+    populateEPGForm(epg, index) {
+        document.getElementById('epg-index').value = index;
+        document.getElementById('epg-name').value = epg.name || '';
+        document.getElementById('epg-url').value = epg.url || '';
+        document.getElementById('epg-order').value = epg.order || 1;
+    }
+
+    // Clear EPG form
+    clearEPGForm() {
+        document.getElementById('epg-index').value = '';
+        document.getElementById('epg-form').reset();
+        document.getElementById('epg-order').value = 1;
+    }
+
+    // Save EPG
+    async saveEPG() {
+        try {
+            const index = document.getElementById('epg-index').value;
+            const epg = {
+                name: document.getElementById('epg-name').value,
+                url: document.getElementById('epg-url').value,
+                order: parseInt(document.getElementById('epg-order').value) || 1
+            };
+
+            if (!epg.name || !epg.url) {
+                this.showNotification('Name and URL are required', 'danger');
+                return;
+            }
+
+            const config = await this.apiCall('/api/config');
+
+            if (!config.epgs) {
+                config.epgs = [];
+            }
+
+            if (index === '') {
+                config.epgs.push(epg);
+            } else {
+                config.epgs[parseInt(index)] = epg;
+            }
+
+            await this.apiCall('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+
+            UIkit.modal('#epg-modal').hide();
+            this.showNotification('EPG saved successfully!', 'success');
+            this.loadEPGs();
+        } catch (error) {
+            this.showNotification('Failed to save EPG: ' + error.message, 'danger');
+        }
+    }
+
+    // Edit EPG
+    editEPG(index) {
+        this.showEPGModal(index);
+    }
+
+    // Delete EPG
+    async deleteEPG(index) {
+        if (!confirm('Are you sure you want to delete this EPG?')) {
+            return;
+        }
+
+        try {
+            const config = await this.apiCall('/api/config');
+            config.epgs.splice(index, 1);
+
+            await this.apiCall('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+
+            this.showNotification('EPG deleted successfully!', 'success');
+            this.loadEPGs();
+        } catch (error) {
+            this.showNotification('Failed to delete EPG', 'danger');
         }
     }
 

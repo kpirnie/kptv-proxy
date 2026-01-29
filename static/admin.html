@@ -46,6 +46,7 @@
             <li class="uk-active"><a href="#">Dashboard</a></li>
             <li><a href="#">Global Settings</a></li>
             <li><a href="#">Sources</a></li>
+            <li><a href="#">EPGs</a></li>
             <li><a href="#">Channels</a></li>
             <li><a href="#">Logs</a></li>
         </ul>
@@ -309,6 +310,19 @@
                 </div>
             </div>
 
+            <!-- EPGs Tab -->
+            <div>
+                <div class="uk-margin-bottom">
+                    <button class="uk-button uk-button-primary" id="add-epg-btn">
+                        <span uk-icon="plus"></span> Add EPG
+                    </button>
+                </div>
+
+                <div id="epgs-container">
+                    <!-- EPGs will be loaded here -->
+                </div>
+            </div>
+
             <!-- Channels Tab -->
             <div>
                 <div class="uk-card uk-card-default">
@@ -531,6 +545,38 @@
             <div class="uk-modal-footer uk-text-right">
                 <button class="uk-button uk-button-secondary uk-modal-close" type="button">Cancel</button>
                 <button class="uk-button uk-button-primary" id="save-source-btn" type="button">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EPG Modal -->
+    <div id="epg-modal" uk-modal>
+        <div class="uk-modal-dialog">
+            <button class="uk-modal-close-default" type="button" uk-close></button>
+            <div class="uk-modal-header">
+                <h2 class="uk-modal-title" id="epg-modal-title">Add EPG</h2>
+            </div>
+            <div class="uk-modal-body">
+                <form id="epg-form">
+                    <input type="hidden" id="epg-index" value="">
+                    <div class="uk-margin">
+                        <label class="uk-form-label">Name</label>
+                        <input class="uk-input" type="text" id="epg-name" placeholder="EPG Name" required>
+                    </div>
+                    <div class="uk-margin">
+                        <label class="uk-form-label">EPG URL</label>
+                        <input class="uk-input" type="url" id="epg-url" placeholder="https://example.com/epg.xml"
+                            required>
+                    </div>
+                    <div class="uk-margin">
+                        <label class="uk-form-label">Order</label>
+                        <input class="uk-input" type="number" id="epg-order" min="1" value="1">
+                    </div>
+                </form>
+            </div>
+            <div class="uk-modal-footer uk-text-right">
+                <button class="uk-button uk-button-secondary uk-modal-close" type="button">Cancel</button>
+                <button class="uk-button uk-button-primary" id="save-epg-btn" type="button">Save</button>
             </div>
         </div>
     </div>

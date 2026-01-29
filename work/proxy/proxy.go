@@ -9,21 +9,21 @@ import (
 	"kptv-proxy/work/filter"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/restream"
+	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"kptv-proxy/work/watcher"
-	"kptv-proxy/work/streamorder"
 	"runtime"
 	"strconv"
 
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"sort"
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/puzpuzpuz/xsync/v3"
@@ -41,16 +41,16 @@ import (
 // and manages the restreaming infrastructure that enables efficient one-to-many distribution
 // of video content while minimizing upstream bandwidth usage and source server load.
 type StreamProxy struct {
-	Config                *config.Config                		// Application configuration with source URLs and operational parameters
-	Channels              *xsync.MapOf[string, *types.Channel]	// Thread-safe map of channel name -> *types.Channel for concurrent access
-	Cache                 *cache.Cache                  		// Playlist and metadata caching system for performance optimization
-	Logger                *log.Logger                   		// Centralized logging system for debugging and operational monitoring
-	BufferPool            *buffer.BufferPool            		// Reusable buffer pool for TS segment processing and memory management
-	HttpClient            *client.HeaderSettingClient   		// HTTP client with custom header support for source authentication
-	WorkerPool            *ants.Pool                    		// Goroutine pool for concurrent task execution and resource control
-	MasterPlaylistHandler *parser.MasterPlaylistHandler 		// Specialized handler for HLS master playlist parsing and variant selection
-	importStopChan        chan bool                     		// Signal channel for gracefully stopping the periodic import refresh loop
-	WatcherManager        *watcher.WatcherManager       		// Stream health monitoring and automatic failover management system
+	Config                *config.Config                       // Application configuration with source URLs and operational parameters
+	Channels              *xsync.MapOf[string, *types.Channel] // Thread-safe map of channel name -> *types.Channel for concurrent access
+	Cache                 *cache.Cache                         // Playlist and metadata caching system for performance optimization
+	Logger                *log.Logger                          // Centralized logging system for debugging and operational monitoring
+	BufferPool            *buffer.BufferPool                   // Reusable buffer pool for TS segment processing and memory management
+	HttpClient            *client.HeaderSettingClient          // HTTP client with custom header support for source authentication
+	WorkerPool            *ants.Pool                           // Goroutine pool for concurrent task execution and resource control
+	MasterPlaylistHandler *parser.MasterPlaylistHandler        // Specialized handler for HLS master playlist parsing and variant selection
+	importStopChan        chan bool                            // Signal channel for gracefully stopping the periodic import refresh loop
+	WatcherManager        *watcher.WatcherManager              // Stream health monitoring and automatic failover management system
 	SourceRateLimiters    map[string]ratelimit.Limiter
 	rateLimiterMutex      sync.RWMutex
 	FilterManager         *filter.FilterManager
@@ -91,10 +91,10 @@ func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, 
 		rateLimiterMutex:      sync.RWMutex{},
 		FilterManager:         filter.NewFilterManager(),
 	}
-	
+
 	// Initialize all rate limiters upfront to avoid runtime overhead
 	sp.initializeRateLimiters()
-	
+
 	return sp
 }
 
@@ -111,7 +111,7 @@ func (sp *StreamProxy) initializeRateLimiters() {
 		}
 		limiter := ratelimit.New(rateLimit)
 		sp.SourceRateLimiters[source.URL] = limiter
-		
+
 		if sp.Config.Debug {
 			sp.Logger.Printf("[RATE_LIMITER] Created rate limiter for source %s: %d req/sec",
 				source.Name, rateLimit)
@@ -124,8 +124,8 @@ func (sp *StreamProxy) initializeRateLimiters() {
 // by capturing the map contents once, avoiding repeated concurrent map access overhead
 // and reducing lock contention during operations like playlist generation.
 type channelBatch struct {
-	name    string           // Channel identifier used for routing and display
-	channel *types.Channel   // Reference to the channel's stream collection and metadata
+	name    string         // Channel identifier used for routing and display
+	channel *types.Channel // Reference to the channel's stream collection and metadata
 }
 
 // getChannelBatch creates a snapshot of all channels in the proxy's channel store,
@@ -273,7 +273,7 @@ func (sp *StreamProxy) ImportStreams() {
 		}
 	}
 
-		// Finalize imported channels with sorting and preference preservation
+	// Finalize imported channels with sorting and preference preservation
 	count := 0
 	newChannels.Range(func(key string, value *types.Channel) bool {
 		channelName := key
@@ -288,26 +288,26 @@ func (sp *StreamProxy) ImportStreams() {
 		if customOrder != nil && len(customOrder) > 0 {
 			// Apply custom order to streams
 			reorderedStreams := make([]*types.Stream, 0, len(channel.Streams))
-			
+
 			// Add streams in custom order (customOrder contains indices)
 			for _, idx := range customOrder {
 				if idx >= 0 && idx < len(channel.Streams) {
 					reorderedStreams = append(reorderedStreams, channel.Streams[idx])
 				}
 			}
-			
+
 			// Add any remaining streams not in custom order
 			usedIndices := make(map[int]bool)
 			for _, idx := range customOrder {
 				usedIndices[idx] = true
 			}
-			
+
 			for i, stream := range channel.Streams {
 				if !usedIndices[i] {
 					reorderedStreams = append(reorderedStreams, stream)
 				}
 			}
-			
+
 			channel.Streams = reorderedStreams
 			atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
 		} else {
@@ -380,7 +380,7 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	sort.SliceStable(channels, func(i, j int) bool {
 		iVal := sp.getChannelSortValue(channels[i])
 		jVal := sp.getChannelSortValue(channels[j])
-		
+
 		if sp.Config.SortDirection == "desc" {
 			return iVal > jVal
 		}
@@ -422,12 +422,12 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 			cleanName := strings.Trim(ch.name, "\"")
 			playlist.WriteString(fmt.Sprintf(",%s\n", cleanName))
 			safeName := utils.SanitizeChannelName(ch.name)
-			proxyURL := fmt.Sprintf("%s/stream/%s", sp.Config.BaseURL, safeName)
+			proxyURL := fmt.Sprintf("%s/s/%s", sp.Config.BaseURL, safeName)
 			playlist.WriteString(proxyURL + "\n")
 		}
 		ch.channel.Mu.RUnlock()
 	}
-	
+
 	result := playlist.String()
 
 	if sp.Config.CacheEnabled {
@@ -668,7 +668,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 // Returns:
 //   - string: original channel name for channel store lookup, or safeName if not found
 func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
-	
+
 	// Decode URL encoding first
 	if decoded, err := url.QueryUnescape(safeName); err == nil {
 		safeName = decoded
@@ -682,7 +682,7 @@ func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 
 	// Perform comprehensive scan for matching sanitized names
 	var foundName string
-		sp.Channels.Range(func(name string, _ *types.Channel) bool {
+	sp.Channels.Range(func(name string, _ *types.Channel) bool {
 		if utils.SanitizeChannelName(name) == safeName {
 			foundName = name
 			return false
@@ -921,7 +921,7 @@ func (sp *StreamProxy) getRateLimiterForSource(source *config.SourceConfig) rate
 	sp.rateLimiterMutex.RLock()
 	limiter, exists := sp.SourceRateLimiters[source.URL]
 	sp.rateLimiterMutex.RUnlock()
-	
+
 	if exists {
 		return limiter
 	}
@@ -956,19 +956,19 @@ func (sp *StreamProxy) getRateLimiterForSource(source *config.SourceConfig) rate
 func (sp *StreamProxy) getChannelSortValue(ch channelBatch) string {
 	ch.channel.Mu.RLock()
 	defer ch.channel.Mu.RUnlock()
-	
+
 	if len(ch.channel.Streams) == 0 {
 		return ""
 	}
-	
+
 	sortField := sp.Config.SortField
 	if sortField == "" {
 		sortField = "tvg-name"
 	}
-	
+
 	if value, exists := ch.channel.Streams[0].Attributes[sortField]; exists {
 		return strings.ToLower(value)
 	}
-	
+
 	return strings.ToLower(ch.name)
 }

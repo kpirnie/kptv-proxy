@@ -10,11 +10,17 @@ import (
 	"time"
 )
 
+// EPGConfig represents an Electronic Program Guide source
+type EPGConfig struct {
+	Name  string `json:"name"`
+	URL   string `json:"url"`
+	Order int    `json:"order"`
+}
+
 // Config holds all application configuration values for the IPTV proxy server.
 // It includes settings for buffering, caching, streaming, and multiple source configurations.
 type Config struct {
 	BaseURL               string         `json:"baseURL"`               // Base URL for the application (used for API and links)
-	//MaxBufferSize         int64          `json:"maxBufferSize"`         // Maximum total buffer size in MB (all streams combined)
 	BufferSizePerStream   int64          `json:"bufferSizePerStream"`   // Buffer size per individual stream in MB
 	CacheEnabled          bool           `json:"cacheEnabled"`          // Whether caching is enabled globally
 	CacheDuration         time.Duration  `json:"cacheDuration"`         // Duration before cache entries expire
@@ -27,10 +33,11 @@ type Config struct {
 	StreamTimeout         time.Duration  `json:"streamTimeout"`         // Timeout for stream operations
 	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"`   // Maximum concurrent connections allowed to the app
 	Sources               []SourceConfig `json:"sources"`               // List of configured stream sources
+	EPGs                  []EPGConfig    `json:"epgs"`                  // List of configured epg sources
 	WatcherEnabled        bool           `json:"watcherEnabled"`
-	FFmpegMode        	  bool           `json:"ffmpegMode"`        // Use FFmpeg instead of Go proxy/restreamer
-	FFmpegPreInput    	  []string       `json:"ffmpegPreInput"`    // FFmpeg arguments before -i
-	FFmpegPreOutput   	  []string       `json:"ffmpegPreOutput"`   // FFmpeg arguments before output URL
+	FFmpegMode            bool           `json:"ffmpegMode"`      // Use FFmpeg instead of Go proxy/restreamer
+	FFmpegPreInput        []string       `json:"ffmpegPreInput"`  // FFmpeg arguments before -i
+	FFmpegPreOutput       []string       `json:"ffmpegPreOutput"` // FFmpeg arguments before output URL
 }
 
 // SourceConfig represents the configuration for a single stream source.
@@ -57,13 +64,14 @@ type SourceConfig struct {
 	SeriesExcludeRegex     string        `json:"seriesExcludeRegex,omitempty"`
 	VODIncludeRegex        string        `json:"vodIncludeRegex,omitempty"`
 	VODExcludeRegex        string        `json:"vodExcludeRegex,omitempty"`
+	EPGURL                 string        `json:"-"` // Parsed from M3U8, not from config file
+
 }
 
 // ConfigFile represents the JSON file structure for marshaling/unmarshaling configuration.
 // String duration fields (e.g., "30m") are parsed into time.Duration values.
 type ConfigFile struct {
 	BaseURL               string             `json:"baseURL"`
-	//MaxBufferSize         int64              `json:"maxBufferSize"`
 	BufferSizePerStream   int64              `json:"bufferSizePerStream"`
 	CacheEnabled          bool               `json:"cacheEnabled"`
 	CacheDuration         string             `json:"cacheDuration"`         // Duration as string (e.g., "30m")
@@ -76,10 +84,11 @@ type ConfigFile struct {
 	StreamTimeout         string             `json:"streamTimeout"` // Duration as string (e.g., "10s")
 	MaxConnectionsToApp   int                `json:"maxConnectionsToApp"`
 	Sources               []SourceConfigFile `json:"sources"`
+	EPGs                  []EPGConfig        `json:"epgs"`
 	WatcherEnabled        bool               `json:"watcherEnabled"`
-	FFmpegMode        bool     `json:"ffmpegMode"`
-	FFmpegPreInput    []string `json:"ffmpegPreInput"`
-	FFmpegPreOutput   []string `json:"ffmpegPreOutput"`
+	FFmpegMode            bool               `json:"ffmpegMode"`
+	FFmpegPreInput        []string           `json:"ffmpegPreInput"`
+	FFmpegPreOutput       []string           `json:"ffmpegPreOutput"`
 }
 
 // SourceConfigFile represents the source configuration in JSON format.
@@ -115,14 +124,14 @@ var (
 // EnsureConfigExists checks if config file exists and creates it with defaults if not
 func EnsureConfigExists() error {
 	configPath := "/settings/config.json"
-	
+
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Ensure directory exists
 		if err := os.MkdirAll("/settings", 0755); err != nil {
 			return fmt.Errorf("failed to create settings directory: %w", err)
 		}
-		
+
 		// Create default config file
 		log.Println("Config file not found, creating default config at", configPath)
 		if err := CreateExampleConfig(configPath); err != nil {
@@ -130,7 +139,7 @@ func EnsureConfigExists() error {
 		}
 		log.Println("Default config file created successfully")
 	}
-	
+
 	return nil
 }
 
@@ -224,9 +233,7 @@ func loadFromFile(path string) (*Config, error) {
 func convertFromFile(cf *ConfigFile) (*Config, error) {
 	config := &Config{
 		BaseURL:             cf.BaseURL,
-		//MaxBufferSize:       cf.MaxBufferSize,
 		BufferSizePerStream: cf.BufferSizePerStream,
-		//CacheEnabled:        cf.CacheEnabled,
 		CacheEnabled:        true,
 		WorkerThreads:       cf.WorkerThreads,
 		Debug:               cf.Debug,
@@ -284,6 +291,9 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		}
 	}
 
+	// Simple copy since EPGConfig has no duration fields
+	config.EPGs = cf.EPGs
+
 	return config, nil
 }
 
@@ -292,7 +302,6 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 func getDefaultConfig() *Config {
 	return &Config{
 		BaseURL:               "http://localhost:8080",
-		//MaxBufferSize:         16,               // Default: 16 MB total buffer
 		BufferSizePerStream:   1,                // Default: 1 MB per stream
 		CacheEnabled:          true,             // Enable caching
 		CacheDuration:         30 * time.Minute, // Default 30 min expiration
@@ -305,6 +314,7 @@ func getDefaultConfig() *Config {
 		StreamTimeout:         10 * time.Second, // Default stream timeout
 		MaxConnectionsToApp:   100,              // Default connection limit
 		Sources:               []SourceConfig{}, // No sources configured
+		EPGs:                  []EPGConfig{},    // No EPGs configured
 		WatcherEnabled:        true,
 	}
 }
@@ -419,7 +429,7 @@ func (c *Config) GetSourcesByOrder() []SourceConfig {
 //   - error: if write fails
 func CreateExampleConfig(path string) error {
 	example := ConfigFile{
-		BaseURL:               "http://localhost:8080",
+		BaseURL: "http://localhost:8080",
 		//MaxBufferSize:         256,
 		BufferSizePerStream:   16,
 		CacheEnabled:          true,

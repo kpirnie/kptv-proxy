@@ -17,8 +17,8 @@ import (
 	"kptv-proxy/work/handlers"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
-	"kptv-proxy/work/utils"
 	"kptv-proxy/work/types"
+	"kptv-proxy/work/utils"
 )
 
 // default version
@@ -82,13 +82,19 @@ func main() {
 	router := mux.NewRouter()
 
 	// Original playlist route (all channels)
+	router.HandleFunc("/pl", handlers.HandlePlaylist(proxyInstance)).Methods("GET")
 	router.HandleFunc("/playlist", handlers.HandlePlaylist(proxyInstance)).Methods("GET")
 
 	// Group-based playlist route
+	router.HandleFunc("/pl/{group}", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
 	router.HandleFunc("/playlist/{group}", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
 
 	// Channel stream handler
-	router.HandleFunc("/stream/{channel}", handlers.HandleStream(proxyInstance)).Methods("GET")
+	router.HandleFunc("/s/{channel}", handlers.HandleStream(proxyInstance)).Methods("GET")
+
+	// EPG handler for XC sources
+	router.HandleFunc("/epg", handlers.HandleEPG(proxyInstance)).Methods("GET")
+	router.HandleFunc("/epg.xml", handlers.HandleEPG(proxyInstance)).Methods("GET")
 
 	// Metrics handler
 	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
@@ -104,7 +110,7 @@ func main() {
 	logger.Printf("  - Base URL: %s", cfg.BaseURL)
 	logger.Printf("  - Worker Threads: %d", cfg.WorkerThreads)
 	logger.Printf("  - Sources: %d", len(cfg.Sources))
-	//logger.Printf("  - Max. Buffer Size: %s", utils.FormatBytes(cfg.MaxBufferSize*1024*1024))
+	logger.Printf("  - EPGs: %d", len(cfg.Sources))
 	logger.Printf("  - Pre-Stream Buffer Size: %s", utils.FormatBytes(cfg.BufferSizePerStream*1024*1024))
 	logger.Printf("  - Cache Enabled: %v", cfg.CacheEnabled)
 	logger.Printf("  - Cache Duration: %s", cfg.CacheDuration)
