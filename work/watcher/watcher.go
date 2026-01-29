@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
-	"log"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -37,10 +37,9 @@ import (
 //   - Resource management and memory optimization for long-running operations
 //   - Integration with restreaming infrastructure for seamless failover
 type WatcherManager struct {
-	watchers *xsync.MapOf[string, *StreamWatcher]      // Thread-safe map of channel name -> *StreamWatcher for concurrent access
-	logger   *log.Logger   // Application logger for monitoring events and debugging information
-	enabled  atomic.Bool   // Atomic flag indicating manager operational state (true=active, false=stopped)
-	stopChan chan struct{} // Coordination channel for graceful manager shutdown and cleanup
+	watchers *xsync.MapOf[string, *StreamWatcher] // Thread-safe map of channel name -> *StreamWatcher for concurrent access
+	enabled  atomic.Bool                          // Atomic flag indicating manager operational state (true=active, false=stopped)
+	stopChan chan struct{}                        // Coordination channel for graceful manager shutdown and cleanup
 }
 
 // StreamWatcher implements comprehensive health monitoring for individual stream channels,
@@ -62,7 +61,6 @@ type WatcherManager struct {
 type StreamWatcher struct {
 	channelName         string             // Channel identifier for logging and coordination
 	restreamer          *types.Restreamer  // Reference to monitored restreamer instance
-	logger              *log.Logger        // Application logger for debugging and event recording
 	ctx                 context.Context    // Cancellable context for coordinated watcher shutdown
 	cancel              context.CancelFunc // Context cancellation function for cleanup operations
 	lastCheck           time.Time          // Timestamp of most recent health assessment
@@ -102,9 +100,8 @@ type RestreamWrapper struct {
 //
 // Returns:
 //   - *WatcherManager: fully initialized manager ready for start() operation
-func NewWatcherManager(logger *log.Logger) *WatcherManager {
+func NewWatcherManager() *WatcherManager {
 	return &WatcherManager{
-		logger:   logger,
 		watchers: xsync.NewMapOf[string, *StreamWatcher](),
 		stopChan: make(chan struct{}),
 	}
@@ -181,7 +178,6 @@ func (wm *WatcherManager) StartWatching(channelName string, restreamer *types.Re
 	watcher := &StreamWatcher{
 		channelName:      channelName,
 		restreamer:       restreamer,
-		logger:           wm.logger,
 		lastCheck:        time.Now(),
 		lastStreamStart:  time.Now(),
 		lastFailureReset: time.Now(),
@@ -200,10 +196,9 @@ func (wm *WatcherManager) StartWatching(channelName string, restreamer *types.Re
 	}
 	restreamer.Channel.Mu.RUnlock()
 
-	if restreamer.Config.Debug {
-		wm.logger.Printf("[WATCHER] Started watching channel %s (stream %d): %s",
-			channelName, currentIdx, utils.LogURL(restreamer.Config, streamURL))
-	}
+	logger.Debug("[WATCHER] Started watching channel %s (stream %d): %s",
+		channelName, currentIdx, utils.LogURL(restreamer.Config, streamURL))
+
 }
 
 // StopWatching terminates health monitoring for a specific channel, performing
@@ -220,9 +215,8 @@ func (wm *WatcherManager) StartWatching(channelName string, restreamer *types.Re
 func (wm *WatcherManager) StopWatching(channelName string) {
 	if watcher, exists := wm.watchers.LoadAndDelete(channelName); exists {
 		watcher.Stop()
-		if watcher.restreamer.Config.Debug {
-			wm.logger.Printf("[WATCHER] Stopped watching channel %s", channelName)
-		}
+		logger.Debug("[WATCHER] Stopped watching channel %s", channelName)
+
 	}
 }
 
@@ -292,9 +286,7 @@ func (sw *StreamWatcher) Watch() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	if sw.restreamer.Config.Debug {
-		sw.logger.Printf("[WATCHER] Channel %s: Monitoring every %v", sw.channelName, interval)
-	}
+	logger.Debug("[WATCHER] Channel %s: Monitoring every %v", sw.channelName, interval)
 
 	// Main monitoring loop continues until context cancellation
 	for {
@@ -361,7 +353,7 @@ func (sw *StreamWatcher) checkStreamHealth() {
 		totalFails := atomic.LoadInt32(&sw.totalFailures)
 		consecFails := atomic.LoadInt32(&sw.consecutiveFailures)
 
-		sw.logger.Printf("[WATCHER] Channel %s: Health=%v, Activity=%ds ago, Clients=%d, TotalFails=%d, ConsecFails=%d, Check=%v",
+		logger.Debug("[WATCHER] Channel %s: Health=%v, Activity=%ds ago, Clients=%d, TotalFails=%d, ConsecFails=%d, Check=%v",
 			sw.channelName, !hasIssues, timeSinceActivity, clientCount, totalFails, consecFails, checkDuration)
 	}
 
@@ -369,10 +361,8 @@ func (sw *StreamWatcher) checkStreamHealth() {
 		consecutiveFailures := atomic.AddInt32(&sw.consecutiveFailures, 1)
 		totalFailures := atomic.AddInt32(&sw.totalFailures, 1)
 
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: Health issue detected (consecutive: %d/5, total: %d/5)",
-				sw.channelName, consecutiveFailures, totalFailures)
-		}
+		logger.Debug("[WATCHER] Channel %s: Health issue detected (consecutive: %d/5, total: %d/5)",
+			sw.channelName, consecutiveFailures, totalFailures)
 
 		// CHANGED: REQUIRE BOTH CONDITIONS AND HIGHER THRESHOLDS
 		if consecutiveFailures >= 3 && totalFailures >= 3 {
@@ -390,8 +380,8 @@ func (sw *StreamWatcher) checkStreamHealth() {
 			oldTotalFailures := atomic.SwapInt32(&sw.totalFailures, 0)
 			sw.lastFailureReset = time.Now()
 
-			if (oldConsecutiveFailures > 0 || oldTotalFailures > 0) && sw.restreamer.Config.Debug {
-				sw.logger.Printf("[WATCHER] Channel %s: Long-term health recovered, reset %d consecutive + %d total failures",
+			if oldConsecutiveFailures > 0 || oldTotalFailures > 0 {
+				logger.Debug("[WATCHER] Channel %s: Long-term health recovered, reset %d consecutive + %d total failures",
 					sw.channelName, oldConsecutiveFailures, oldTotalFailures)
 			}
 		}
@@ -421,18 +411,16 @@ func (sw *StreamWatcher) checkStreamHealth() {
 func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	// Increase grace period to 30 seconds
 	if time.Since(sw.lastStreamStart) < 30*time.Second {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: In grace period, skipping health check", sw.channelName)
-		}
+		logger.Debug("[WATCHER] Channel %s: In grace period, skipping health check", sw.channelName)
+
 		return false
 	}
 
 	hasIssues := false
 
 	if sw.restreamer.Buffer != nil && sw.restreamer.Buffer.IsDestroyed() {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: Buffer destroyed", sw.channelName)
-		}
+		logger.Debug("[WATCHER] Channel %s: Buffer destroyed", sw.channelName)
+
 		hasIssues = true
 	}
 
@@ -441,9 +429,8 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 
 	// Increase activity timeout to 30 seconds
 	if timeSinceActivity > 30 {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: No activity for %d seconds", sw.channelName, timeSinceActivity)
-		}
+		logger.Debug("[WATCHER] Channel %s: No activity for %d seconds", sw.channelName, timeSinceActivity)
+
 		hasIssues = true
 	}
 
@@ -452,9 +439,8 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 		case <-sw.restreamer.Ctx.Done():
 			// Increase timeout to 300 seconds
 			if time.Since(sw.lastCheck) > 300*time.Second {
-				if sw.restreamer.Config.Debug {
-					sw.logger.Printf("[WATCHER] Channel %s: Context cancelled and running for >300s", sw.channelName)
-				}
+				logger.Debug("[WATCHER] Channel %s: Context cancelled and running for >300s", sw.channelName)
+
 				hasIssues = true
 			}
 		default:
@@ -490,15 +476,12 @@ func (sw *StreamWatcher) analyzeStreamWithFFProbe() types.StreamHealthData {
 
 	streamData := sw.getStreamDataFromBuffer()
 	if len(streamData) == 0 {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: No stream data available for FFprobe", sw.channelName)
-		}
+		logger.Debug("[WATCHER] Channel %s: No stream data available for FFprobe", sw.channelName)
+
 		return health
 	}
 
-	if sw.restreamer.Config.Debug {
-		sw.logger.Printf("[WATCHER] Channel %s: Starting FFprobe analysis with %d bytes of data", sw.channelName, len(streamData))
-	}
+	logger.Debug("[WATCHER] Channel %s: Starting FFprobe analysis with %d bytes of data", sw.channelName, len(streamData))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -518,9 +501,8 @@ func (sw *StreamWatcher) analyzeStreamWithFFProbe() types.StreamHealthData {
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: Failed to create stdin pipe: %v", sw.channelName, err)
-		}
+		logger.Error("[WATCHER] Channel %s: Failed to create stdin pipe: %v", sw.channelName, err)
+
 		return health
 	}
 
@@ -539,15 +521,12 @@ func (sw *StreamWatcher) analyzeStreamWithFFProbe() types.StreamHealthData {
 		if cmd.Process != nil {
 			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		}
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: FFprobe failed (non-fatal): %v", sw.channelName, err)
-		}
+		logger.Debug("[WATCHER] Channel %s: FFprobe failed (non-fatal): %v", sw.channelName, err)
+
 		return health
 	}
 
-	if sw.restreamer.Config.Debug {
-		sw.logger.Printf("[WATCHER] Channel %s: FFprobe completed successfully", sw.channelName)
-	}
+	logger.Debug("[WATCHER] Channel %s: FFprobe completed successfully", sw.channelName)
 
 	var result struct {
 		Format struct {
@@ -562,9 +541,8 @@ func (sw *StreamWatcher) analyzeStreamWithFFProbe() types.StreamHealthData {
 	}
 
 	if err := json.Unmarshal(output, &result); err != nil {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: Failed to parse FFprobe output: %v", sw.channelName, err)
-		}
+		logger.Error("[WATCHER] Channel %s: Failed to parse FFprobe output: %v", sw.channelName, err)
+
 		return health
 	}
 
@@ -587,10 +565,8 @@ func (sw *StreamWatcher) analyzeStreamWithFFProbe() types.StreamHealthData {
 
 	health.Valid = true
 
-	if sw.restreamer.Config.Debug {
-		sw.logger.Printf("[WATCHER] Channel %s: FFprobe analysis complete - Video=%v, Audio=%v, Bitrate=%d, Resolution=%s",
-			sw.channelName, health.HasVideo, health.HasAudio, health.Bitrate, health.Resolution)
-	}
+	logger.Debug("[WATCHER] Channel %s: FFprobe analysis complete - Video=%v, Audio=%v, Bitrate=%d, Resolution=%s",
+		sw.channelName, health.HasVideo, health.HasAudio, health.Bitrate, health.Resolution)
 
 	return health
 }
@@ -654,23 +630,21 @@ func (sw *StreamWatcher) evaluateFFProbeResults(health types.StreamHealthData) b
 
 	// ONLY FAIL ON CRITICAL ISSUES - NO VIDEO AND NO BITRATE
 	if !health.HasVideo && health.Bitrate == 0 {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: CRITICAL - No video stream AND no bitrate detected", sw.channelName)
-		}
+		logger.Debug("[WATCHER] Channel %s: CRITICAL - No video stream AND no bitrate detected", sw.channelName)
+
 		hasIssues = true
 	}
 
 	// VERY LOW BITRATE THRESHOLD
 	if health.Bitrate > 0 && health.Bitrate < 10000 {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] Channel %s: CRITICAL - Bitrate too low (%d bps)", sw.channelName, health.Bitrate)
-		}
+		logger.Debug("[WATCHER] Channel %s: CRITICAL - Bitrate too low (%d bps)", sw.channelName, health.Bitrate)
+
 		hasIssues = true
 	}
 
 	// default debug
-	if !hasIssues && sw.restreamer.Config.Debug {
-		sw.logger.Printf("[WATCHER] Channel %s: FFprobe OK - Video=%v, Audio=%v, Bitrate=%d, Resolution=%s",
+	if !hasIssues {
+		logger.Debug("[WATCHER] Channel %s: FFprobe OK - Video=%v, Audio=%v, Bitrate=%d, Resolution=%s",
 			sw.channelName, health.HasVideo, health.HasAudio, health.Bitrate, health.Resolution)
 	}
 
@@ -711,18 +685,15 @@ func (sw *StreamWatcher) shouldRunFFProbeCheck() bool {
 // Parameters:
 //   - reason: categorized reason for failover operation (for logging and analysis)
 func (sw *StreamWatcher) triggerStreamSwitch(reason string) {
-	if sw.restreamer.Config.Debug {
-		sw.logger.Printf("[WATCHER] Triggering stream switch for channel %s due to: %s",
-			sw.channelName, reason)
-	}
+	logger.Debug("[WATCHER] Triggering stream switch for channel %s due to: %s",
+		sw.channelName, reason)
 
 	// Locate next available stream using intelligent selection algorithms
 	nextIndex := sw.findNextAvailableStream()
 	if nextIndex == -1 {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] No alternative streams found for channel %s",
-				sw.channelName)
-		}
+		logger.Debug("[WATCHER] No alternative streams found for channel %s",
+			sw.channelName)
+
 		return
 	}
 
@@ -734,17 +705,14 @@ func (sw *StreamWatcher) triggerStreamSwitch(reason string) {
 	})
 
 	if clientCount == 0 {
-		if sw.restreamer.Config.Debug {
-			sw.logger.Printf("[WATCHER] No clients connected for channel %s, skipping switch",
-				sw.channelName)
-		}
+		logger.Debug("[WATCHER] No clients connected for channel %s, skipping switch",
+			sw.channelName)
+
 		return
 	}
 
-	if sw.restreamer.Config.Debug {
-		sw.logger.Printf("[WATCHER] Switching channel %s to stream %d for %d clients",
-			sw.channelName, nextIndex, clientCount)
-	}
+	logger.Debug("[WATCHER] Switching channel %s to stream %d for %d clients",
+		sw.channelName, nextIndex, clientCount)
 
 	// Execute failover using established stream switching infrastructure
 	sw.forceStreamRestart(nextIndex)
@@ -825,21 +793,18 @@ func (sw *StreamWatcher) restartWithExistingLogic() {
 	// Implement panic recovery to prevent restart failures from crashing the system
 	defer func() {
 		if rec := recover(); rec != nil {
-			if sw.restreamer.Config.Debug {
-				sw.logger.Printf("[WATCHER_RESTART_PANIC] Channel %s: Recovered from panic: %v",
-					sw.channelName, rec)
-			}
+			logger.Debug("[WATCHER_RESTART_PANIC] Channel %s: Recovered from panic: %v",
+				sw.channelName, rec)
+
 		}
 
 		// Ensure running state is properly managed on restart completion
 		sw.restreamer.Running.Store(false)
 	}()
 
-	if sw.restreamer.Config.Debug {
-		currentIdx := int(atomic.LoadInt32(&sw.restreamer.CurrentIndex))
-		sw.logger.Printf("[WATCHER_RESTART] Channel %s: Starting stream restart at index %d",
-			sw.channelName, currentIdx)
-	}
+	currentIdx := int(atomic.LoadInt32(&sw.restreamer.CurrentIndex))
+	logger.Debug("[WATCHER_RESTART] Channel %s: Starting stream restart at index %d",
+		sw.channelName, currentIdx)
 
 	// Leverage existing comprehensive streaming logic through wrapper pattern
 	r := NewRestreamWrapper(sw.restreamer)
@@ -888,10 +853,9 @@ func (sw *StreamWatcher) findNextAvailableStream() int {
 		// Validate source connection availability without consuming connection slots
 		currentConns := atomic.LoadInt32(&stream.Source.ActiveConns)
 		if currentConns >= int32(stream.Source.MaxConnections) {
-			if sw.restreamer.Config.Debug {
-				sw.logger.Printf("[WATCHER] Source at connection limit (%d/%d), skipping: %s",
-					currentConns, stream.Source.MaxConnections, stream.Source.Name)
-			}
+			logger.Debug("[WATCHER] Source at connection limit (%d/%d), skipping: %s",
+				currentConns, stream.Source.MaxConnections, stream.Source.Name)
+
 			continue
 		}
 

@@ -7,6 +7,7 @@ import (
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/filter"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/streamorder"
@@ -16,7 +17,6 @@ import (
 	"runtime"
 	"strconv"
 
-	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -45,7 +45,6 @@ type StreamProxy struct {
 	Channels              *xsync.MapOf[string, *types.Channel] // Thread-safe map of channel name -> *types.Channel for concurrent access
 	Cache                 *cache.Cache                         // Playlist and metadata caching system for performance optimization
 	EPGCache              *cache.Cache                         // EPG caching system
-	Logger                *log.Logger                          // Centralized logging system for debugging and operational monitoring
 	BufferPool            *buffer.BufferPool                   // Reusable buffer pool for TS segment processing and memory management
 	HttpClient            *client.HeaderSettingClient          // HTTP client with custom header support for source authentication
 	WorkerPool            *ants.Pool                           // Goroutine pool for concurrent task execution and resource control
@@ -76,19 +75,18 @@ type StreamProxy struct {
 //
 // Returns:
 //   - *StreamProxy: fully initialized proxy instance ready for operation
-func New(cfg *config.Config, logger *log.Logger, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, cacheInstance *cache.Cache) *StreamProxy {
+func New(cfg *config.Config, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, cacheInstance *cache.Cache) *StreamProxy {
 	sp := &StreamProxy{
 		Config:                cfg,
 		Channels:              xsync.NewMapOf[string, *types.Channel](),
 		Cache:                 cacheInstance,
 		EPGCache:              cache.NewCache(60 * time.Minute),
-		Logger:                logger,
 		BufferPool:            bufferPool,
 		HttpClient:            httpClient,
 		WorkerPool:            workerPool,
-		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(logger, cfg),
+		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(cfg),
 		importStopChan:        make(chan bool, 1),
-		WatcherManager:        watcher.NewWatcherManager(logger),
+		WatcherManager:        watcher.NewWatcherManager(),
 		SourceRateLimiters:    make(map[string]ratelimit.Limiter),
 		rateLimiterMutex:      sync.RWMutex{},
 		FilterManager:         filter.NewFilterManager(),
@@ -114,10 +112,8 @@ func (sp *StreamProxy) initializeRateLimiters() {
 		limiter := ratelimit.New(rateLimit)
 		sp.SourceRateLimiters[source.URL] = limiter
 
-		if sp.Config.Debug {
-			sp.Logger.Printf("[RATE_LIMITER] Created rate limiter for source %s: %d req/sec",
-				source.Name, rateLimit)
-		}
+		logger.Debug("[RATE_LIMITER] Created rate limiter for source %s: %d req/sec",
+			source.Name, rateLimit)
 	}
 }
 
@@ -162,13 +158,11 @@ func (sp *StreamProxy) getChannelBatch() []channelBatch {
 // Concurrent Safety: This method is thread-safe and can be called during active streaming
 // operations without disrupting connected clients or corrupting channel data.
 func (sp *StreamProxy) ImportStreams() {
-	if sp.Config.Debug {
-		sp.Logger.Println("Starting stream import...")
-	}
+	logger.Debug("Starting stream import...")
 
 	// Validate that sources are configured before attempting import
 	if len(sp.Config.Sources) == 0 {
-		sp.Logger.Println("WARNING: No sources configured!")
+		logger.Warn("WARNING: No sources configured!")
 		return
 	}
 
@@ -186,27 +180,24 @@ func (sp *StreamProxy) ImportStreams() {
 			// Enforce per-source connection limits to prevent resource exhaustion
 			currentConns := atomic.LoadInt32(&src.ActiveConns)
 			if currentConns >= int32(src.MaxConnections) {
-				if sp.Config.Debug {
-					sp.Logger.Printf("Cannot import from source (connection limit %d/%d): %s",
-						currentConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
-				}
+				logger.Warn("Cannot import from source (connection limit %d/%d): %s",
+					currentConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+
 				return
 			}
 
 			// Acquire connection slot with atomic increment for thread safety
 			newConns := atomic.AddInt32(&src.ActiveConns, 1)
-			if sp.Config.Debug {
-				sp.Logger.Printf("[IMPORT_CONNECTION] Acquired connection %d/%d for parsing: %s",
-					newConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
-			}
+			logger.Debug("[IMPORT_CONNECTION] Acquired connection %d/%d for parsing: %s",
+				newConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+
 			defer func() {
 
 				// Always release connection slot when parsing completes
 				remainingConns := atomic.AddInt32(&src.ActiveConns, -1)
-				if sp.Config.Debug {
-					sp.Logger.Printf("[IMPORT_RELEASE] Released parsing connection, remaining: %d/%d for: %s",
-						remainingConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
-				}
+				logger.Debug("[IMPORT_RELEASE] Released parsing connection, remaining: %d/%d for: %s",
+					remainingConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
+
 			}()
 
 			// Get rate limiter for this source
@@ -217,11 +208,11 @@ func (sp *StreamProxy) ImportStreams() {
 			if src.Username != "" && src.Password != "" {
 
 				// Use Xtreme Codes API parser when credentials are available
-				streams = parser.ParseXtremeCodesAPI(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter, sp.Cache)
+				streams = parser.ParseXtremeCodesAPI(sp.HttpClient, sp.Config, src, rateLimiter, sp.Cache)
 			} else {
 
 				// Use standard M3U8 parser
-				streams = parser.ParseM3U8(sp.HttpClient, sp.Logger, sp.Config, src, rateLimiter, sp.Cache)
+				streams = parser.ParseM3U8(sp.HttpClient, sp.Config, src, rateLimiter, sp.Cache)
 			}
 
 			// Apply content filtering
@@ -230,12 +221,10 @@ func (sp *StreamProxy) ImportStreams() {
 			}
 
 			// debug logging
-			if sp.Config.Debug {
-				if src.Username != "" && src.Password != "" {
-					sp.Logger.Printf("Parsed %d streams from Xtreme Codes API: %s", len(streams), utils.LogURL(sp.Config, src.URL))
-				} else {
-					sp.Logger.Printf("Parsed %d streams from M3U8 source: %s", len(streams), utils.LogURL(sp.Config, src.URL))
-				}
+			if src.Username != "" && src.Password != "" {
+				logger.Debug("Parsed %d streams from Xtreme Codes API: %s", len(streams), utils.LogURL(sp.Config, src.URL))
+			} else {
+				logger.Debug("Parsed %d streams from M3U8 source: %s", len(streams), utils.LogURL(sp.Config, src.URL))
 			}
 
 			// Aggregate streams by channel name, supporting multiple sources per channel
@@ -266,13 +255,9 @@ func (sp *StreamProxy) ImportStreams() {
 
 	select {
 	case <-done:
-		if sp.Config.Debug {
-			sp.Logger.Println("All imports completed successfully")
-		}
+		logger.Debug("All imports completed successfully")
 	case <-time.After(2 * time.Minute):
-		if sp.Config.Debug {
-			sp.Logger.Println("WARNING: Import timeout reached, some sources may not have completed")
-		}
+		logger.Warn("Import timeout reached, some sources may not have completed")
 	}
 
 	// Finalize imported channels with sorting and preference preservation
@@ -331,9 +316,8 @@ func (sp *StreamProxy) ImportStreams() {
 		sp.Cache.ClearIfNeeded()
 	}
 
-	if sp.Config.Debug {
-		sp.Logger.Printf("Import complete. Found %d channels", count)
-	}
+	logger.Debug("Import complete. Found %d channels", count)
+
 }
 
 // GeneratePlaylist creates and serves a complete M3U8 playlist containing channel entries
@@ -354,12 +338,10 @@ func (sp *StreamProxy) ImportStreams() {
 func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, groupFilter string) {
 	var seenClients sync.Map
 
-	if sp.Config.Debug {
-		clientKey := r.RemoteAddr + "-" + r.Header.Get("User-Agent")
-		if _, seen := seenClients.LoadOrStore(clientKey, true); !seen {
-			sp.Logger.Printf("New playlist client: %s (%s)",
-				r.RemoteAddr, r.Header.Get("User-Agent"))
-		}
+	clientKey := r.RemoteAddr + "-" + r.Header.Get("User-Agent")
+	if _, seen := seenClients.LoadOrStore(clientKey, true); !seen {
+		logger.Debug("New playlist client: %s (%s)",
+			r.RemoteAddr, r.Header.Get("User-Agent"))
 	}
 
 	cacheKey := "playlist"
@@ -440,13 +422,12 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(result))
 
-	if sp.Config.Debug {
-		if groupFilter == "" {
-			sp.Logger.Printf("Generated playlist with %d channels", len(channels))
-		} else {
-			sp.Logger.Printf("Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, len(channels))
-		}
+	if groupFilter == "" {
+		logger.Debug("Generated playlist with %d channels", len(channels))
+	} else {
+		logger.Debug("Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, len(channels))
 	}
+
 }
 
 // GetChannelGroup extracts the group classification from channel attributes using
@@ -504,16 +485,14 @@ func (sp *StreamProxy) StartImportRefresh() {
 		case <-sp.importStopChan:
 
 			// Graceful shutdown requested
-			if sp.Config.Debug {
-				sp.Logger.Println("Import refresh stopped")
-			}
+			logger.Debug("Import refresh stopped")
+
 			return
 		case <-ticker.C:
 
 			// Periodic refresh triggered
-			if sp.Config.Debug {
-				sp.Logger.Println("Refreshing imports...")
-			}
+			logger.Debug("Refreshing imports...")
+
 			sp.ImportStreams()
 		}
 	}
@@ -573,9 +552,8 @@ func (sp *StreamProxy) RestreamCleanup() {
 						select {
 						case <-channel.Restreamer.Ctx.Done():
 							if now-lastActivity > 60 {
-								if sp.Config.Debug {
-									sp.Logger.Printf("[CLEANUP_FORCE] Channel %s: Force cleaning cancelled context after 60s", channel.Name)
-								}
+								logger.Debug("[CLEANUP_FORCE] Channel %s: Force cleaning cancelled context after 60s", channel.Name)
+
 								if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
 									channel.Restreamer.Buffer.Destroy()
 								}
@@ -584,17 +562,15 @@ func (sp *StreamProxy) RestreamCleanup() {
 							}
 						default:
 							if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
-								if sp.Config.Debug {
-									sp.Logger.Printf("[CLEANUP_BUFFER_DESTROY] Channel %s: Safely destroying buffer", channel.Name)
-								}
+								logger.Debug("[CLEANUP_BUFFER_DESTROY] Channel %s: Safely destroying buffer", channel.Name)
+
 								channel.Restreamer.Buffer.Destroy()
 							}
 							channel.Restreamer.Cancel()
 							channel.Restreamer = nil
 
-							if sp.Config.Debug {
-								sp.Logger.Printf("Cleaned up inactive restreamer for channel: %s", channel.Name)
-							}
+							logger.Debug("Cleaned up inactive restreamer for channel: %s", channel.Name)
+
 						}
 					}
 
@@ -605,9 +581,8 @@ func (sp *StreamProxy) RestreamCleanup() {
 						lastSeen := client.LastSeen.Load()
 
 						if now-lastSeen > 120 {
-							if sp.Config.Debug {
-								sp.Logger.Printf("Removing inactive client: %s (last seen %d seconds ago)", ckey, now-lastSeen)
-							}
+							logger.Debug("Removing inactive client: %s (last seen %d seconds ago)", ckey, now-lastSeen)
+
 							channel.Restreamer.Clients.Delete(ckey)
 
 							select {
@@ -624,16 +599,14 @@ func (sp *StreamProxy) RestreamCleanup() {
 					if clientCount == 0 && channel.Restreamer.Running.Load() {
 						lastActivity := channel.Restreamer.LastActivity.Load()
 						if now-lastActivity > 120 {
-							if sp.Config.Debug {
-								sp.Logger.Printf("No active clients found, stopping restreamer for: %s", channel.Name)
-							}
+							logger.Debug("No active clients found, stopping restreamer for: %s", channel.Name)
+
 							channel.Restreamer.Cancel()
 							channel.Restreamer.Running.Store(false)
 
 							if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
-								if sp.Config.Debug {
-									sp.Logger.Printf("[CLEANUP_NO_CLIENTS] Channel %s: Safely destroying buffer", channel.Name)
-								}
+								logger.Debug("[CLEANUP_NO_CLIENTS] Channel %s: Safely destroying buffer", channel.Name)
+
 								channel.Restreamer.Buffer.Destroy()
 							}
 						}
@@ -720,14 +693,12 @@ func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Request, channel *types.Channel) {
 
 	// Log connection request details for debugging
-	if sp.Config.Debug {
-		sp.Logger.Printf("[STREAM_REQUEST] Channel %s: URL: %s", channel.Name, channel.Name)
-		sp.Logger.Printf("[FOUND] Channel %s: Streams: %d", channel.Name, len(channel.Streams))
-		if sp.Config.FFmpegMode {
-			sp.Logger.Printf("Using FFMPEG mode for channel: %s", channel.Name)
-		} else {
-			sp.Logger.Printf("Using RESTREAMING mode for channel: %s", channel.Name)
-		}
+	logger.Debug("[STREAM_REQUEST] Channel %s: URL: %s", channel.Name, channel.Name)
+	logger.Debug("[FOUND] Channel %s: Streams: %d", channel.Name, len(channel.Streams))
+	if sp.Config.FFmpegMode {
+		logger.Debug("Using FFMPEG mode for channel: %s", channel.Name)
+	} else {
+		logger.Debug("Using RESTREAMING mode for channel: %s", channel.Name)
 	}
 
 	// Initialize or reuse existing restreamer with thread-safe access
@@ -739,10 +710,9 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 			rateLimiter = sp.getRateLimiterForSource(channel.Streams[0].Source)
 		}
 
-		if sp.Config.Debug {
-			sp.Logger.Printf("[RESTREAM_NEW] Channel %s: Creating new restreamer with rate limiting", channel.Name)
-		}
-		restreamer = restream.NewRestreamer(channel, (sp.Config.BufferSizePerStream * 1024 * 1024), sp.Logger, sp.HttpClient, sp.Config, rateLimiter)
+		logger.Debug("[RESTREAM_NEW] Channel %s: Creating new restreamer with rate limiting", channel.Name)
+
+		restreamer = restream.NewRestreamer(channel, (sp.Config.BufferSizePerStream * 1024 * 1024), sp.HttpClient, sp.Config, rateLimiter)
 		channel.Restreamer = restreamer.Restreamer
 	} else {
 		if channel.Restreamer.Clients == nil {
@@ -770,9 +740,8 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 		flusher, ok = w.(http.Flusher)
 	}
 	if !ok {
-		if sp.Config.Debug {
-			sp.Logger.Printf("Streaming not supported for client: %s", clientID)
-		}
+		logger.Error("Streaming not supported for client: %s", clientID)
+
 		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 		return
 	}
@@ -781,9 +750,7 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	if sp.Config.Debug {
-		sp.Logger.Printf("[RESTREAM_START] Channel %s: Client: %s", channel.Name, clientID)
-	}
+	logger.Debug("[RESTREAM_START] Channel %s: Client: %s", channel.Name, clientID)
 
 	// Register client with the restreamer for data distribution
 	restreamer.AddClient(clientID, w, flusher)
@@ -801,10 +768,8 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 			actualIndex = currentIndex
 		}
 
-		if sp.Config.Debug {
-			sp.Logger.Printf("[WATCHER_DEBUG] Channel %s: Preferred=%d, Current=%d, Using=%d",
-				channel.Name, preferredIndex, currentIndex, actualIndex)
-		}
+		logger.Debug("[WATCHER_DEBUG] Channel %s: Preferred=%d, Current=%d, Using=%d",
+			channel.Name, preferredIndex, currentIndex, actualIndex)
 
 		sp.WatcherManager.StartWatching(channel.Name, restreamer.Restreamer)
 	}
@@ -825,15 +790,13 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	// Wait for disconnection or timeout
 	select {
 	case <-done:
-		if sp.Config.Debug {
-			sp.Logger.Printf("Restreaming client disconnected: %s", clientID)
-		}
+		logger.Debug("Restreaming client disconnected: %s", clientID)
+
 	case <-time.After(24 * time.Hour):
 
 		// Maximum connection time limit for resource management
-		if sp.Config.Debug {
-			sp.Logger.Printf("Restreaming client timeout: %s", clientID)
-		}
+		logger.Debug("Restreaming client timeout: %s", clientID)
+
 	}
 }
 
@@ -946,10 +909,8 @@ func (sp *StreamProxy) getRateLimiterForSource(source *config.SourceConfig) rate
 	limiter = ratelimit.New(rateLimit)
 	sp.SourceRateLimiters[source.URL] = limiter
 
-	if sp.Config.Debug {
-		sp.Logger.Printf("[RATE_LIMITER] Created rate limiter for dynamic source %s: %d req/sec",
-			source.Name, rateLimit)
-	}
+	logger.Debug("[RATE_LIMITER] Created rate limiter for dynamic source %s: %d req/sec",
+		source.Name, rateLimit)
 
 	return limiter
 }

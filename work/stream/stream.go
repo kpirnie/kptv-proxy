@@ -3,9 +3,9 @@ package stream
 import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/deadstreams"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
-	"log"
 	"sync/atomic"
 	"time"
 )
@@ -39,7 +39,7 @@ import (
 //   - logger: application logger for debug output and operational event recording
 //   - channelName: name of the channel containing the failed stream for identification
 //   - streamIndex: zero-based index of the failed stream within the channel's stream list
-func HandleStreamFailure(stream *types.Stream, cfg *config.Config, logger *log.Logger, channelName string, streamIndex int) {
+func HandleStreamFailure(stream *types.Stream, cfg *config.Config, channelName string, streamIndex int) {
 
 	// Atomically increment failure counter to ensure thread-safe access across goroutines
 	// The returned value reflects the new total failure count after increment
@@ -69,10 +69,8 @@ func HandleStreamFailure(stream *types.Stream, cfg *config.Config, logger *log.L
 		atomic.StoreInt32(&stream.Blocked, 1)
 
 		// Log blocking event with failure statistics for operational monitoring
-		if cfg.Debug {
-			logger.Printf("Stream blocked due to excessive failures (%d/%d): %s",
-				failures, maxFailures, utils.LogURL(cfg, stream.URL))
-		}
+		logger.Debug("Stream blocked due to excessive failures (%d/%d): %s",
+			failures, maxFailures, utils.LogURL(cfg, stream.URL))
 
 		// Record stream as dead in persistent database for administrative tracking
 		// This enables monitoring of problematic streams and provider quality analysis
@@ -86,16 +84,14 @@ func HandleStreamFailure(stream *types.Stream, cfg *config.Config, logger *log.L
 
 		// Handle dead stream recording errors gracefully without disrupting operation
 		if err != nil {
-			if cfg.Debug {
-				logger.Printf("Failed to mark auto-blocked stream as dead in file: %v", err)
-			}
+			logger.Error("Failed to mark auto-blocked stream as dead in file: %v", err)
+
 		} else {
 
 			// Confirm successful dead stream recording for audit trail
-			if cfg.Debug {
-				logger.Printf("Auto-blocked stream added to dead streams file: %s (channel: %s, index: %d)",
-					utils.LogURL(cfg, stream.URL), channelName, streamIndex)
-			}
+			logger.Debug("Auto-blocked stream added to dead streams file: %s (channel: %s, index: %d)",
+				utils.LogURL(cfg, stream.URL), channelName, streamIndex)
+
 		}
 	}
 }

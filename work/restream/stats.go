@@ -3,9 +3,10 @@ package restream
 import (
 	"context"
 	"encoding/json"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
-	"os/exec"
 	"math/rand"
+	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
@@ -40,16 +41,15 @@ func (r *Restream) collectStreamStats() {
 		r.Restreamer.Stats.LastUpdated = time.Now().Unix()
 		r.Restreamer.Stats.Mu.Unlock()
 
-		if r.Config.Debug {
-			r.Logger.Printf("[STATS] Channel %s: Container=%s, Video=%s@%s (%.2f fps), Audio=%s (%s), Bitrate=%d",
-				r.Channel.Name, stats.Container, stats.VideoCodec, stats.VideoResolution,
-				stats.FPS, stats.AudioCodec, stats.AudioChannels, stats.Bitrate)
-		}
+		logger.Debug("[STATS] Channel %s: Container=%s, Video=%s@%s (%.2f fps), Audio=%s (%s), Bitrate=%d",
+			r.Channel.Name, stats.Container, stats.VideoCodec, stats.VideoResolution,
+			stats.FPS, stats.AudioCodec, stats.AudioChannels, stats.Bitrate)
+
 	}
-	
-	interval := 5 * time.Minute  // Default to 5 minutes
+
+	interval := 5 * time.Minute // Default to 5 minutes
 	if r.Config.Debug {
-		interval = 1 * time.Minute  // Only 1 min in debug
+		interval = 1 * time.Minute // Only 1 min in debug
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -57,7 +57,7 @@ func (r *Restream) collectStreamStats() {
 	// Add jitter to prevent thundering herd
 	jitter := time.Duration(rand.Intn(30)) * time.Second
 	time.Sleep(jitter)
-	
+
 	for {
 		select {
 		case <-r.Ctx.Done():
@@ -82,11 +82,10 @@ func (r *Restream) collectStreamStats() {
 				r.Restreamer.Stats.LastUpdated = time.Now().Unix()
 				r.Restreamer.Stats.Mu.Unlock()
 
-				if r.Config.Debug {
-					r.Logger.Printf("[STATS] Channel %s: Container=%s, Video=%s@%s (%.2f fps), Audio=%s (%s), Bitrate=%d",
-						r.Channel.Name, stats.Container, stats.VideoCodec, stats.VideoResolution,
-						stats.FPS, stats.AudioCodec, stats.AudioChannels, stats.Bitrate)
-				}
+				logger.Debug("[STATS] Channel %s: Container=%s, Video=%s@%s (%.2f fps), Audio=%s (%s), Bitrate=%d",
+					r.Channel.Name, stats.Container, stats.VideoCodec, stats.VideoResolution,
+					stats.FPS, stats.AudioCodec, stats.AudioChannels, stats.Bitrate)
+
 			}
 		}
 	}
@@ -151,14 +150,14 @@ func (r *Restream) analyzeStreamStats() types.StreamStats {
 			BitRate    string `json:"bit_rate"`
 		} `json:"format"`
 		Streams []struct {
-			CodecType      string `json:"codec_type"`
-			CodecName      string `json:"codec_name"`
-			Width          int    `json:"width"`
-			Height         int    `json:"height"`
-			RFrameRate     string `json:"r_frame_rate"`
-			AvgFrameRate   string `json:"avg_frame_rate"`
-			Channels       int    `json:"channels"`
-			ChannelLayout  string `json:"channel_layout"`
+			CodecType     string `json:"codec_type"`
+			CodecName     string `json:"codec_name"`
+			Width         int    `json:"width"`
+			Height        int    `json:"height"`
+			RFrameRate    string `json:"r_frame_rate"`
+			AvgFrameRate  string `json:"avg_frame_rate"`
+			Channels      int    `json:"channels"`
+			ChannelLayout string `json:"channel_layout"`
 		} `json:"streams"`
 	}
 
@@ -179,7 +178,7 @@ func (r *Restream) analyzeStreamStats() types.StreamStats {
 			if stream.Width > 0 && stream.Height > 0 {
 				stats.VideoResolution = strconv.Itoa(stream.Width) + "x" + strconv.Itoa(stream.Height)
 			}
-			
+
 			fps := r.parseFrameRate(stream.AvgFrameRate)
 			if fps == 0 {
 				fps = r.parseFrameRate(stream.RFrameRate)

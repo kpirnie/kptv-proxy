@@ -9,6 +9,7 @@ import (
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
@@ -85,16 +86,12 @@ func classifyStreamContent(streamName, streamURL string, existingGroup string) s
 //
 // Returns:
 //   - []*types.Stream: slice of parsed stream objects, or nil if parsing fails completely
-func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
-	if cfg.Debug {
-		logger.Printf("Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
-	}
+func ParseM3U8(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
+	logger.Debug("Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
 
 	cacheKey := fmt.Sprintf("m3u8:%s", source.URL)
 	if cached, found := cache.GetXCData(cacheKey); found {
-		if cfg.Debug {
-			logger.Printf("[M3U8_CACHE_HIT] Using cached M3U8 data for %s", source.Name)
-		}
+		logger.Debug("[M3U8_CACHE_HIT] Using cached M3U8 data for %s", source.Name)
 		var streams []*types.Stream
 		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
 			return streams
@@ -103,9 +100,8 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		if cfg.Debug {
-			logger.Printf("[RATE_LIMIT] Applied rate limit for source: %s", source.Name)
-		}
+		logger.Debug("[RATE_LIMIT] Applied rate limit for source: %s", source.Name)
+
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -113,92 +109,78 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 
 	req, err := http.NewRequest("GET", source.URL, nil)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Error creating request for %s: %v", utils.LogURL(cfg, source.URL), err)
-		}
+		logger.Debug("Error creating request for %s: %v", utils.LogURL(cfg, source.URL), err)
+
 		return nil
 	}
 	req = req.WithContext(ctx)
 
 	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Error fetching M3U8 from %s: %v", utils.LogURL(cfg, source.URL), err)
-		}
+		logger.Debug("Error fetching M3U8 from %s: %v", utils.LogURL(cfg, source.URL), err)
+
 		return nil
 	}
 
 	defer func() {
 		resp.Body.Close()
-		if cfg.Debug {
-			logger.Printf("[PARSE_CONNECTION_CLOSE] Closed connection for: %s", utils.LogURL(cfg, source.URL))
-		}
+		logger.Debug("[PARSE_CONNECTION_CLOSE] Closed connection for: %s", utils.LogURL(cfg, source.URL))
+
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		if cfg.Debug {
-			logger.Printf("HTTP error %d when fetching %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
-		}
+		logger.Debug("HTTP error %d when fetching %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
+
 		return nil
 	}
 
 	var streams []*types.Stream
 	playlist, listType, err := m3u8.DecodeFrom(bufio.NewReader(resp.Body), true)
 	if err == nil {
-		if cfg.Debug {
-			logger.Printf("Successfully parsed with grafov parser: %s", utils.LogURL(cfg, source.URL))
-		}
-		streams = ParseWithGrafov(playlist, listType, source, cfg, logger)
+		logger.Debug("Successfully parsed with grafov parser: %s", utils.LogURL(cfg, source.URL))
+
+		streams = ParseWithGrafov(playlist, listType, source, cfg)
 	} else {
-		if cfg.Debug {
-			logger.Printf("Grafov parser failed, using fallback parser: %v", err)
-		}
+		logger.Debug("Grafov parser failed, using fallback parser: %v", err)
 
 		resp.Body.Close()
 
 		req2, err := http.NewRequest("GET", source.URL, nil)
 		if err != nil {
-			if cfg.Debug {
-				logger.Printf("Error creating fallback request for %s: %v", utils.LogURL(cfg, source.URL), err)
-			}
+			logger.Debug("Error creating fallback request for %s: %v", utils.LogURL(cfg, source.URL), err)
+
 			return nil
 		}
 		req2 = req2.WithContext(ctx)
 
 		resp2, err := httpClient.DoWithHeaders(req2, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 		if err != nil {
-			if cfg.Debug {
-				logger.Printf("Error re-fetching for fallback parser: %v", err)
-			}
+			logger.Debug("Error re-fetching for fallback parser: %v", err)
+
 			return nil
 		}
 		defer func() {
 			resp2.Body.Close()
-			if cfg.Debug {
-				logger.Printf("[PARSE_FALLBACK_CLOSE] Closed fallback connection for: %s", utils.LogURL(cfg, source.URL))
-			}
+			logger.Debug("[PARSE_FALLBACK_CLOSE] Closed fallback connection for: %s", utils.LogURL(cfg, source.URL))
+
 		}()
 
 		if resp2.StatusCode != http.StatusOK {
-			if cfg.Debug {
-				logger.Printf("HTTP error %d on fallback fetch from %s", resp2.StatusCode, utils.LogURL(cfg, source.URL))
-			}
+			logger.Debug("HTTP error %d on fallback fetch from %s", resp2.StatusCode, utils.LogURL(cfg, source.URL))
+
 			return nil
 		}
 
-		if cfg.Debug {
-			logger.Printf("Using fallback parser for: %s", utils.LogURL(cfg, source.URL))
-		}
+		logger.Debug("Using fallback parser for: %s", utils.LogURL(cfg, source.URL))
 
-		streams = ParseM3U8Fallback(resp2.Body, source, cfg, logger)
+		streams = ParseM3U8Fallback(resp2.Body, source, cfg)
 	}
 
 	if len(streams) > 0 {
 		if data, err := json.Marshal(streams); err == nil {
 			cache.SetXCData(cacheKey, string(data))
-			if cfg.Debug {
-				logger.Printf("[M3U8_CACHE_SET] Cached %d streams for %s", len(streams), source.Name)
-			}
+			logger.Debug("[M3U8_CACHE_SET] Cached %d streams for %s", len(streams), source.Name)
+
 		}
 	}
 
@@ -224,7 +206,7 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *
 //
 // Returns:
 //   - []*types.Stream: slice of Stream objects extracted from the playlist variants or media
-func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *config.SourceConfig, cfg *config.Config, logger *log.Logger) []*types.Stream {
+func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *config.SourceConfig, cfg *config.Config) []*types.Stream {
 	var streams []*types.Stream
 
 	switch listType {
@@ -277,9 +259,7 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 		}
 	}
 
-	if cfg.Debug {
-		logger.Printf("Grafov parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
-	}
+	logger.Debug("Grafov parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
 
 	return streams
 }
@@ -304,7 +284,7 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 //
 // Returns:
 //   - []*types.Stream: slice of Stream objects parsed from playlist content
-func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *config.Config, logger *log.Logger) []*types.Stream {
+func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *config.Config) []*types.Stream {
 	var streams []*types.Stream
 	scanner := bufio.NewScanner(reader)
 	var currentAttrs map[string]string
@@ -331,9 +311,8 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 						if end != -1 {
 							epgURL := line[start : start+end]
 							source.EPGURL = epgURL
-							if cfg.Debug {
-								logger.Printf("[EPG_URL] Found EPG URL for %s: %s", source.Name, epgURL)
-							}
+							logger.Debug("[EPG_URL] Found EPG URL for %s: %s", source.Name, epgURL)
+
 						}
 					}
 				} else if strings.Contains(line, "url-tvg=") {
@@ -344,17 +323,15 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 						if end != -1 {
 							epgURL := line[start : start+end]
 							source.EPGURL = epgURL
-							if cfg.Debug {
-								logger.Printf("[EPG_URL] Found EPG URL for %s: %s", source.Name, epgURL)
-							}
+							logger.Debug("[EPG_URL] Found EPG URL for %s: %s", source.Name, epgURL)
+
 						}
 					}
 				}
 			}
 
-			if cfg.Debug {
-				logger.Printf("Parsed EXTINF attributes: %+v", currentAttrs)
-			}
+			logger.Debug("Parsed EXTINF attributes: %+v", currentAttrs)
+
 		} else if currentAttrs != nil && (strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://")) {
 
 			// Found stream URL following EXTINF line
@@ -379,23 +356,17 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 			group := classifyStreamContent(stream.Name, stream.URL, existingGroup)
 			stream.Attributes["group-title"] = group
 
-			if cfg.Debug {
-				logger.Printf("Classified stream '%s' as '%s' (URL: %s)", stream.Name, group, utils.LogURL(cfg, stream.URL))
-			}
+			logger.Debug("Classified stream '%s' as '%s' (URL: %s)", stream.Name, group, utils.LogURL(cfg, stream.URL))
 
 			streams = append(streams, stream)
-			if cfg.Debug {
-				logger.Printf("Added stream: %s (URL: %s)", stream.Name, utils.LogURL(cfg, stream.URL))
-			}
+			logger.Debug("Added stream: %s (URL: %s)", stream.Name, utils.LogURL(cfg, stream.URL))
 
 			// Reset attributes for next stream entry
 			currentAttrs = nil
 		}
 	}
 
-	if cfg.Debug {
-		logger.Printf("Fallback parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
-	}
+	logger.Debug("Fallback parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
 
 	return streams
 }
@@ -512,9 +483,7 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 		}
 
 		if valid {
-			if cfg.Debug {
-				log.Printf("[SORT_CUSTOM] Channel %s: Applying custom order %v", channelName, customOrder)
-			}
+			logger.Debug("[SORT_CUSTOM] Channel %s: Applying custom order %v", channelName, customOrder)
 
 			// Create a new slice with the custom order
 			orderedStreams := make([]*types.Stream, len(streams))
@@ -525,14 +494,12 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 			// Copy back to original slice
 			copy(streams, orderedStreams)
 
-			if cfg.Debug {
-				log.Printf("[SORT_AFTER] Channel %s: Applied custom ordering", channelName)
-			}
+			logger.Debug("[SORT_AFTER] Channel %s: Applied custom ordering", channelName)
+
 			return
 		} else {
-			if cfg.Debug {
-				log.Printf("[SORT_CUSTOM] Channel %s: Invalid custom order, falling back to default", channelName)
-			}
+			logger.Debug("[SORT_CUSTOM] Channel %s: Invalid custom order, falling back to default", channelName)
+
 		}
 	}
 
@@ -554,7 +521,7 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 		return val1 < val2
 	})
 
-	if cfg.Debug && len(streams) > 1 {
-		log.Printf("[SORT_AFTER] Channel %s: Applied default sorting", channelName)
+	if len(streams) > 1 {
+		logger.Debug("[SORT_AFTER] Channel %s: Applied default sorting", channelName)
 	}
 }

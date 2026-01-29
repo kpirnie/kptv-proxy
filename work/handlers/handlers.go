@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/middleware"
 	"kptv-proxy/work/proxy"
 	"net/http"
@@ -89,17 +90,12 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		channelName := sp.FindChannelBySafeName(safeName)
 		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
-			if sp.Config.Debug {
-				sp.Logger.Printf("Channel not found: %s", channelName)
-			}
+			logger.Error("Channel not found: %s", channelName)
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
 
-		if sp.Config.Debug {
-			sp.Logger.Printf("Using RESTREAMING mode for channel: %s", channelName)
-		}
-
+		logger.Debug("Using RESTREAMING mode for channel: %s", channelName)
 		sp.HandleRestreamingClient(w, r, channel)
 	}
 }
@@ -178,13 +174,11 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		if sp.Config.Debug {
-			sp.Logger.Printf("[EPG] Found %d total EPG sources (%d XC, %d M3U8, %d manual)",
-				len(epgSources),
-				countSourceType(epgSources, "xc"),
-				countSourceType(epgSources, "m3u8"),
-				countSourceType(epgSources, "manual"))
-		}
+		logger.Debug("[EPG] Found %d total EPG sources (%d XC, %d M3U8, %d manual)",
+			len(epgSources),
+			countSourceType(epgSources, "xc"),
+			countSourceType(epgSources, "m3u8"),
+			countSourceType(epgSources, "manual"))
 
 		// Fetch EPG from all sources concurrently
 		type epgResult struct {
@@ -233,11 +227,10 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 			result := <-results
 			if result.err == nil && len(result.data) > 0 {
 				epgDataList = append(epgDataList, result.data)
-				if sp.Config.Debug {
-					sp.Logger.Printf("[EPG] Successfully fetched EPG from: %s (%d bytes)", result.name, len(result.data))
-				}
-			} else if sp.Config.Debug && result.err != nil {
-				sp.Logger.Printf("[EPG] Failed to fetch from %s: %v", result.name, result.err)
+				logger.Debug("[EPG] Successfully fetched EPG from: %s (%d bytes)", result.name, len(result.data))
+
+			} else if result.err != nil {
+				logger.Error("[EPG] Failed to fetch from %s: %v", result.name, result.err)
 			}
 		}
 
@@ -249,9 +242,7 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 		// Merge XMLTV data
 		merged := mergeXMLTV(epgDataList)
 
-		if sp.Config.Debug {
-			sp.Logger.Printf("[EPG] Merged %d EPG sources into final response (%d bytes)", len(epgDataList), len(merged))
-		}
+		logger.Debug("[EPG] Merged %d EPG sources into final response (%d bytes)", len(epgDataList), len(merged))
 
 		// cache the epg
 		sp.EPGCache.SetEPG("epg:full", string(merged))

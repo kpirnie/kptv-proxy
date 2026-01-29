@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/metrics"
 	"kptv-proxy/work/types"
 	"os/exec"
@@ -26,9 +27,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	}
 	r.Channel.Mu.RUnlock()
 
-	if r.Config.Debug {
-		r.Logger.Printf("[FFMPEG] Starting FFmpeg for channel %s", r.Channel.Name)
-	}
+	logger.Debug("[FFMPEG] Starting FFmpeg for channel %s", r.Channel.Name)
 
 	args := []string{"-hide_banner", "-loglevel", "error"}
 	args = append(args, r.Config.FFmpegPreInput...)
@@ -53,24 +52,21 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[FFMPEG] Failed to create stdout pipe: %v", err)
-		}
+		logger.Error("[FFMPEG] Failed to create stdout pipe: %v", err)
+
 		return false, 0
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[FFMPEG] Failed to create stderr pipe: %v", err)
-		}
+		logger.Error("[FFMPEG] Failed to create stderr pipe: %v", err)
+
 		return false, 0
 	}
 
 	if err := cmd.Start(); err != nil {
-		if r.Config.Debug {
-			r.Logger.Printf("[FFMPEG] Failed to start: %v", err)
-		}
+		logger.Error("[FFMPEG] Failed to start: %v", err)
+
 		return false, 0
 	}
 
@@ -84,9 +80,8 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			if r.Config.Debug {
-				r.Logger.Printf("[FFMPEG_ERROR] Channel %s: %s", r.Channel.Name, scanner.Text())
-			}
+			logger.Debug("[FFMPEG_ERROR] Channel %s: %s", r.Channel.Name, scanner.Text())
+
 		}
 	}()
 
@@ -116,9 +111,8 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 		})
 
 		if clientCount == 0 {
-			if r.Config.Debug {
-				r.Logger.Printf("[FFMPEG] No clients for channel %s", r.Channel.Name)
-			}
+			logger.Debug("[FFMPEG] No clients for channel %s", r.Channel.Name)
+
 			return totalBytes > 1024*1024, totalBytes
 		}
 
@@ -154,25 +148,24 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 				lastMetricUpdate = now
 			}
 
-			if r.Config.Debug && totalBytes%(20*1024*1024) < int64(n) {
-				r.Logger.Printf("[FFMPEG] Channel %s: Streamed %d MB", r.Channel.Name, totalBytes/(1024*1024))
+			// debug every 20M
+			if totalBytes%(20*1024*1024) < int64(n) {
+				logger.Debug("[FFMPEG] Channel %s: Streamed %d MB", r.Channel.Name, totalBytes/(1024*1024))
 			}
 		}
 
 		if err != nil {
 			if err == io.EOF {
 				success := totalBytes > 1024*1024
-				if r.Config.Debug {
-					r.Logger.Printf("[FFMPEG] Stream ended: %d bytes", totalBytes)
-				}
+				logger.Debug("[FFMPEG] Stream ended: %d bytes", totalBytes)
+
 				return success, totalBytes
 			}
 
 			consecutiveErrors++
 			if consecutiveErrors >= maxConsecutiveErrors {
-				if r.Config.Debug {
-					r.Logger.Printf("[FFMPEG] Read error: %v (consecutive: %d)", err, consecutiveErrors)
-				}
+				logger.Error("[FFMPEG] Read error: %v (consecutive: %d)", err, consecutiveErrors)
+
 				return false, totalBytes
 			}
 

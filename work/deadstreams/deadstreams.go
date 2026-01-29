@@ -2,7 +2,7 @@ package deadstreams
 
 import (
 	"encoding/json"
-	"fmt"
+	"kptv-proxy/work/logger"
 	"os"
 	"strings"
 	"time"
@@ -52,7 +52,8 @@ func LoadDeadStreams() (*DeadStreamsFile, error) {
 	// Attempt to read the entire file contents
 	data, err := os.ReadFile(deadStreamsPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dead streams file: %w", err)
+		logger.Error("failed to read dead streams file: %v", err)
+		return nil, err
 	}
 
 	// Handle empty or whitespace-only files gracefully
@@ -68,13 +69,13 @@ func LoadDeadStreams() (*DeadStreamsFile, error) {
 		// Create timestamped backup of corrupted file for debugging
 		backupPath := deadStreamsPath + ".corrupted." + time.Now().Format("20060102-150405")
 		if backupErr := os.WriteFile(backupPath, data, 0644); backupErr != nil {
-			fmt.Printf("Warning: could not backup corrupted dead streams file: %v\n", backupErr)
+			logger.Warn("could not backup corrupted dead streams file: %v", backupErr)
 		}
 
 		// Replace corrupted file with clean empty structure
 		emptyStructure := &DeadStreamsFile{DeadStreams: []DeadStreamEntry{}}
 		if saveErr := SaveDeadStreams(emptyStructure); saveErr != nil {
-			fmt.Printf("Warning: could not save empty dead streams file: %v\n", saveErr)
+			logger.Warn("could not save empty dead streams file: %v\n", saveErr)
 		}
 		return emptyStructure, nil
 	}
@@ -104,7 +105,8 @@ func SaveDeadStreams(deadStreams *DeadStreamsFile) error {
 	// Marshal to JSON with consistent formatting (2-space indentation)
 	data, err := json.MarshalIndent(deadStreams, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal dead streams: %w", err)
+		logger.Error("failed to marshal dead streams: %v", err)
+		return err
 	}
 
 	// Write atomically to disk with appropriate file permissions
@@ -159,6 +161,9 @@ func MarkStreamDead(channelName string, streamIndex int, url, sourceName, reason
 		Reason:      reason,
 	}
 
+	// debug log it
+	logger.Debug("dead stream entry created: %v", newEntry)
+
 	// Append new entry and persist to disk
 	deadStreams.DeadStreams = append(deadStreams.DeadStreams, newEntry)
 	return SaveDeadStreams(deadStreams)
@@ -195,7 +200,8 @@ func ReviveStream(channelName string, streamIndex int) error {
 
 	// Verify the target stream was actually found
 	if !found {
-		return fmt.Errorf("stream not found in dead streams list")
+		logger.Error("stream not found in dead streams list")
+		return nil
 	}
 
 	// Update database with revised stream list

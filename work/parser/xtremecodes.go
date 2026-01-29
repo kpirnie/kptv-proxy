@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
-	"kptv-proxy/work/cache"
-	"log"
 	"net/http"
-	"time"
 	"sync"
+	"time"
 
 	regexp "github.com/grafana/regexp"
 	"go.uber.org/ratelimit"
@@ -88,7 +88,7 @@ type xcSeriesWork struct {
 //   - []*types.Stream: slice of processed streams ready for channel aggregation
 func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *regexp.Regexp, source *config.SourceConfig, seriesRegex, vodRegex *regexp.Regexp) []*types.Stream {
 	results := make([]*types.Stream, 0, len(batch))
-	
+
 	for _, stream := range batch {
 		if liveInclude != nil && !liveInclude.MatchString(stream.Name) {
 			continue
@@ -147,7 +147,7 @@ func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *rege
 //   - []*types.Stream: slice of processed series streams ready for channel aggregation
 func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *regexp.Regexp, source *config.SourceConfig) []*types.Stream {
 	results := make([]*types.Stream, 0, len(batch))
-	
+
 	for _, serie := range batch {
 		if seriesInclude != nil && !seriesInclude.MatchString(serie.Name) {
 			continue
@@ -199,16 +199,13 @@ func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *re
 //
 // Returns:
 //   - []*types.Stream: aggregated collection of streams from all three API endpoints
-func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
-	if cfg.Debug {
-		logger.Printf("Parsing Xtreme Codes API from %s with optimized batch processing", utils.LogURL(cfg, source.URL))
-	}
+func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
+	logger.Debug("Parsing Xtreme Codes API from %s with optimized batch processing", utils.LogURL(cfg, source.URL))
 
 	cacheKey := fmt.Sprintf("xc:%s:%s:%s", source.URL, source.Username, source.Password)
 	if cached, found := cache.GetXCData(cacheKey); found {
-		if cfg.Debug {
-			logger.Printf("[XC_CACHE_HIT] Using cached XC API data for %s", source.Name)
-		}
+		logger.Debug("[XC_CACHE_HIT] Using cached XC API data for %s", source.Name)
+
 		var streams []*types.Stream
 		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
 			return streams
@@ -223,26 +220,26 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 
 	if source.LiveIncludeRegex != "" {
 		liveInclude, err = regexp.Compile(source.LiveIncludeRegex)
-		if err != nil && cfg.Debug {
-			logger.Printf("Invalid LiveIncludeRegex: %v", err)
+		if err != nil {
+			logger.Error("Invalid LiveIncludeRegex: %v", err)
 		}
 	}
 	if source.LiveExcludeRegex != "" {
 		liveExclude, err = regexp.Compile(source.LiveExcludeRegex)
-		if err != nil && cfg.Debug {
-			logger.Printf("Invalid LiveExcludeRegex: %v", err)
+		if err != nil {
+			logger.Error("Invalid LiveExcludeRegex: %v", err)
 		}
 	}
 	if source.SeriesIncludeRegex != "" {
 		seriesInclude, err = regexp.Compile(source.SeriesIncludeRegex)
-		if err != nil && cfg.Debug {
-			logger.Printf("Invalid SeriesIncludeRegex: %v", err)
+		if err != nil {
+			logger.Error("Invalid SeriesIncludeRegex: %v", err)
 		}
 	}
 	if source.SeriesExcludeRegex != "" {
 		seriesExclude, err = regexp.Compile(source.SeriesExcludeRegex)
-		if err != nil && cfg.Debug {
-			logger.Printf("Invalid SeriesExcludeRegex: %v", err)
+		if err != nil {
+			logger.Error("Invalid SeriesExcludeRegex: %v", err)
 		}
 	}
 
@@ -252,14 +249,10 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 	var allStreams []*types.Stream
 	var allStreamsMu sync.Mutex
 
-	if cfg.Debug {
-		logger.Printf("[XC_DEBUG] Starting live streams fetch")
-	}
+	logger.Debug("[XC_DEBUG] Starting live streams fetch")
 
-	liveStreams := fetchXCLiveStreams(httpClient, logger, cfg, source, rateLimiter)
-	if cfg.Debug {
-		logger.Printf("[XC_DEBUG] Fetched %d live streams", len(liveStreams))
-	}
+	liveStreams := fetchXCLiveStreams(httpClient, cfg, source, rateLimiter)
+	logger.Debug("[XC_DEBUG] Fetched %d live streams", len(liveStreams))
 
 	if len(liveStreams) > 0 {
 		const batchSize = 1000
@@ -306,28 +299,22 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 			allStreamsMu.Unlock()
 		}
 
-		if cfg.Debug {
-			logger.Printf("[XC_DEBUG] Live streams completed: %d total kept", len(allStreams))
-		}
+		logger.Debug("[XC_DEBUG] Live streams completed: %d total kept", len(allStreams))
+
 	}
 
 	select {
 	case <-ctx.Done():
-		if cfg.Debug {
-			logger.Printf("[XC_DEBUG] Context cancelled after live streams")
-		}
+		logger.Debug("[XC_DEBUG] Context cancelled after live streams")
+
 		return allStreams
 	default:
 	}
 
-	if cfg.Debug {
-		logger.Printf("[XC_DEBUG] Starting series fetch")
-	}
+	logger.Debug("[XC_DEBUG] Starting series fetch")
 
-	series := fetchXCSeries(httpClient, logger, cfg, source, rateLimiter)
-	if cfg.Debug {
-		logger.Printf("[XC_DEBUG] Fetched %d series", len(series))
-	}
+	series := fetchXCSeries(httpClient, cfg, source, rateLimiter)
+	logger.Debug("[XC_DEBUG] Fetched %d series", len(series))
 
 	if len(series) > 0 {
 		const batchSize = 1000
@@ -374,21 +361,17 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 			allStreamsMu.Unlock()
 		}
 
-		if cfg.Debug {
-			logger.Printf("[XC_DEBUG] Series completed: total streams now %d", len(allStreams))
-		}
+		logger.Debug("[XC_DEBUG] Series completed: total streams now %d", len(allStreams))
+
 	}
 
-	if cfg.Debug {
-		logger.Printf("[XC_DEBUG] XC API parsing complete: %d total streams", len(allStreams))
-	}
+	logger.Debug("[XC_DEBUG] XC API parsing complete: %d total streams", len(allStreams))
 
 	if len(allStreams) > 0 {
 		if data, err := json.Marshal(allStreams); err == nil {
 			cache.SetXCData(cacheKey, string(data))
-			if cfg.Debug {
-				logger.Printf("[XC_CACHE_SET] Cached %d streams for %s", len(allStreams), source.Name)
-			}
+			logger.Debug("[XC_CACHE_SET] Cached %d streams for %s", len(allStreams), source.Name)
+
 		}
 	}
 
@@ -396,111 +379,96 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, logger *log.Log
 }
 
 // fetchXCLiveStreamsWithContext retrieves live television stream data with context support
-func fetchXCLiveStreamsWithContext(ctx context.Context, httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCLiveStream {
+func fetchXCLiveStreamsWithContext(ctx context.Context, httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCLiveStream {
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		if cfg.Debug {
-			logger.Printf("Applied rate limit for XC live streams request: %s", source.Name)
-		}
+		logger.Debug("Applied rate limit for XC live streams request: %s", source.Name)
+
 	}
 
 	// Construct API URL for live streams endpoint with authentication parameters
 	url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_live_streams", source.URL, source.Username, source.Password)
 
 	// Execute generic API data fetching with proper error handling
-	streams, err := fetchXCDataWithContext[XCLiveStream](ctx, httpClient, logger, cfg, source, url)
+	streams, err := fetchXCDataWithContext[XCLiveStream](ctx, httpClient, cfg, source, url)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to fetch XC live streams from %s: %v", utils.LogURL(cfg, source.URL), err)
-		}
+		logger.Error("Failed to fetch XC live streams from %s: %v", utils.LogURL(cfg, source.URL), err)
+
 		return nil
 	}
 
-	if cfg.Debug {
-		logger.Printf("Successfully fetched %d live streams from XC API", len(streams))
-	}
+	logger.Debug("Successfully fetched %d live streams from XC API", len(streams))
 
 	return streams
 }
 
 // fetchXCSeriesWithContext retrieves television series data with context support
-func fetchXCSeriesWithContext(ctx context.Context, httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCSeries {
+func fetchXCSeriesWithContext(ctx context.Context, httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCSeries {
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		if cfg.Debug {
-			logger.Printf("Applied rate limit for XC series request: %s", source.Name)
-		}
+		logger.Debug("Applied rate limit for XC series request: %s", source.Name)
+
 	}
 
 	// Construct API URL for series endpoint with authentication parameters
 	url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_series", source.URL, source.Username, source.Password)
 
 	// Execute generic API data fetching with proper error handling
-	series, err := fetchXCDataWithContext[XCSeries](ctx, httpClient, logger, cfg, source, url)
+	series, err := fetchXCDataWithContext[XCSeries](ctx, httpClient, cfg, source, url)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to fetch XC series from %s: %v", utils.LogURL(cfg, source.URL), err)
-		}
+		logger.Error("Failed to fetch XC series from %s: %v", utils.LogURL(cfg, source.URL), err)
+
 		return nil
 	}
 
-	if cfg.Debug {
-		logger.Printf("Successfully fetched %d series from XC API", len(series))
-	}
+	logger.Debug("Successfully fetched %d series from XC API", len(series))
 
 	return series
 }
 
 // fetchXCDataWithContext implements context-aware HTTP request handler for Xtreme Codes API endpoints
-func fetchXCDataWithContext[T any](ctx context.Context, httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, url string) ([]T, error) {
+func fetchXCDataWithContext[T any](ctx context.Context, httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, url string) ([]T, error) {
 	// Create request with the provided context
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to create XC API request: %v", err)
-		}
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		logger.Error("Failed to create XC API request: %v", err)
+
+		return nil, err
 	}
 
 	req.Header.Set("Connection", "keep-alive")
 
 	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("XC API request failed: %v", err)
-		}
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		logger.Error("XC API request failed: %v", err)
+
+		return nil, err
 	}
 
 	defer func() {
 		resp.Body.Close()
-		if cfg.Debug {
-			logger.Printf("Closed XC API connection for: %s", utils.LogURL(cfg, source.URL))
-		}
+		logger.Debug("Closed XC API connection for: %s", utils.LogURL(cfg, source.URL))
+
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		if cfg.Debug {
-			logger.Printf("XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
-		}
-		return nil, fmt.Errorf("API returned HTTP %d", resp.StatusCode)
+		logger.Error("XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
+
+		return nil, nil
 	}
 
 	decoder := json.NewDecoder(resp.Body)
 	var data []T
-	
+
 	if err := decoder.Decode(&data); err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to parse XC API JSON response: %v", err)
-		}
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
+		logger.Error("Failed to parse XC API JSON response: %v", err)
+
+		return nil, err
 	}
 
-	if cfg.Debug {
-		logger.Printf("Successfully parsed %d items from XC API response", len(data))
-	}
+	logger.Debug("Successfully parsed %d items from XC API response", len(data))
 
 	return data, nil
 }
@@ -519,31 +487,27 @@ func fetchXCDataWithContext[T any](ctx context.Context, httpClient *client.Heade
 //
 // Returns:
 //   - []XCLiveStream: array of live stream objects from API response, or nil on error
-func fetchXCLiveStreams(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCLiveStream {
+func fetchXCLiveStreams(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCLiveStream {
 
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		if cfg.Debug {
-			logger.Printf("Applied rate limit for XC live streams request: %s", source.Name)
-		}
+		logger.Debug("Applied rate limit for XC live streams request: %s", source.Name)
+
 	}
 
 	// Construct API URL for live streams endpoint with authentication parameters
 	url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_live_streams", source.URL, source.Username, source.Password)
 
 	// Execute generic API data fetching with proper error handling
-	streams, err := fetchXCData[XCLiveStream](httpClient, logger, cfg, source, url)
+	streams, err := fetchXCData[XCLiveStream](httpClient, cfg, source, url)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to fetch XC live streams from %s: %v", utils.LogURL(cfg, source.URL), err)
-		}
+		logger.Error("Failed to fetch XC live streams from %s: %v", utils.LogURL(cfg, source.URL), err)
+
 		return nil
 	}
 
-	if cfg.Debug {
-		logger.Printf("Successfully fetched %d live streams from XC API", len(streams))
-	}
+	logger.Debug("Successfully fetched %d live streams from XC API", len(streams))
 
 	return streams
 }
@@ -562,31 +526,27 @@ func fetchXCLiveStreams(httpClient *client.HeaderSettingClient, logger *log.Logg
 //
 // Returns:
 //   - []XCSeries: array of series objects from API response, or nil on error
-func fetchXCSeries(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCSeries {
+func fetchXCSeries(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCSeries {
 
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		if cfg.Debug {
-			logger.Printf("Applied rate limit for XC series request: %s", source.Name)
-		}
+		logger.Debug("Applied rate limit for XC series request: %s", source.Name)
+
 	}
 
 	// Construct API URL for series endpoint with authentication parameters
 	url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_series", source.URL, source.Username, source.Password)
 
 	// Execute generic API data fetching with proper error handling
-	series, err := fetchXCData[XCSeries](httpClient, logger, cfg, source, url)
+	series, err := fetchXCData[XCSeries](httpClient, cfg, source, url)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to fetch XC series from %s: %v", utils.LogURL(cfg, source.URL), err)
-		}
+		logger.Error("Failed to fetch XC series from %s: %v", utils.LogURL(cfg, source.URL), err)
+
 		return nil
 	}
 
-	if cfg.Debug {
-		logger.Printf("Successfully fetched %d series from XC API", len(series))
-	}
+	logger.Debug("Successfully fetched %d series from XC API", len(series))
 
 	return series
 }
@@ -605,31 +565,27 @@ func fetchXCSeries(httpClient *client.HeaderSettingClient, logger *log.Logger, c
 //
 // Returns:
 //   - []XCVODStream: array of VOD stream objects from API response, or nil on error
-func fetchXCVODStreams(httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCVODStream {
+func fetchXCVODStreams(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCVODStream {
 
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		if cfg.Debug {
-			logger.Printf("Applied rate limit for XC VOD streams request: %s", source.Name)
-		}
+		logger.Debug("Applied rate limit for XC VOD streams request: %s", source.Name)
+
 	}
 
 	// Construct API URL for VOD streams endpoint with authentication parameters
 	url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_vod_streams", source.URL, source.Username, source.Password)
 
 	// Execute generic API data fetching with proper error handling
-	streams, err := fetchXCData[XCVODStream](httpClient, logger, cfg, source, url)
+	streams, err := fetchXCData[XCVODStream](httpClient, cfg, source, url)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to fetch XC VOD streams from %s: %v", utils.LogURL(cfg, source.URL), err)
-		}
+		logger.Error("Failed to fetch XC VOD streams from %s: %v", utils.LogURL(cfg, source.URL), err)
+
 		return nil
 	}
 
-	if cfg.Debug {
-		logger.Printf("Successfully fetched %d VOD streams from XC API", len(streams))
-	}
+	logger.Debug("Successfully fetched %d VOD streams from XC API", len(streams))
 
 	return streams
 }
@@ -655,16 +611,14 @@ func fetchXCVODStreams(httpClient *client.HeaderSettingClient, logger *log.Logge
 // Returns:
 //   - []T: array of parsed response objects of the specified type
 //   - error: non-nil if request fails, HTTP error occurs, or JSON parsing fails
-func fetchXCData[T any](httpClient *client.HeaderSettingClient, logger *log.Logger, cfg *config.Config, source *config.SourceConfig, url string) ([]T, error) {
+func fetchXCData[T any](httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, url string) ([]T, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to create XC API request: %v", err)
-		}
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		logger.Error("Failed to create XC API request: %v", err)
+		return nil, err
 	}
 
 	req = req.WithContext(ctx)
@@ -672,39 +626,32 @@ func fetchXCData[T any](httpClient *client.HeaderSettingClient, logger *log.Logg
 
 	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
-		if cfg.Debug {
-			logger.Printf("XC API request failed: %v", err)
-		}
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		logger.Debug("XC API request failed: %v", err)
+
+		return nil, err
 	}
 
 	defer func() {
 		resp.Body.Close()
-		if cfg.Debug {
-			logger.Printf("Closed XC API connection for: %s", utils.LogURL(cfg, source.URL))
-		}
+		logger.Debug("Closed XC API connection for: %s", utils.LogURL(cfg, source.URL))
+
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		if cfg.Debug {
-			logger.Printf("XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
-		}
-		return nil, fmt.Errorf("API returned HTTP %d", resp.StatusCode)
+		logger.Error("XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
+
+		return nil, nil
 	}
 
 	decoder := json.NewDecoder(resp.Body)
 	var data []T
-	
+
 	if err := decoder.Decode(&data); err != nil {
-		if cfg.Debug {
-			logger.Printf("Failed to parse XC API JSON response: %v", err)
-		}
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
+		logger.Error("Failed to parse XC API JSON response: %v", err)
+		return nil, err
 	}
 
-	if cfg.Debug {
-		logger.Printf("Successfully parsed %d items from XC API response", len(data))
-	}
+	logger.Debug("Successfully parsed %d items from XC API response", len(data))
 
 	return data, nil
 }

@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"kptv-proxy/work/utils"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
+	"kptv-proxy/work/utils"
 	"net/http"
 	"net/url"
 	"strings"
@@ -128,9 +129,7 @@ func (st *SegmentTracker) GetTrackedSegments() []string {
 //   - bool: true if any data was successfully streamed to clients
 //   - int64: total number of bytes streamed during the session
 func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
-	if r.Config.Debug {
-		r.Logger.Printf("[HLS_STREAM] Starting for: %s", utils.LogURL(r.Config, playlistURL))
-	}
+	logger.Debug("[HLS_STREAM] Starting for: %s", utils.LogURL(r.Config, playlistURL))
 
 	if r.Config.FFmpegMode {
 		return r.streamWithFFmpeg(playlistURL)
@@ -147,9 +146,8 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		select {
 		case <-r.Ctx.Done():
 			success := totalBytes > 1024*1024
-			if r.Config.Debug {
-				r.Logger.Printf("[HLS_STREAM] Context done: %d bytes", totalBytes)
-			}
+			logger.Debug("[HLS_STREAM] Context done: %d bytes", totalBytes)
+
 			return success, totalBytes
 		default:
 		}
@@ -161,22 +159,20 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		})
 
 		if clientCount == 0 {
-			if r.Config.Debug {
-				r.Logger.Printf("[HLS_STREAM] No clients remaining")
-			}
+			logger.Debug("[HLS_STREAM] No clients remaining")
+
 			return totalBytes > 1024*1024, totalBytes
 		}
 
 		segments, err := r.getHLSSegments(playlistURL)
 		if err != nil {
-			if r.Config.Debug {
-				r.Logger.Printf("[HLS_STREAM_ERROR] Error getting segments: %v", err)
-			}
+			logger.Error("[HLS_STREAM_ERROR] Error getting segments: %v", err)
+
 			return false, totalBytes
 		}
 
-		if r.Config.Debug && len(segments) > 0 {
-			r.Logger.Printf("[HLS_PLAYLIST_REFRESH] Found %d segments", len(segments))
+		if len(segments) > 0 {
+			logger.Debug("[HLS_PLAYLIST_REFRESH] Found %d segments", len(segments))
 		}
 
 		newSegmentCount := 0
@@ -193,21 +189,16 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			default:
 			}
 
-			if r.Config.Debug {
-				r.Logger.Printf("[HLS_SEGMENT_NEW] Processing: %s", utils.LogURL(r.Config, segmentURL))
-			}
+			logger.Debug("[HLS_SEGMENT_NEW] Processing: %s", utils.LogURL(r.Config, segmentURL))
 
 			segmentBytes, err := r.streamSegment(segmentURL, playlistURL)
 			if err != nil {
 				segmentErrors++
-				if r.Config.Debug {
-					r.Logger.Printf("[HLS_SEGMENT_ERROR] %v", err)
-				}
+				logger.Debug("[HLS_SEGMENT_ERROR] %v", err)
 
 				if segmentErrors > 5 {
-					if r.Config.Debug {
-						r.Logger.Printf("[HLS_SEGMENT_ERROR] Too many segment errors")
-					}
+					logger.Debug("[HLS_SEGMENT_ERROR] Too many segment errors")
+
 					return false, totalBytes
 				}
 				continue
@@ -219,9 +210,8 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			lastSuccessfulSegment = time.Now()
 			consecutiveEmptyRefresh = 0
 
-			if r.Config.Debug {
-				r.Logger.Printf("[HLS_SEGMENT] Streamed: %d bytes", segmentBytes)
-			}
+			logger.Debug("[HLS_SEGMENT] Streamed: %d bytes", segmentBytes)
+
 		}
 
 		if newSegmentCount == 0 {
@@ -229,9 +219,8 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			if consecutiveEmptyRefresh >= maxEmptyRefresh {
 				timeSinceSuccess := time.Since(lastSuccessfulSegment)
 				if timeSinceSuccess > 30*time.Second {
-					if r.Config.Debug {
-						r.Logger.Printf("[HLS_STALLED] No new segments for %v", timeSinceSuccess)
-					}
+					logger.Debug("[HLS_STALLED] No new segments for %v", timeSinceSuccess)
+
 					return false, totalBytes
 				}
 			}
@@ -239,8 +228,8 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			consecutiveEmptyRefresh = 0
 		}
 
-		if r.Config.Debug && newSegmentCount > 0 {
-			r.Logger.Printf("[HLS_BATCH] Streamed %d new segments (tracker size: %d)", newSegmentCount, segmentTracker.Size())
+		if newSegmentCount > 0 {
+			logger.Debug("[HLS_BATCH] Streamed %d new segments (tracker size: %d)", newSegmentCount, segmentTracker.Size())
 		}
 
 		select {
@@ -358,9 +347,8 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 			// Check for tracking/beacon URLs requiring redirect resolution
 			if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
 				segmentURL = resolvedURL
-				if r.Config.Debug {
-					r.Logger.Printf("[HLS_REDIRECT] Resolved tracking URL to: %s", utils.LogURL(r.Config, segmentURL))
-				}
+				logger.Debug("[HLS_REDIRECT] Resolved tracking URL to: %s", utils.LogURL(r.Config, segmentURL))
+
 			}
 
 			segments = append(segments, segmentURL)
@@ -460,9 +448,8 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	originalURL := segmentURL
 	if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
 		segmentURL = resolvedURL
-		if r.Config.Debug {
-			r.Logger.Printf("[HLS_SEGMENT_REDIRECT] Using: %s", utils.LogURL(r.Config, segmentURL))
-		}
+		logger.Debug("[HLS_SEGMENT_REDIRECT] Using: %s", utils.LogURL(r.Config, segmentURL))
+
 	}
 
 	req, err := http.NewRequest("GET", segmentURL, nil)
@@ -498,7 +485,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	bufPtr := getStreamBuffer()
 	buf := *bufPtr
 	defer putStreamBuffer(bufPtr)
-	
+
 	totalBytes := int64(0)
 	lastActivityUpdate := time.Now()
 	consecutiveErrors := 0
