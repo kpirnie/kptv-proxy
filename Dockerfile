@@ -1,15 +1,15 @@
 # Build stage - use alpine for smaller builder
-FROM docker.io/golang:1.24-alpine AS builder
+FROM docker.io/golang:1.25.6-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v10102025.01" -trimpath -o kptv-proxy .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v01282026.36" -trimpath -o kptv-proxy .
 
 # Final stage - keep all GPU drivers
-FROM docker.io/debian:bookworm-slim
+FROM docker.io/debian:trixie-slim
 
 # Install all GPU drivers + curl in one layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,8 +34,8 @@ COPY --from=builder /app/static /static
 COPY loading.ts /static/
 
 RUN mkdir -p /dev/dri && \
-    addgroup --gid 1000 kptv && \
-    adduser --uid 1000 --gid 1000 --disabled-password --gecos "" kptv && \
+    groupadd --gid 1000 kptv && \
+    useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash kptv && \
     usermod -a -G video kptv && \
     usermod -a -G render kptv && \
     chmod 755 /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/kptv-proxy && \
