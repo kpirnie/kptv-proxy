@@ -68,6 +68,14 @@
         @apply bg-gradient-to-br from-yellow-700 to-yellow-600 text-white;
     }
 
+    .stat-card,
+    .stat-card-success,
+    .stat-card-warning,
+    .stat-card-danger,
+    .stat-card-yellow {
+        @apply cursor-pointer;
+    }
+
     .channel-item {
         @apply bg-kptv-gray border-l-4 border-green-600 p-4 mb-2 rounded-r transition-all duration-300;
     }

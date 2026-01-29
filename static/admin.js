@@ -115,6 +115,20 @@ class KPTVAdmin {
     }
 
     setupEventListeners() {
+
+        // card nav
+        document.getElementById('total-channels').parentElement.addEventListener('click', () => {
+            this.switchTab(4);
+        });
+
+        document.getElementById('total-sources').parentElement.addEventListener('click', () => {
+            this.switchTab(2);
+        });
+
+        document.getElementById('total-epgs').parentElement.addEventListener('click', () => {
+            this.switchTab(3);
+        });
+
         document.getElementById('global-settings-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveGlobalSettings();
@@ -198,6 +212,23 @@ class KPTVAdmin {
                 this.goToPage(page);
             }
         });
+    }
+
+    // switch tabs
+    switchTab(tabIndex) {
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content > div');
+
+        tabBtns.forEach(b => {
+            b.classList.remove('active', 'border-kptv-blue', 'text-kptv-blue');
+            b.classList.add('border-transparent');
+        });
+
+        tabBtns[tabIndex].classList.add('active', 'border-kptv-blue', 'text-kptv-blue');
+        tabBtns[tabIndex].classList.remove('border-transparent');
+
+        tabContents.forEach(content => content.classList.remove('active'));
+        tabContents[tabIndex].classList.add('active');
     }
 
     previousPage() {
