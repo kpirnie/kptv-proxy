@@ -109,6 +109,17 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
+		// hold the cached EPG, if there is any
+		cache, cached := sp.EPGCache.GetEPG("epg:full")
+		if cached {
+			//sp.Logger.Debug("[EPG] Serving from cache (%d bytes)", len(cache))
+			w.Header().Set("Content-Type", "application/xml")
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+			w.Write([]byte(cache))
+			return
+
+		}
+
 		// Find all sources with EPG (XC, M3U8 with EPG URL, or manual EPGs)
 		var epgSources []struct {
 			url        string
@@ -242,6 +253,10 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 			sp.Logger.Printf("[EPG] Merged %d EPG sources into final response (%d bytes)", len(epgDataList), len(merged))
 		}
 
+		// cache the epg
+		sp.EPGCache.SetEPG("epg:full", string(merged))
+
+		// write the response out
 		w.Header().Set("Content-Type", "application/xml")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		w.Write(merged)
