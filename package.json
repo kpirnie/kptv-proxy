@@ -1,0 +1,12 @@
+{
+    "name": "kptv-proxy-admin",
+    "version": "1.0.0",
+    "description": "KPTV Proxy Admin Interface",
+    "scripts": {
+        "build:css": "tailwindcss -i ./static/admin-source.css -o ./static/admin.css --minify",
+        "watch:css": "tailwindcss -i ./static/admin-source.css -o ./static/admin.css --watch"
+    },
+    "devDependencies": {
+        "tailwindcss": "^3.4.1"
+    }
+}

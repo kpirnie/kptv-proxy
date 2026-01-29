@@ -1,10 +1,4 @@
-// KPTV Proxy Admin Interface JavaScript
-
 class KPTVAdmin {
-
-    // Constructor initializes the admin interface state and triggers the complete
-    // initialization sequence including data loading, event listener setup, and
-    // automatic refresh interval configuration for real-time monitoring capabilities.
     constructor() {
         this.config = null;
         this.stats = null;
@@ -17,13 +11,7 @@ class KPTVAdmin {
         this.init();
     }
 
-    // init performs comprehensive initialization of the admin interface including
-    // initial data loading from all API endpoints, event listener registration,
-    // automatic refresh timer setup, and scroll-to-top button initialization for
-    // complete interface readiness.
     init() {
-
-        // Load initial data and functionality
         this.loadGlobalSettings();
         this.loadSources();
         this.loadEPGs();
@@ -31,37 +19,102 @@ class KPTVAdmin {
         this.loadActiveChannels();
         this.loadAllChannels();
         this.loadLogs();
-        this.toTop();
-
-        // Setup event listeners
+        this.initScrollToTop();
+        this.initTabs();
+        this.initModals();
         this.setupEventListeners();
-
-        // Start auto-refresh
         this.startAutoRefresh();
+        document.getElementById('footer-year').textContent = new Date().getFullYear();
     }
 
-    // toTop initializes the scroll-to-top button with scroll event monitoring,
-    // automatically showing or hiding the button based on scroll position with
-    // smooth animations for improved user experience during page navigation.
-    toTop() {
-        const inTop = document.querySelector('.in-totop');
-        if (inTop) {
-            window.addEventListener('scroll', function () {
-                setTimeout(function () {
-                    window.scrollY > 100 ?
-                        (inTop.style.opacity = 1, inTop.classList.add("uk-animation-slide-top")) :
-                        (inTop.style.opacity -= .1, inTop.classList.remove("uk-animation-slide-top"));
-                }, 400);
+    initScrollToTop() {
+        const scrollBtn = document.getElementById('scroll-to-top');
+        if (scrollBtn) {
+            window.addEventListener('scroll', () => {
+                if (window.scrollY > 100) {
+                    scrollBtn.classList.add('visible');
+                } else {
+                    scrollBtn.classList.remove('visible');
+                }
+            });
+            scrollBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             });
         }
     }
 
-    // setupEventListeners registers all event handlers for user interactions including
-    // form submissions, button clicks, search operations, and pagination controls to
-    // enable complete administrative functionality through the web interface.
-    setupEventListeners() {
+    initTabs() {
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content > div');
 
-        // Global settings form
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabIndex = btn.getAttribute('data-tab');
+
+                tabBtns.forEach(b => {
+                    b.classList.remove('active', 'border-kptv-blue', 'text-kptv-blue');
+                    b.classList.add('border-transparent');
+                });
+
+                btn.classList.add('active', 'border-kptv-blue', 'text-kptv-blue');
+                btn.classList.remove('border-transparent');
+
+                tabContents.forEach(content => content.classList.remove('active'));
+                tabContents[tabIndex].classList.add('active');
+            });
+        });
+
+        document.querySelectorAll('.source-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabIndex = btn.getAttribute('data-tab');
+                const sourceTabBtns = document.querySelectorAll('.source-tab-btn');
+                const sourceTabContents = document.querySelectorAll('.source-tab-content > div');
+
+                sourceTabBtns.forEach(b => {
+                    b.classList.remove('active', 'border-kptv-blue', 'text-kptv-blue');
+                    b.classList.add('border-transparent');
+                });
+
+                btn.classList.add('active', 'border-kptv-blue', 'text-kptv-blue');
+                btn.classList.remove('border-transparent');
+
+                sourceTabContents.forEach(content => content.classList.remove('active'));
+                sourceTabContents[tabIndex].classList.add('active');
+            });
+        });
+    }
+
+    initModals() {
+        const modals = [
+            { id: 'source-modal', closeId: 'close-source-modal', cancelId: 'cancel-source-btn' },
+            { id: 'epg-modal', closeId: 'close-epg-modal', cancelId: 'cancel-epg-btn' },
+            { id: 'stream-selector-modal', closeId: 'close-stream-selector-modal', cancelId: 'cancel-stream-selector-btn' }
+        ];
+
+        modals.forEach(({ id, closeId, cancelId }) => {
+            const modal = document.getElementById(id);
+            const closeBtn = document.getElementById(closeId);
+            const cancelBtn = document.getElementById(cancelId);
+
+            if (closeBtn) closeBtn.addEventListener('click', () => this.hideModal(id));
+            if (cancelBtn) cancelBtn.addEventListener('click', () => this.hideModal(id));
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) this.hideModal(id);
+            });
+        });
+    }
+
+    showModal(modalId) {
+        document.getElementById(modalId).classList.add('active');
+    }
+
+    hideModal(modalId) {
+        document.getElementById(modalId).classList.remove('active');
+    }
+
+    setupEventListeners() {
         document.getElementById('global-settings-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveGlobalSettings();
@@ -70,12 +123,10 @@ class KPTVAdmin {
             this.loadGlobalSettings();
         });
 
-        // Restart button
         document.getElementById('restart-btn').addEventListener('click', () => {
             this.restartService();
         });
 
-        // Source management
         document.getElementById('add-source-btn').addEventListener('click', () => {
             this.showSourceModal();
         });
@@ -84,7 +135,6 @@ class KPTVAdmin {
             this.saveSource();
         });
 
-        // EPG management
         document.getElementById('add-epg-btn').addEventListener('click', () => {
             this.showEPGModal();
         });
@@ -93,37 +143,32 @@ class KPTVAdmin {
             this.saveEPG();
         });
 
-        // Refresh buttons
         document.getElementById('refresh-channels').addEventListener('click', () => {
             this.loadActiveChannels();
         });
         document.getElementById('refresh-all-channels').addEventListener('click', () => {
-            this.currentPage = 1; // Reset to first page on manual refresh
-            this.filteredChannels = null; // Clear any filters
-            document.getElementById('channel-search').value = ''; // Clear search input
+            this.currentPage = 1;
+            this.filteredChannels = null;
+            document.getElementById('channel-search').value = '';
             this.loadAllChannels();
         });
         document.getElementById('refresh-logs').addEventListener('click', () => {
             this.loadLogs();
         });
 
-        // clear logs
         document.getElementById('clear-logs').addEventListener('click', () => {
             this.clearLogs();
         });
 
-        // Search functionality
         document.getElementById('channel-search').addEventListener('input', (e) => {
-            this.currentPage = 1; // Reset to first page when searching
+            this.currentPage = 1;
             this.filterChannels(e.target.value);
         });
 
-        // Log level filter
         document.getElementById('log-level').addEventListener('change', (e) => {
             this.filterLogs(e.target.value);
         });
 
-        // Watcher toggle
         const watcherCheckbox = document.querySelector('input[name="watcherEnabled"]');
         if (watcherCheckbox) {
             watcherCheckbox.addEventListener('change', (e) => {
@@ -131,7 +176,6 @@ class KPTVAdmin {
             });
         }
 
-        // Pagination
         document.getElementById('prev-page').addEventListener('click', (e) => {
             e.preventDefault();
             this.previousPage();
@@ -154,12 +198,8 @@ class KPTVAdmin {
                 this.goToPage(page);
             }
         });
-
     }
 
-    // previousPage navigates to the previous page of channels in paginated displays,
-    // updating the current page counter and re-rendering the channel list with
-    // appropriate pagination controls and status information.
     previousPage() {
         if (this.currentPage > 1) {
             this.currentPage--;
@@ -167,9 +207,6 @@ class KPTVAdmin {
         }
     }
 
-    // nextPage navigates to the next page of channels in paginated displays,
-    // validating page boundaries and updating the display with new channel data
-    // while maintaining consistent pagination state across operations.
     nextPage() {
         const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
         if (this.currentPage < totalPages) {
@@ -178,9 +215,6 @@ class KPTVAdmin {
         }
     }
 
-    // goToFirstPage jumps to the first page of channels in paginated displays,
-    // providing quick navigation for users who need to return to the beginning
-    // of the channel list regardless of current position.
     goToFirstPage() {
         if (this.currentPage !== 1) {
             this.currentPage = 1;
@@ -188,9 +222,6 @@ class KPTVAdmin {
         }
     }
 
-    // goToLastPage jumps to the final page of channels in paginated displays,
-    // calculating the last page number based on total channels and page size
-    // for convenient navigation to the end of the channel list.
     goToLastPage() {
         const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
         if (this.currentPage !== totalPages && totalPages > 0) {
@@ -199,12 +230,6 @@ class KPTVAdmin {
         }
     }
 
-    // goToPage navigates to a specific page number in paginated channel displays,
-    // validating the requested page number against available pages and updating
-    // the display with channel data for the requested page.
-    //
-    // Parameters:
-    //   - page: target page number to display
     goToPage(page) {
         const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
         if (page >= 1 && page <= totalPages && page !== this.currentPage) {
@@ -213,9 +238,6 @@ class KPTVAdmin {
         }
     }
 
-    // renderCurrentPage displays the current page of channels by calculating the
-    // appropriate slice of the channel array, rendering the channels, and updating
-    // pagination information for consistent display state management.
     renderCurrentPage() {
         const channels = this.filteredChannels || this.allChannels;
         if (!channels) return;
@@ -228,9 +250,6 @@ class KPTVAdmin {
         this.updatePaginationInfo();
     }
 
-    // updatePaginationInfo updates all pagination display elements including page
-    // counters, page selector dropdown, and navigation button states to reflect
-    // the current pagination state and available navigation options.
     updatePaginationInfo() {
         const channels = this.filteredChannels || this.allChannels || [];
         const totalChannels = channels.length;
@@ -243,13 +262,8 @@ class KPTVAdmin {
 
         document.getElementById('current-page').textContent = this.currentPage;
 
-        // Update page selector dropdown
         const pageSelector = document.getElementById('page-selector');
         if (pageSelector) {
-            // Save current value to restore after update
-            const currentValue = pageSelector.value;
-
-            // Clear and rebuild options
             pageSelector.innerHTML = '';
             for (let i = 1; i <= totalPages; i++) {
                 const option = document.createElement('option');
@@ -258,38 +272,40 @@ class KPTVAdmin {
                 option.selected = i === this.currentPage;
                 pageSelector.appendChild(option);
             }
-
-            // If current page wasn't in the options (shouldn't happen), select it
-            if (pageSelector.value !== this.currentPage.toString()) {
-                pageSelector.value = this.currentPage;
-            }
         }
 
-        // Update button states
-        document.getElementById('first-page').parentElement.classList.toggle('uk-disabled', this.currentPage === 1);
-        document.getElementById('prev-page').parentElement.classList.toggle('uk-disabled', this.currentPage === 1);
-        document.getElementById('next-page').parentElement.classList.toggle('uk-disabled', this.currentPage === totalPages || totalPages === 0);
-        document.getElementById('last-page').parentElement.classList.toggle('uk-disabled', this.currentPage === totalPages || totalPages === 0);
+        const firstBtn = document.getElementById('first-page').parentElement;
+        const prevBtn = document.getElementById('prev-page').parentElement;
+        const nextBtn = document.getElementById('next-page').parentElement;
+        const lastBtn = document.getElementById('last-page').parentElement;
+
+        if (this.currentPage === 1) {
+            firstBtn.classList.add('opacity-50', 'pointer-events-none');
+            prevBtn.classList.add('opacity-50', 'pointer-events-none');
+        } else {
+            firstBtn.classList.remove('opacity-50', 'pointer-events-none');
+            prevBtn.classList.remove('opacity-50', 'pointer-events-none');
+        }
+
+        if (this.currentPage === totalPages || totalPages === 0) {
+            nextBtn.classList.add('opacity-50', 'pointer-events-none');
+            lastBtn.classList.add('opacity-50', 'pointer-events-none');
+        } else {
+            nextBtn.classList.remove('opacity-50', 'pointer-events-none');
+            lastBtn.classList.remove('opacity-50', 'pointer-events-none');
+        }
     }
 
-    // startAutoRefresh initiates periodic background data refresh operations that
-    // automatically update statistics and channel information every 5 seconds while
-    // preserving user interface state including current page, search filters, and
-    // page selector position for seamless monitoring experience.
     startAutoRefresh() {
-
-        // Refresh stats and active channels every 5 seconds
         this.refreshInterval = setInterval(() => {
             this.loadStats();
             this.loadActiveChannels();
 
-            // Preserve current page, search state, and page selector
             const searchInput = document.getElementById('channel-search');
             const currentSearch = searchInput ? searchInput.value.trim() : '';
             const currentPage = this.currentPage;
 
             this.loadAllChannels().then(() => {
-                // Restore search filter if it was active
                 if (currentSearch) {
                     this.filteredChannels = this.allChannels.filter(channel =>
                         channel.name.toLowerCase().includes(currentSearch.toLowerCase()) ||
@@ -299,11 +315,9 @@ class KPTVAdmin {
                     this.filteredChannels = null;
                 }
 
-                // Restore the previous page
                 this.currentPage = currentPage;
                 const totalPages = Math.ceil((this.filteredChannels || this.allChannels || []).length / this.pageSize);
 
-                // If current page is beyond the new total, go to last page
                 if (this.currentPage > totalPages && totalPages > 0) {
                     this.currentPage = totalPages;
                 } else if (totalPages === 0) {
@@ -315,25 +329,12 @@ class KPTVAdmin {
         }, 5000);
     }
 
-    // stopAutoRefresh terminates the periodic refresh timer to prevent unnecessary
-    // background operations during interface shutdown or when automatic updates
-    // are no longer needed for the current view.
     stopAutoRefresh() {
         if (this.refreshInterval) {
             clearInterval(this.refreshInterval);
         }
     }
 
-    // apiCall executes HTTP requests to admin API endpoints with comprehensive error
-    // handling, automatic JSON parsing, and user notification for failures, providing
-    // a consistent interface for all administrative operations.
-    //
-    // Parameters:
-    //   - endpoint: API endpoint URL to call
-    //   - options: fetch API options object with method, headers, body, etc.
-    //
-    // Returns:
-    //   - Promise: resolves to parsed JSON response data
     async apiCall(endpoint, options = {}) {
         try {
             const response = await fetch(endpoint, {
@@ -356,16 +357,12 @@ class KPTVAdmin {
         }
     }
 
-    // loadGlobalSettings fetches current system configuration from the API and
-    // populates the global settings form with existing values, handling missing
-    // configuration gracefully by providing sensible defaults for all settings.
     async loadGlobalSettings() {
         try {
             const config = await this.apiCall('/api/config');
             this.config = config;
             this.populateGlobalSettingsForm(config);
         } catch (error) {
-            // Fallback to default values if API fails
             this.populateGlobalSettingsForm({
                 baseURL: "http://localhost:8080",
                 bufferSizePerStream: 8,
@@ -383,12 +380,6 @@ class KPTVAdmin {
         }
     }
 
-    // populateGlobalSettingsForm fills the global settings form with configuration
-    // values from the provided config object, handling checkboxes, text inputs,
-    // and special fields like FFmpeg arrays with appropriate formatting.
-    //
-    // Parameters:
-    //   - config: configuration object containing all system settings
     populateGlobalSettingsForm(config) {
         const form = document.getElementById('global-settings-form');
         Object.keys(config).forEach(key => {
@@ -402,25 +393,21 @@ class KPTVAdmin {
             }
         });
 
-        // Handle watcherEnabled specifically if not in config
         const watcherCheckbox = form.querySelector('input[name="watcherEnabled"]');
         if (watcherCheckbox && config.watcherEnabled !== undefined) {
             watcherCheckbox.checked = config.watcherEnabled;
         }
 
-        // Handle LogLevel radio buttons
         if (config.logLevel) {
             const logLevelRadios = form.querySelectorAll('input[name="logLevel"]');
             logLevelRadios.forEach(radio => {
                 radio.checked = radio.value === config.logLevel.toUpperCase();
             });
         } else {
-            // Default to INFO if not set
             const infoRadio = form.querySelector('input[name="logLevel"][value="INFO"]');
             if (infoRadio) infoRadio.checked = true;
         }
 
-        // Handle FFmpeg settings
         if (config.ffmpegMode !== undefined) {
             const ffmpegCheckbox = form.querySelector('input[name="ffmpegMode"]');
             if (ffmpegCheckbox) ffmpegCheckbox.checked = config.ffmpegMode;
@@ -441,15 +428,11 @@ class KPTVAdmin {
         }
     }
 
-    // saveGlobalSettings collects form data, validates required fields, processes
-    // special configurations like FFmpeg arguments, and submits the complete
-    // configuration to the API with automatic restart triggering.
     async saveGlobalSettings() {
         const form = document.getElementById('global-settings-form');
         const formData = new FormData(form);
         const newConfig = {};
 
-        // Process all form fields
         for (let [key, value] of formData.entries()) {
             const input = form.querySelector(`[name="${key}"]`);
             if (input.type === 'checkbox') {
@@ -457,36 +440,30 @@ class KPTVAdmin {
             } else if (input.type === 'number') {
                 newConfig[key] = parseInt(value) || 0;
             } else if (input.type === 'radio') {
-                // Radio buttons - only save the checked one
                 newConfig[key] = value;
             } else {
                 newConfig[key] = value;
             }
         }
 
-        // Add unchecked checkboxes (including ffmpegMode)
         form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
             if (!formData.has(checkbox.name)) {
                 newConfig[checkbox.name] = false;
             }
         });
 
-        // Explicitly set Debug to true (we manage logging via LogLevel now)
         newConfig.debug = true;
 
-        // Ensure logLevel is set (default to INFO if missing)
         if (!newConfig.logLevel) {
             const checkedLogLevel = form.querySelector('input[name="logLevel"]:checked');
             newConfig.logLevel = checkedLogLevel ? checkedLogLevel.value : 'INFO';
         }
 
-        // EXPLICITLY HANDLE FFMPEG SETTINGS
         const ffmpegModeCheckbox = form.querySelector('input[name="ffmpegMode"]');
         if (ffmpegModeCheckbox) {
             newConfig.ffmpegMode = ffmpegModeCheckbox.checked;
         }
 
-        // Process FFmpeg arguments
         const ffmpegPreInput = form.querySelector('input[name="ffmpegPreInput"]');
         if (ffmpegPreInput && ffmpegPreInput.value) {
             newConfig.ffmpegPreInput = ffmpegPreInput.value.split(' ').filter(arg => arg.length > 0);
@@ -502,16 +479,13 @@ class KPTVAdmin {
         }
 
         try {
-            // CRITICAL FIX: Get the current config first to preserve sources
             const currentConfig = await this.apiCall('/api/config');
 
-            // Merge the new global settings with existing config (preserving sources)
             const mergedConfig = {
-                ...currentConfig,  // Start with existing config
-                ...newConfig       // Override with new global settings
+                ...currentConfig,
+                ...newConfig
             };
 
-            // Ensure sources array is preserved
             if (currentConfig.sources) {
                 mergedConfig.sources = currentConfig.sources;
             }
@@ -523,7 +497,6 @@ class KPTVAdmin {
 
             this.showNotification('Global settings saved successfully!', 'success');
 
-            // Restart the service
             setTimeout(() => {
                 this.restartService();
             }, 1000);
@@ -532,375 +505,65 @@ class KPTVAdmin {
         }
     }
 
-    // loadSources fetches and displays all configured stream sources from the API,
-    // rendering detailed source information including connection limits, timeouts,
-    // and authentication settings for administrative review and management.
     async loadSources() {
         try {
             const config = await this.apiCall('/api/config');
             this.renderSources(config.sources || []);
         } catch (error) {
             document.getElementById('sources-container').innerHTML =
-                '<div class="uk-alert uk-alert-danger">Failed to load sources</div>';
+                '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">Failed to load sources</div>';
         }
     }
 
-    // renderSources generates HTML for displaying all configured sources with
-    // comprehensive metadata including connection parameters, retry settings,
-    // authentication headers, and operational controls for editing and deletion.
-    //
-    // Parameters:
-    //   - sources: array of source configuration objects to display
-    renderSources(sources) {
-        const container = document.getElementById('sources-container');
-
-        if (sources.length === 0) {
-            container.innerHTML = '<div class="uk-alert uk-alert-warning">No sources configured</div>';
-            return;
-        }
-
-        container.innerHTML = sources.map((source, index) => `
-            <div class="source-item fade-in">
-                <div class="uk-flex uk-flex-between uk-flex-middle">
-                    <div class="uk-flex-1">
-                        <h4 class="uk-margin-remove-bottom">${this.escapeHtml(source.name)}</h4>
-                        <div class="uk-text-muted uk-text-small">${this.obfuscateUrl(source.url)}</div>
-                    </div>
-                    <div class="uk-flex uk-flex-middle">
-                        <span class="status-indicator status-active"></span>
-                        <span class="uk-text-small uk-text-muted">Order: ${source.order}</span>
-                    </div>
-                </div>
-                <div class="uk-grid-small uk-margin-small-top" uk-grid>
-                    <div class="uk-width-1-4@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Max Connections</div>
-                            <div>${source.maxConnections}</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-4@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Timeout</div>
-                            <div>${source.maxStreamTimeout}</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-4@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Max Retries</div>
-                            <div>${source.maxRetries}</div>
-                        </div>
-                    </div>
-                    <div class="uk-width-1-4@s">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Min Data Size</div>
-                            <div>${source.minDataSize} KB</div>
-                        </div>
-                    </div>
-                </div>
-                ${source.userAgent ? `
-                    <div class="uk-margin-small-top">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">User Agent</div>
-                            <div class="text-truncate">${this.escapeHtml(source.userAgent)}</div>
-                        </div>
-                    </div>
-                ` : ''}
-                ${source.reqOrigin ? `
-                    <div class="uk-margin-small-top">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Origin</div>
-                            <div class="text-truncate">${this.escapeHtml(source.reqOrigin)}</div>
-                        </div>
-                    </div>
-                ` : ''}
-                ${source.reqReferrer ? `
-                    <div class="uk-margin-small-top">
-                        <div class="uk-text-small">
-                            <div class="uk-text-muted">Referrer</div>
-                            <div class="text-truncate">${this.escapeHtml(source.reqReferrer)}</div>
-                        </div>
-                    </div>
-                ` : ''}
-                <div class="source-actions">
-                    <button class="uk-button uk-button-primary uk-button-small" onclick="kptvAdmin.editSource(${index})">
-                        <span uk-icon="pencil"></span> Edit
-                    </button>
-                    <button class="uk-button uk-button-danger uk-button-small uk-margin-small-left" onclick="kptvAdmin.deleteSource(${index})">
-                        <span uk-icon="trash"></span> Delete
-                    </button>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    // showSourceModal displays the source configuration modal dialog for adding
-    // new sources or editing existing ones, populating form fields with current
-    // values when editing or clearing fields for new source creation.
-    //
-    // Parameters:
-    //   - sourceIndex: optional index of source to edit, null for new sources
-    showSourceModal(sourceIndex = null) {
-        const modal = UIkit.modal('#source-modal');
-        const title = document.getElementById('source-modal-title');
-
-        if (sourceIndex !== null) {
-            title.textContent = 'Edit Source';
-            if (this.config && this.config.sources && this.config.sources[sourceIndex]) {
-                this.populateSourceForm(this.config.sources[sourceIndex], sourceIndex);
-            } else {
-                this.showNotification('Config not loaded yet', 'warning');
-                this.loadGlobalSettings();
-            }
-        } else {
-            title.textContent = 'Add Source';
-            this.clearSourceForm();
-        }
-
-        modal.show();
-    }
-
-    // populateSourceForm fills the source configuration form with values from
-    // an existing source object, handling all fields including basic settings,
-    // filtering rules, and HTTP headers for complete source editing.
-    //
-    // Parameters:
-    //   - source: source configuration object containing current values
-    //   - index: array index of the source being edited
-    populateSourceForm(source, index) {
-        document.getElementById('source-index').value = index;
-        document.getElementById('source-name').value = source.name || '';
-        document.getElementById('source-url').value = source.url || '';
-        document.getElementById('source-username').value = source.username || '';
-        document.getElementById('source-password').value = source.password || '';
-        document.getElementById('source-order').value = source.order || 1;
-        document.getElementById('source-max-connections').value = source.maxConnections || 5;
-        document.getElementById('source-max-stream-timeout').value = source.maxStreamTimeout || '10s';
-        document.getElementById('source-retry-delay').value = source.retryDelay || '5s';
-        document.getElementById('source-max-retries').value = source.maxRetries || 3;
-        document.getElementById('source-max-failures').value = source.maxFailuresBeforeBlock || 5;
-        document.getElementById('source-min-data-size').value = source.minDataSize || 2;
-        document.getElementById('source-user-agent').value = source.userAgent || '';
-        document.getElementById('source-origin').value = source.reqOrigin || '';
-        document.getElementById('source-referrer').value = source.reqReferrer || '';
-        // Populate regex filters
-        document.getElementById('source-live-include-regex').value = source.liveIncludeRegex || '';
-        document.getElementById('source-live-exclude-regex').value = source.liveExcludeRegex || '';
-        document.getElementById('source-series-include-regex').value = source.seriesIncludeRegex || '';
-        document.getElementById('source-series-exclude-regex').value = source.seriesExcludeRegex || '';
-        document.getElementById('source-vod-include-regex').value = source.vodIncludeRegex || '';
-        document.getElementById('source-vod-exclude-regex').value = source.vodExcludeRegex || '';
-    }
-
-    // clearSourceForm resets all source configuration form fields to empty or
-    // default values, preparing the form for new source creation without any
-    // residual data from previous operations.
-    clearSourceForm() {
-        document.getElementById('source-index').value = '';
-        document.getElementById('source-form').reset();
-        document.getElementById('source-username').value = '';
-        document.getElementById('source-password').value = '';
-        document.getElementById('source-order').value = 1;
-        document.getElementById('source-max-connections').value = 5;
-        document.getElementById('source-max-stream-timeout').value = '10s';
-        document.getElementById('source-retry-delay').value = '5s';
-        document.getElementById('source-max-retries').value = 3;
-        document.getElementById('source-max-failures').value = 5;
-        document.getElementById('source-min-data-size').value = 2;
-        document.getElementById('source-live-include-regex').value = '';
-        document.getElementById('source-live-exclude-regex').value = '';
-        document.getElementById('source-series-include-regex').value = '';
-        document.getElementById('source-series-exclude-regex').value = '';
-        document.getElementById('source-vod-include-regex').value = '';
-        document.getElementById('source-vod-exclude-regex').value = '';
-    }
-
-    // saveSource collects source configuration data from the form, validates
-    // required fields, merges with existing configuration, and submits to the
-    // API with comprehensive error handling and user feedback.
-    async saveSource() {
-        console.log('saveSource function called');
-
-        try {
-            const form = document.getElementById('source-form');
-            const index = document.getElementById('source-index').value;
-
-            console.log('Form found, index:', index);
-
-            const source = {
-                name: document.getElementById('source-name').value,
-                url: document.getElementById('source-url').value,
-                username: document.getElementById('source-username').value || '',
-                password: document.getElementById('source-password').value || '',
-                order: parseInt(document.getElementById('source-order').value) || 1,
-                maxConnections: parseInt(document.getElementById('source-max-connections').value) || 5,
-                maxStreamTimeout: document.getElementById('source-max-stream-timeout').value || '30s',
-                retryDelay: document.getElementById('source-retry-delay').value || '5s',
-                maxRetries: parseInt(document.getElementById('source-max-retries').value) || 3,
-                maxFailuresBeforeBlock: parseInt(document.getElementById('source-max-failures').value) || 5,
-                minDataSize: parseInt(document.getElementById('source-min-data-size').value) || 2,
-                userAgent: document.getElementById('source-user-agent').value || '',
-                reqOrigin: document.getElementById('source-origin').value || '',
-                reqReferrer: document.getElementById('source-referrer').value || '',
-                // Add regex filters
-                liveIncludeRegex: document.getElementById('source-live-include-regex').value || '',
-                liveExcludeRegex: document.getElementById('source-live-exclude-regex').value || '',
-                seriesIncludeRegex: document.getElementById('source-series-include-regex').value || '',
-                seriesExcludeRegex: document.getElementById('source-series-exclude-regex').value || '',
-                vodIncludeRegex: document.getElementById('source-vod-include-regex').value || '',
-                vodExcludeRegex: document.getElementById('source-vod-exclude-regex').value || ''
-            };
-
-            console.log('Source object created:', source);
-
-            // Validate required fields
-            if (!source.name || !source.url) {
-                this.showNotification('Name and URL are required', 'danger');
-                return;
-            }
-
-            console.log('About to get config...');
-            const response = await fetch('/api/config');
-            console.log('Config response status:', response.status);
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const config = await response.json();
-            console.log('Got config:', config);
-
-            // Ensure sources array exists
-            if (!config.sources) {
-                config.sources = [];
-            }
-
-            if (index === '') {
-                config.sources.push(source);
-                console.log('Added new source');
-            } else {
-                config.sources[parseInt(index)] = source;
-                console.log('Updated existing source');
-            }
-
-            console.log('About to save config...');
-            const saveResponse = await fetch('/api/config', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(config)
-            });
-
-            console.log('Save response status:', saveResponse.status);
-
-            if (!saveResponse.ok) {
-                const errorText = await saveResponse.text();
-                console.error('Save error response:', errorText);
-                throw new Error(`HTTP ${saveResponse.status}: ${errorText}`);
-            }
-
-            console.log('Save successful');
-            UIkit.modal('#source-modal').hide();
-            this.showNotification('Source saved successfully!', 'success');
-            this.loadSources();
-
-        } catch (error) {
-            console.error('Detailed error:', error);
-            this.showNotification('Failed to save source: ' + error.message, 'danger');
-        }
-    }
-
-    // editSource opens the source configuration modal populated with data from
-    // the specified source index, enabling modification of existing source
-    // settings through the standard form interface.
-    //
-    // Parameters:
-    //   - index: array index of the source to edit
-    editSource(index) {
-        this.showSourceModal(index);
-    }
-
-    // deleteSource removes a source from configuration after user confirmation,
-    // updating the configuration file and triggering application restart to
-    // apply changes with appropriate error handling and user notification.
-    //
-    // Parameters:
-    //   - index: array index of the source to delete
-    async deleteSource(index) {
-        if (!confirm('Are you sure you want to delete this source?')) {
-            return;
-        }
-
-        try {
-            const config = await this.apiCall('/api/config');
-            config.sources.splice(index, 1);
-
-            await this.apiCall('/api/config', {
-                method: 'POST',
-                body: JSON.stringify(config)
-            });
-
-            this.showNotification('Source deleted successfully!', 'success');
-            this.loadSources();
-
-            // Restart the service
-            setTimeout(() => {
-                this.restartService();
-            }, 1000);
-        } catch (error) {
-            this.showNotification('Failed to delete source', 'danger');
-        }
-    }
-
-    // After loadSources() method, add:
-
-    // Load EPGs from configuration
     async loadEPGs() {
         try {
             const config = await this.apiCall('/api/config');
             this.renderEPGs(config.epgs || []);
         } catch (error) {
             document.getElementById('epgs-container').innerHTML =
-                '<div class="uk-alert uk-alert-danger">Failed to load EPGs</div>';
+                '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">Failed to load EPGs</div>';
         }
     }
 
-    // Render EPGs list
     renderEPGs(epgs) {
         const container = document.getElementById('epgs-container');
 
         if (epgs.length === 0) {
-            container.innerHTML = '<div class="uk-alert uk-alert-warning">No EPGs configured</div>';
+            container.innerHTML = '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">No EPGs configured</div>';
             return;
         }
 
         container.innerHTML = epgs.map((epg, index) => `
-        <div class="source-item fade-in">
-            <div class="uk-flex uk-flex-between uk-flex-middle">
-                <div class="uk-flex-1">
-                    <h4 class="uk-margin-remove-bottom">${this.escapeHtml(epg.name)}</h4>
-                    <div class="uk-text-muted uk-text-small">${this.obfuscateUrl(epg.url)}</div>
+        <div class="source-item">
+            <div class="flex justify-between items-center">
+                <div class="flex-1">
+                    <h4 class="text-lg font-semibold mb-1">${this.escapeHtml(epg.name)}</h4>
+                    <div class="text-gray-400 text-sm">${this.obfuscateUrl(epg.url)}</div>
                 </div>
-                <div class="uk-flex uk-flex-middle">
+                <div class="flex items-center">
                     <span class="status-indicator status-active"></span>
-                    <span class="uk-text-small uk-text-muted">Order: ${epg.order}</span>
+                    <span class="text-sm text-gray-400">Order: ${epg.order}</span>
                 </div>
             </div>
-            <div class="source-actions">
-                <button class="uk-button uk-button-primary uk-button-small" onclick="kptvAdmin.editEPG(${index})">
-                    <span uk-icon="pencil"></span> Edit
+            <div class="mt-4 pt-4 border-t border-kptv-border flex gap-2">
+                <button class="px-3 py-1 bg-kptv-blue hover:bg-kptv-blue-light rounded text-sm transition-colors flex items-center space-x-1" onclick="kptvAdmin.editEPG(${index})">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                    </svg>
+                    <span>Edit</span>
                 </button>
-                <button class="uk-button uk-button-danger uk-button-small uk-margin-small-left" onclick="kptvAdmin.deleteEPG(${index})">
-                    <span uk-icon="trash"></span> Delete
+                <button class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm transition-colors flex items-center space-x-1" onclick="kptvAdmin.deleteEPG(${index})">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                    <span>Delete</span>
                 </button>
             </div>
         </div>
     `).join('');
     }
 
-    // Show EPG modal
     showEPGModal(epgIndex = null) {
-        const modal = UIkit.modal('#epg-modal');
         const title = document.getElementById('epg-modal-title');
 
         if (epgIndex !== null) {
@@ -913,10 +576,9 @@ class KPTVAdmin {
             this.clearEPGForm();
         }
 
-        modal.show();
+        this.showModal('epg-modal');
     }
 
-    // Populate EPG form
     populateEPGForm(epg, index) {
         document.getElementById('epg-index').value = index;
         document.getElementById('epg-name').value = epg.name || '';
@@ -924,14 +586,12 @@ class KPTVAdmin {
         document.getElementById('epg-order').value = epg.order || 1;
     }
 
-    // Clear EPG form
     clearEPGForm() {
         document.getElementById('epg-index').value = '';
         document.getElementById('epg-form').reset();
         document.getElementById('epg-order').value = 1;
     }
 
-    // Save EPG
     async saveEPG() {
         try {
             const index = document.getElementById('epg-index').value;
@@ -963,20 +623,23 @@ class KPTVAdmin {
                 body: JSON.stringify(config)
             });
 
-            UIkit.modal('#epg-modal').hide();
+            this.hideModal('epg-modal');
             this.showNotification('EPG saved successfully!', 'success');
             this.loadEPGs();
+
+            setTimeout(() => {
+                this.restartService();
+            }, 500);
+
         } catch (error) {
             this.showNotification('Failed to save EPG: ' + error.message, 'danger');
         }
     }
 
-    // Edit EPG
     editEPG(index) {
         this.showEPGModal(index);
     }
 
-    // Delete EPG
     async deleteEPG(index) {
         if (!confirm('Are you sure you want to delete this EPG?')) {
             return;
@@ -993,20 +656,249 @@ class KPTVAdmin {
 
             this.showNotification('EPG deleted successfully!', 'success');
             this.loadEPGs();
+
+            setTimeout(() => {
+                this.restartService();
+            }, 500);
+
         } catch (error) {
             this.showNotification('Failed to delete EPG', 'danger');
         }
     }
 
-    // loadStats fetches current system statistics from the API including performance
-    // metrics, resource utilization, client connections, and operational status for
-    // display in the dashboard monitoring interface.
+    renderSources(sources) {
+        const container = document.getElementById('sources-container');
+
+        if (sources.length === 0) {
+            container.innerHTML = '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">No sources configured</div>';
+            return;
+        }
+
+        container.innerHTML = sources.map((source, index) => `
+            <div class="source-item">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex-1">
+                        <h4 class="text-lg font-semibold mb-1">${this.escapeHtml(source.name)}</h4>
+                        <div class="text-gray-400 text-sm">${this.obfuscateUrl(source.url)}</div>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="status-indicator status-active"></span>
+                        <span class="text-sm text-gray-400">Order: ${source.order}</span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                    <div class="text-sm">
+                        <div class="text-gray-400">Max Connections</div>
+                        <div>${source.maxConnections}</div>
+                    </div>
+                    <div class="text-sm">
+                        <div class="text-gray-400">Timeout</div>
+                        <div>${source.maxStreamTimeout}</div>
+                    </div>
+                    <div class="text-sm">
+                        <div class="text-gray-400">Max Retries</div>
+                        <div>${source.maxRetries}</div>
+                    </div>
+                    <div class="text-sm">
+                        <div class="text-gray-400">Min Data Size</div>
+                        <div>${source.minDataSize} KB</div>
+                    </div>
+                </div>
+                ${source.userAgent ? `
+                    <div class="mb-2">
+                        <div class="text-sm text-gray-400">User Agent</div>
+                        <div class="text-sm text-truncate">${this.escapeHtml(source.userAgent)}</div>
+                    </div>
+                ` : ''}
+                ${source.reqOrigin ? `
+                    <div class="mb-2">
+                        <div class="text-sm text-gray-400">Origin</div>
+                        <div class="text-sm text-truncate">${this.escapeHtml(source.reqOrigin)}</div>
+                    </div>
+                ` : ''}
+                ${source.reqReferrer ? `
+                    <div class="mb-2">
+                        <div class="text-sm text-gray-400">Referrer</div>
+                        <div class="text-sm text-truncate">${this.escapeHtml(source.reqReferrer)}</div>
+                    </div>
+                ` : ''}
+                <div class="mt-4 pt-4 border-t border-kptv-border flex gap-2">
+                    <button class="px-3 py-1 bg-kptv-blue hover:bg-kptv-blue-light rounded text-sm transition-colors flex items-center space-x-1" onclick="kptvAdmin.editSource(${index})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                        <span>Edit</span>
+                    </button>
+                    <button class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm transition-colors flex items-center space-x-1" onclick="kptvAdmin.deleteSource(${index})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                        <span>Delete</span>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    showSourceModal(sourceIndex = null) {
+        const title = document.getElementById('source-modal-title');
+
+        if (sourceIndex !== null) {
+            title.textContent = 'Edit Source';
+            if (this.config && this.config.sources && this.config.sources[sourceIndex]) {
+                this.populateSourceForm(this.config.sources[sourceIndex], sourceIndex);
+            } else {
+                this.showNotification('Config not loaded yet', 'warning');
+                this.loadGlobalSettings();
+            }
+        } else {
+            title.textContent = 'Add Source';
+            this.clearSourceForm();
+        }
+
+        this.showModal('source-modal');
+    }
+
+    populateSourceForm(source, index) {
+        document.getElementById('source-index').value = index;
+        document.getElementById('source-name').value = source.name || '';
+        document.getElementById('source-url').value = source.url || '';
+        document.getElementById('source-username').value = source.username || '';
+        document.getElementById('source-password').value = source.password || '';
+        document.getElementById('source-order').value = source.order || 1;
+        document.getElementById('source-max-connections').value = source.maxConnections || 5;
+        document.getElementById('source-max-stream-timeout').value = source.maxStreamTimeout || '10s';
+        document.getElementById('source-retry-delay').value = source.retryDelay || '5s';
+        document.getElementById('source-max-retries').value = source.maxRetries || 3;
+        document.getElementById('source-max-failures').value = source.maxFailuresBeforeBlock || 5;
+        document.getElementById('source-min-data-size').value = source.minDataSize || 2;
+        document.getElementById('source-user-agent').value = source.userAgent || '';
+        document.getElementById('source-origin').value = source.reqOrigin || '';
+        document.getElementById('source-referrer').value = source.reqReferrer || '';
+        document.getElementById('source-live-include-regex').value = source.liveIncludeRegex || '';
+        document.getElementById('source-live-exclude-regex').value = source.liveExcludeRegex || '';
+        document.getElementById('source-series-include-regex').value = source.seriesIncludeRegex || '';
+        document.getElementById('source-series-exclude-regex').value = source.seriesExcludeRegex || '';
+        document.getElementById('source-vod-include-regex').value = source.vodIncludeRegex || '';
+        document.getElementById('source-vod-exclude-regex').value = source.vodExcludeRegex || '';
+    }
+
+    clearSourceForm() {
+        document.getElementById('source-index').value = '';
+        document.getElementById('source-form').reset();
+        document.getElementById('source-username').value = '';
+        document.getElementById('source-password').value = '';
+        document.getElementById('source-order').value = 1;
+        document.getElementById('source-max-connections').value = 5;
+        document.getElementById('source-max-stream-timeout').value = '10s';
+        document.getElementById('source-retry-delay').value = '5s';
+        document.getElementById('source-max-retries').value = 3;
+        document.getElementById('source-max-failures').value = 5;
+        document.getElementById('source-min-data-size').value = 2;
+        document.getElementById('source-live-include-regex').value = '';
+        document.getElementById('source-live-exclude-regex').value = '';
+        document.getElementById('source-series-include-regex').value = '';
+        document.getElementById('source-series-exclude-regex').value = '';
+        document.getElementById('source-vod-include-regex').value = '';
+        document.getElementById('source-vod-exclude-regex').value = '';
+    }
+
+    async saveSource() {
+        try {
+            const index = document.getElementById('source-index').value;
+
+            const source = {
+                name: document.getElementById('source-name').value,
+                url: document.getElementById('source-url').value,
+                username: document.getElementById('source-username').value || '',
+                password: document.getElementById('source-password').value || '',
+                order: parseInt(document.getElementById('source-order').value) || 1,
+                maxConnections: parseInt(document.getElementById('source-max-connections').value) || 5,
+                maxStreamTimeout: document.getElementById('source-max-stream-timeout').value || '30s',
+                retryDelay: document.getElementById('source-retry-delay').value || '5s',
+                maxRetries: parseInt(document.getElementById('source-max-retries').value) || 3,
+                maxFailuresBeforeBlock: parseInt(document.getElementById('source-max-failures').value) || 5,
+                minDataSize: parseInt(document.getElementById('source-min-data-size').value) || 2,
+                userAgent: document.getElementById('source-user-agent').value || '',
+                reqOrigin: document.getElementById('source-origin').value || '',
+                reqReferrer: document.getElementById('source-referrer').value || '',
+                liveIncludeRegex: document.getElementById('source-live-include-regex').value || '',
+                liveExcludeRegex: document.getElementById('source-live-exclude-regex').value || '',
+                seriesIncludeRegex: document.getElementById('source-series-include-regex').value || '',
+                seriesExcludeRegex: document.getElementById('source-series-exclude-regex').value || '',
+                vodIncludeRegex: document.getElementById('source-vod-include-regex').value || '',
+                vodExcludeRegex: document.getElementById('source-vod-exclude-regex').value || ''
+            };
+
+            if (!source.name || !source.url) {
+                this.showNotification('Name and URL are required', 'danger');
+                return;
+            }
+
+            const config = await this.apiCall('/api/config');
+
+            if (!config.sources) {
+                config.sources = [];
+            }
+
+            if (index === '') {
+                config.sources.push(source);
+            } else {
+                config.sources[parseInt(index)] = source;
+            }
+
+            await this.apiCall('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+
+            this.hideModal('source-modal');
+            this.showNotification('Source saved successfully!', 'success');
+            this.loadSources();
+
+            setTimeout(() => {
+                this.restartService();
+            }, 500);
+
+        } catch (error) {
+            this.showNotification('Failed to save source: ' + error.message, 'danger');
+        }
+    }
+
+    editSource(index) {
+        this.showSourceModal(index);
+    }
+
+    async deleteSource(index) {
+        if (!confirm('Are you sure you want to delete this source?')) {
+            return;
+        }
+
+        try {
+            const config = await this.apiCall('/api/config');
+            config.sources.splice(index, 1);
+
+            await this.apiCall('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+
+            this.showNotification('Source deleted successfully!', 'success');
+            this.loadSources();
+
+            setTimeout(() => {
+                this.restartService();
+            }, 1000);
+        } catch (error) {
+            this.showNotification('Failed to delete source', 'danger');
+        }
+    }
+
     async loadStats() {
         try {
             const stats = await this.apiCall('/api/stats');
             this.updateStatsDisplay(stats);
         } catch (error) {
-            // Use mock data if API fails
             this.updateStatsDisplay({
                 totalChannels: 0,
                 activeStreams: 0,
@@ -1026,78 +918,49 @@ class KPTVAdmin {
         }
     }
 
-    // updateStatsDisplay updates all statistics display elements in the dashboard
-    // with current values from the stats object, formatting numbers and durations
-    // appropriately for human-readable presentation.
-    //
-    // Parameters:
-    //   - stats: statistics object containing all system metrics
     updateStatsDisplay(stats) {
-        const totalChannelsEl = document.getElementById('total-channels');
-        const activeStreamsEl = document.getElementById('active-streams');
-        const totalSourcesEl = document.getElementById('total-sources');
-        const totalEPGsEl = document.getElementById('total-epgs');
-        const connectedClientsEl = document.getElementById('connected-clients');
+        const elements = {
+            'total-channels': stats.totalChannels || 0,
+            'active-streams': stats.activeStreams || 0,
+            'total-sources': stats.totalSources || 0,
+            'total-epgs': stats.totalEpgs || 0,
+            'connected-clients': stats.connectedClients || 0,
+            'uptime': stats.uptime || '0m',
+            'memory-usage': stats.memoryUsage || '0 MB',
+            'cache-status': stats.cacheStatus || 'Unknown',
+            'total-connections': stats.totalConnections || 0,
+            'bytes-transferred': stats.bytesTransferred || '0 B',
+            'active-restreamers': stats.activeRestreamers || 0,
+            'stream-errors': stats.streamErrors || 0,
+            'response-time': stats.responseTime || '0ms',
+            'proxy-clients': stats.connectedClients || 0,
+            'upstream-connections': stats.upstreamConnections || 0,
+            'active-channels-stat': stats.activeChannels || 0
+        };
 
-        if (totalChannelsEl) totalChannelsEl.textContent = stats.totalChannels || 0;
-        if (activeStreamsEl) activeStreamsEl.textContent = stats.activeStreams || 0;
-        if (totalSourcesEl) totalSourcesEl.textContent = stats.totalSources || 0;
-        if (totalEPGsEl) totalEPGsEl.textContent = stats.totalEpgs || 0;
-        if (connectedClientsEl) connectedClientsEl.textContent = stats.connectedClients || 0;
-
-        const uptimeEl = document.getElementById('uptime');
-        const memoryUsageEl = document.getElementById('memory-usage');
-        const cacheStatusEl = document.getElementById('cache-status');
-
-        if (uptimeEl) uptimeEl.textContent = stats.uptime || '0m';
-        if (memoryUsageEl) memoryUsageEl.textContent = stats.memoryUsage || '0 MB';
-        if (cacheStatusEl) cacheStatusEl.textContent = stats.cacheStatus || 'Unknown';
-
-        const totalConnectionsEl = document.getElementById('total-connections');
-        const bytesTransferredEl = document.getElementById('bytes-transferred');
-        const activeRestreamersEl = document.getElementById('active-restreamers');
-        const streamErrorsEl = document.getElementById('stream-errors');
-        const responseTimeEl = document.getElementById('response-time');
-
-        if (totalConnectionsEl) totalConnectionsEl.textContent = stats.totalConnections || 0;
-        if (bytesTransferredEl) bytesTransferredEl.textContent = stats.bytesTransferred || '0 B';
-        if (activeRestreamersEl) activeRestreamersEl.textContent = stats.activeRestreamers || 0;
-        if (streamErrorsEl) streamErrorsEl.textContent = stats.streamErrors || 0;
-        if (responseTimeEl) responseTimeEl.textContent = stats.responseTime || '0ms';
+        Object.entries(elements).forEach(([id, value]) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        });
 
         const watcherStatus = stats.watcherEnabled ? 'Enabled' : 'Disabled';
         const watcherElement = document.getElementById('watcher-status');
         if (watcherElement) {
             watcherElement.textContent = watcherStatus;
-            watcherElement.className = `watcher-status ${stats.watcherEnabled ? 'enabled' : 'disabled'}`;
         }
 
-        const proxyClientsEl = document.getElementById('proxy-clients');
-        const upstreamConnectionsEl = document.getElementById('upstream-connections');
         const connectionEfficiencyEl = document.getElementById('connection-efficiency');
-        const activeChannelsStatEl = document.getElementById('active-channels-stat');  // NEW
-        const avgClientsPerStreamEl = document.getElementById('avg-clients-per-stream');  // NEW
-
-        if (proxyClientsEl) proxyClientsEl.textContent = stats.connectedClients || 0;
-        if (upstreamConnectionsEl) upstreamConnectionsEl.textContent = stats.upstreamConnections || 0;
-
         if (connectionEfficiencyEl) {
             const clients = stats.connectedClients || 0;
             const upstream = stats.upstreamConnections || 0;
             if (upstream > 0) {
-                const ratio = (clients / upstream).toFixed(1);
-                connectionEfficiencyEl.textContent = `${ratio}:1`;
+                connectionEfficiencyEl.textContent = `${(clients / upstream).toFixed(1)}:1`;
             } else {
                 connectionEfficiencyEl.textContent = 'N/A';
             }
         }
 
-        // NEW - Active Channels
-        if (activeChannelsStatEl) {
-            activeChannelsStatEl.textContent = stats.activeChannels || 0;
-        }
-
-        // NEW - Avg Clients per Stream
+        const avgClientsPerStreamEl = document.getElementById('avg-clients-per-stream');
         if (avgClientsPerStreamEl) {
             if (stats.avgClientsPerStream > 0) {
                 avgClientsPerStreamEl.textContent = stats.avgClientsPerStream.toFixed(1);
@@ -1107,59 +970,54 @@ class KPTVAdmin {
         }
     }
 
-    // loadActiveChannels fetches and displays information about channels currently
-    // streaming content to connected clients, providing focused operational monitoring
-    // data for active streaming sessions.
     async loadActiveChannels() {
         try {
             const channels = await this.apiCall('/api/channels/active');
             this.renderActiveChannels(channels);
         } catch (error) {
             document.getElementById('active-channels-list').innerHTML =
-                '<div class="uk-alert uk-alert-warning">No active channels or failed to load</div>';
+                '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">No active channels or failed to load</div>';
         }
     }
 
-    // renderActiveChannels generates HTML for displaying active channels with
-    // comprehensive information including client counts, bandwidth usage, source
-    // details, logos, and real-time streaming statistics for monitoring.
-    //
-    // Parameters:
-    //   - channels: array of active channel objects to display
     renderActiveChannels(channels) {
         const container = document.getElementById('active-channels-list');
 
         if (channels.length === 0) {
-            container.innerHTML = '<div class="uk-alert uk-alert-warning">No active channels</div>';
+            container.innerHTML = '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">No active channels</div>';
             return;
         }
 
         container.innerHTML = channels.map(channel => {
             const safeId = channel.name.replace(/[^a-zA-Z0-9]/g, '_');
             return `
-            <div class="channel-item fade-in">
-                <div class="uk-flex uk-flex-between uk-flex-middle">
-                    <div class="uk-flex uk-flex-middle">
+            <div class="channel-item">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center flex-1">
                         <img src="${channel.logoURL || 'https://cdn.kcp.im/tv/kptv-icon.png'}" 
                             alt="${this.escapeHtml(channel.name)}" 
-                            style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
+                            class="w-12 h-12 object-cover rounded mr-3"
                             onerror="this.src='https://cdn.kcp.im/tv/kptv-icon.png'">
-                        <div class="uk-flex-1">
-                            <div class="channel-name">${this.escapeHtml(channel.name)}</div>
-                            <div class="channel-details">
+                        <div class="flex-1">
+                            <div class="font-semibold">${this.escapeHtml(channel.name)}</div>
+                            <div class="text-sm text-gray-400">
                                 <span class="connection-dot status-active"></span>
                                 ${channel.clients || 0} client(s) connected
                             </div>
-                            <div class="uk-margin-small-top stream-stats-badges" id="stats-${safeId}">
-                                <span class="uk-text-meta">Loading stats...</span>
+                            <div class="mt-2 flex flex-wrap gap-1" id="stats-${safeId}">
+                                <span class="text-xs text-gray-400">Loading stats...</span>
                             </div>
                         </div>
                     </div>
-                    <div class="uk-text-right uk-text-small">
-                        <div class="uk-text-muted">Bytes: ${this.formatBytes(channel.bytesTransferred || 0)}</div>
-                        <div class="uk-text-muted">Source: ${channel.currentSource || 'Unknown'}</div>
-                        <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-top" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name).replace(/'/g, "\\'")}')">
-                            <span uk-icon="settings"></span> Streams
+                    <div class="text-right text-sm ml-4">
+                        <div class="text-gray-400">Bytes: ${this.formatBytes(channel.bytesTransferred || 0)}</div>
+                        <div class="text-gray-400">Source: ${channel.currentSource || 'Unknown'}</div>
+                        <button class="mt-2 px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-sm transition-colors flex items-center space-x-1" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name).replace(/'/g, "\\'")}')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            </svg>
+                            <span>Streams</span>
                         </button>
                     </div>
                 </div>
@@ -1167,18 +1025,11 @@ class KPTVAdmin {
             `;
         }).join('');
 
-        // Load stats for each active channel
         channels.forEach(channel => {
             this.loadChannelStats(channel.name);
         });
     }
 
-    // loadChannelStats fetches real-time streaming statistics for a specific channel
-    // including codec information, resolution, bitrate, and quality metrics gathered
-    // through FFprobe analysis for display in the active channels view.
-    //
-    // Parameters:
-    //   - channelName: name of channel to retrieve statistics for
     async loadChannelStats(channelName) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -1188,18 +1039,11 @@ class KPTVAdmin {
             const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
             const container = document.getElementById(`stats-${safeId}`);
             if (container) {
-                container.innerHTML = '<span class="uk-badge">No Stats</span>';
+                container.innerHTML = '<span class="stat-badge">No Stats</span>';
             }
         }
     }
 
-    // renderChannelStatsBadges generates HTML badges displaying streaming statistics
-    // for a channel including resolution, frame rate, codecs, and bitrate in a
-    // compact, visually organized format for dashboard display.
-    //
-    // Parameters:
-    //   - channelName: name of channel for badge container identification
-    //   - stats: statistics object containing stream quality metrics
     renderChannelStatsBadges(channelName, stats) {
         const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
         const container = document.getElementById(`stats-${safeId}`);
@@ -1207,152 +1051,102 @@ class KPTVAdmin {
         if (!container) return;
 
         if (!stats.streaming || !stats.valid) {
-            container.innerHTML = '<span class="uk-badge">No Stats</span>';
+            container.innerHTML = '<span class="stat-badge">No Stats</span>';
             return;
         }
 
         const badges = [];
 
         if (stats.videoResolution) {
-            badges.push(`<span class="uk-badge stat-badge">${stats.videoResolution}</span>`);
+            badges.push(`<span class="stat-badge">${stats.videoResolution}</span>`);
         }
 
         if (stats.fps > 0) {
-            badges.push(`<span class="uk-badge stat-badge">${stats.fps.toFixed(0)}fps</span>`);
+            badges.push(`<span class="stat-badge">${stats.fps.toFixed(0)}fps</span>`);
         }
 
         if (stats.videoCodec) {
-            badges.push(`<span class="uk-badge stat-badge">${stats.videoCodec.toUpperCase()}</span>`);
+            badges.push(`<span class="stat-badge">${stats.videoCodec.toUpperCase()}</span>`);
         }
 
         if (stats.audioCodec) {
-            badges.push(`<span class="uk-badge stat-badge">${stats.audioCodec.toUpperCase()}</span>`);
+            badges.push(`<span class="stat-badge">${stats.audioCodec.toUpperCase()}</span>`);
         }
 
         if (stats.bitrate > 0) {
-            badges.push(`<span class="uk-badge stat-badge">${this.formatBitrate(stats.bitrate)}</span>`);
+            badges.push(`<span class="stat-badge">${this.formatBitrate(stats.bitrate)}</span>`);
         }
 
-        if (badges.length === 0) {
-            container.innerHTML = '<span class="uk-badge stat-badge">No Stats</span>';
-        } else {
-            container.innerHTML = badges.join(' ');
-        }
+        container.innerHTML = badges.length > 0 ? badges.join(' ') : '<span class="stat-badge">No Stats</span>';
     }
 
-    // renderStreamStats displays detailed streaming statistics in an expanded format
-    // with labeled fields for container type, codecs, resolution, frame rate, bitrate,
-    // and audio configuration for comprehensive stream analysis.
-    //
-    // Parameters:
-    //   - stats: statistics object containing complete stream metadata
-    renderStreamStats(stats) {
-        const container = document.getElementById('stream-stats-container');
-
-        if (!stats.streaming || !stats.valid) {
-            container.style.display = 'none';
-            return;
-        }
-
-        container.style.display = 'block';
-
-        document.getElementById('stat-container').textContent = stats.container || 'N/A';
-        document.getElementById('stat-stream-type').textContent = stats.streamType || 'N/A';
-        document.getElementById('stat-video-codec').textContent = stats.videoCodec || 'N/A';
-        document.getElementById('stat-resolution').textContent = stats.videoResolution || 'N/A';
-        document.getElementById('stat-fps').textContent = stats.fps > 0 ? stats.fps.toFixed(2) : 'N/A';
-        document.getElementById('stat-bitrate').textContent = stats.bitrate > 0 ? this.formatBitrate(stats.bitrate) : 'N/A';
-        document.getElementById('stat-audio-codec').textContent = stats.audioCodec || 'N/A';
-        document.getElementById('stat-audio-channels').textContent = stats.audioChannels || 'N/A';
-    }
-
-    // showStreamSelector fetches and displays available streams for a channel in
-    // a modal dialog, enabling stream selection, ordering, and management through
-    // an interactive interface with current/preferred stream indicators.
-    //
-    // Parameters:
-    //   - channelName: name of channel to display streams for
     async showStreamSelector(channelName) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
             const data = await this.apiCall(`/api/channels/${encodedChannelName}/streams`);
             this.renderStreamSelector(data);
-
-            // REMOVE THESE LINES:
-            // const statsData = await this.apiCall(`/api/channels/${encodedChannelName}/stats`);
-            // this.renderStreamStats(statsData);
-
-            UIkit.modal('#stream-selector-modal').show();
+            this.showModal('stream-selector-modal');
         } catch (error) {
             this.showNotification('Failed to load streams for channel', 'danger');
         }
     }
 
-    // loadAllChannels fetches complete channel listing from the API including both
-    // active and inactive channels with metadata for display in the comprehensive
-    // channels view with pagination support.
     async loadAllChannels() {
         try {
             const channels = await this.apiCall('/api/channels');
             this.allChannels = channels;
-
             this.renderCurrentPage();
             return channels;
         } catch (error) {
             document.getElementById('all-channels-list').innerHTML =
-                '<div class="uk-alert uk-alert-danger">Failed to load channels</div>';
+                '<div class="bg-red-900/20 border border-red-600 text-red-100 px-4 py-3 rounded">Failed to load channels</div>';
             throw error;
         }
     }
 
-    // renderAllChannels generates HTML for displaying all channels with status
-    // indicators, group classifications, source counts, logos, and streaming
-    // statistics organized in a paginated list format.
-    //
-    // Parameters:
-    //   - channels: array of channel objects to display
     renderAllChannels(channels) {
         const container = document.getElementById('all-channels-list');
 
         if (channels.length === 0) {
-            container.innerHTML = '<div class="uk-alert uk-alert-warning">No channels found</div>';
+            container.innerHTML = '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">No channels found</div>';
             return;
         }
 
-        // Use document fragment for batch DOM insertion
         const fragment = document.createDocumentFragment();
 
         channels.forEach(channel => {
             const safeId = channel.name.replace(/[^a-zA-Z0-9]/g, '_');
             const div = document.createElement('div');
-            div.className = `channel-item ${channel.active ? '' : 'channel-inactive'} fade-in`;
+            div.className = `channel-item ${channel.active ? '' : 'channel-inactive'}`;
             div.innerHTML = `
-                <div class="uk-flex uk-flex-between uk-flex-middle">
-                    <div class="uk-flex uk-flex-middle">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center flex-1">
                         <img src="${channel.logoURL || 'https://cdn.kcp.im/tv/kptv-icon.png'}" 
                             alt="${this.escapeHtml(channel.name)}" 
-                            style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
+                            class="w-12 h-12 object-cover rounded mr-3"
                             onerror="this.src='https://cdn.kcp.im/tv/kptv-icon.png'">
-                        <div class="uk-flex-1">
-                            <div class="channel-name">${this.escapeHtml(channel.name)}</div>
-                            <div class="channel-details">
-                                <div class="uk-text-small uk-text-muted">
-                                    Group: ${channel.group || 'Uncategorized'} | 
-                                    Sources: ${channel.sources || 0} | 
-                                    Status: ${channel.active ? `Active (${channel.clients} clients)` : 'Inactive'}
-                                </div>
+                        <div class="flex-1">
+                            <div class="font-semibold">${this.escapeHtml(channel.name)}</div>
+                            <div class="text-sm text-gray-400">
+                                Group: ${channel.group || 'Uncategorized'} | 
+                                Sources: ${channel.sources || 0} | 
+                                Status: ${channel.active ? `Active (${channel.clients} clients)` : 'Inactive'}
                             </div>
                             ${channel.active ? `
-                            <div class="uk-margin-small-top stream-stats-badges" id="stats-all-${safeId}">
-                                <span class="uk-text-meta">Loading stats...</span>
+                            <div class="mt-2 flex flex-wrap gap-1" id="stats-all-${safeId}">
+                                <span class="text-xs text-gray-400">Loading stats...</span>
                             </div>
                             ` : ''}
                         </div>
                     </div>
-                    <div class="uk-text-right">
+                    <div class="flex items-center ml-4">
                         <span class="status-indicator ${channel.active ? 'status-active' : 'status-error'}"></span>
-                        <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-left" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name).replace(/'/g, "\\'")}')">
-                            <span uk-icon="settings"></span> Streams
+                        <button class="ml-2 px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-sm transition-colors flex items-center space-x-1" onclick="kptvAdmin.showStreamSelector('${this.escapeHtml(channel.name).replace(/'/g, "\\'")}')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            </svg>
+                            <span class="hidden sm:inline">Streams</span>
                         </button>
                     </div>
                 </div>
@@ -1360,11 +1154,9 @@ class KPTVAdmin {
             fragment.appendChild(div);
         });
 
-        // Clear and append in one operation
         container.innerHTML = '';
         container.appendChild(fragment);
 
-        // Load stats for active channels
         channels.forEach(channel => {
             if (channel.active) {
                 this.loadChannelStatsForAllTab(channel.name);
@@ -1372,12 +1164,6 @@ class KPTVAdmin {
         });
     }
 
-    // loadChannelStatsForAllTab fetches streaming statistics for a channel in the
-    // context of the all channels view, using separate container IDs to avoid
-    // conflicts with active channels view statistics display.
-    //
-    // Parameters:
-    //   - channelName: name of channel to retrieve statistics for
     async loadChannelStatsForAllTab(channelName) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -1387,18 +1173,11 @@ class KPTVAdmin {
             const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
             const container = document.getElementById(`stats-all-${safeId}`);
             if (container) {
-                container.innerHTML = '<span class="uk-badge">No Stats</span>';
+                container.innerHTML = '<span class="stat-badge">No Stats</span>';
             }
         }
     }
 
-    // renderChannelStatsBadgesForAllTab generates statistics badges specifically for
-    // the all channels view using appropriate container IDs and formatting to maintain
-    // visual consistency across different administrative views.
-    //
-    // Parameters:
-    //   - channelName: name of channel for badge container identification
-    //   - stats: statistics object containing stream quality metrics
     renderChannelStatsBadgesForAllTab(channelName, stats) {
         const safeId = channelName.replace(/[^a-zA-Z0-9]/g, '_');
         const container = document.getElementById(`stats-all-${safeId}`);
@@ -1406,45 +1185,35 @@ class KPTVAdmin {
         if (!container) return;
 
         if (!stats.streaming || !stats.valid) {
-            container.innerHTML = '<span class="uk-badge">No Stats</span>';
+            container.innerHTML = '<span class="stat-badge">No Stats</span>';
             return;
         }
 
         const badges = [];
 
         if (stats.videoResolution) {
-            badges.push(`<span class="uk-badge stat-badge">${stats.videoResolution}</span>`);
+            badges.push(`<span class="stat-badge">${stats.videoResolution}</span>`);
         }
 
         if (stats.fps > 0) {
-            badges.push(`<span class="uk-badge stat-badge">${stats.fps.toFixed(0)}fps</span>`);
+            badges.push(`<span class="stat-badge">${stats.fps.toFixed(0)}fps</span>`);
         }
 
         if (stats.videoCodec) {
-            badges.push(`<span class="uk-badge stat-badge">${stats.videoCodec.toUpperCase()}</span>`);
+            badges.push(`<span class="stat-badge">${stats.videoCodec.toUpperCase()}</span>`);
         }
 
         if (stats.audioCodec) {
-            badges.push(`<span class="uk-badge stat-badge">${stats.audioCodec.toUpperCase()}</span>`);
+            badges.push(`<span class="stat-badge">${stats.audioCodec.toUpperCase()}</span>`);
         }
 
         if (stats.bitrate > 0) {
-            badges.push(`<span class="uk-badge stat-badge">${this.formatBitrate(stats.bitrate)}</span>`);
+            badges.push(`<span class="stat-badge">${this.formatBitrate(stats.bitrate)}</span>`);
         }
 
-        if (badges.length === 0) {
-            container.innerHTML = '<span class="uk-badge stat-badge">No Stats</span>';
-        } else {
-            container.innerHTML = badges.join(' ');
-        }
+        container.innerHTML = badges.length > 0 ? badges.join(' ') : '<span class="stat-badge">No Stats</span>';
     }
 
-    // filterChannels applies search/filter terms to the complete channel list,
-    // updating the filtered channels array and resetting pagination to display
-    // matching channels with appropriate empty state handling.
-    //
-    // Parameters:
-    //   - searchTerm: text to filter channels by name or group
     filterChannels(searchTerm) {
         if (!this.allChannels) return;
 
@@ -1457,13 +1226,10 @@ class KPTVAdmin {
             );
         }
 
-        this.currentPage = 1; // Reset to first page when filtering
+        this.currentPage = 1;
         this.renderCurrentPage();
     }
 
-    // loadLogs fetches current application logs from the API for display in the
-    // logs view, providing real-time debugging and operational monitoring information
-    // through the administrative interface.
     async loadLogs() {
         try {
             const logs = await this.apiCall('/api/logs');
@@ -1471,41 +1237,28 @@ class KPTVAdmin {
             this.renderLogs(logs);
         } catch (error) {
             document.getElementById('logs-container').innerHTML =
-                '<div class="uk-alert uk-alert-danger">Failed to load logs</div>';
+                '<div class="bg-red-900/20 border border-red-600 text-red-100 px-4 py-3 rounded">Failed to load logs</div>';
         }
     }
 
-    // renderLogs generates HTML for displaying log entries with appropriate styling
-    // based on log level, timestamps, and message content, automatically scrolling
-    // to show the most recent entries at the bottom.
-    //
-    // Parameters:
-    //   - logs: array of log entry objects to display
     renderLogs(logs) {
         const container = document.getElementById('logs-container');
 
         if (logs.length === 0) {
-            container.innerHTML = '<div class="uk-text-center uk-text-muted">No logs available</div>';
+            container.innerHTML = '<div class="text-center text-gray-400">No logs available</div>';
             return;
         }
 
         container.innerHTML = logs.map(log => `
             <div class="log-entry log-${log.level}">
-                <span class="log-timestamp">${log.timestamp}</span> 
+                <span class="text-gray-500 text-xs">${log.timestamp}</span> 
                 [${log.level.toUpperCase()}] ${this.escapeHtml(log.message)}
             </div>
         `).join('');
 
-        // Auto-scroll to bottom
         container.scrollTop = container.scrollHeight;
     }
 
-    // filterLogs applies log level filtering to the complete log array, displaying
-    // only entries matching the specified level or all entries when level is 'all'
-    // for focused debugging and monitoring operations.
-    //
-    // Parameters:
-    //   - level: log level to filter by ('all', 'error', 'warning', 'info', 'debug')
     filterLogs(level) {
         if (!this.allLogs) return;
 
@@ -1517,9 +1270,6 @@ class KPTVAdmin {
         }
     }
 
-    // clearLogs sends a request to clear the server-side log buffer after user
-    // confirmation, providing a clean slate for new log entries during debugging
-    // and troubleshooting operations.
     async clearLogs() {
         if (!confirm('Are you sure you want to clear all logs?')) {
             return;
@@ -1534,9 +1284,6 @@ class KPTVAdmin {
         }
     }
 
-    // restartService initiates a graceful application restart after user confirmation,
-    // displaying a loading overlay during the restart process and managing auto-refresh
-    // state to prevent conflicts during the restart sequence.
     async restartService() {
         if (!confirm('Are you sure you want to restart the KPTV Proxy service? This will temporarily interrupt all streams.')) {
             return;
@@ -1552,7 +1299,6 @@ class KPTVAdmin {
             this.showNotification(result.message || 'Restart request sent successfully!', 'warning');
             this.startAutoRefresh();
 
-            // Reload data after restart
             setTimeout(() => {
                 this.loadGlobalSettings();
                 this.loadSources();
@@ -1565,52 +1311,40 @@ class KPTVAdmin {
         }
     }
 
-    // showLoadingOverlay displays a modal loading indicator with customizable message,
-    // preventing user interaction during long-running operations like service restarts
-    // and configuration updates.
-    //
-    // Parameters:
-    //   - message: text to display in the loading overlay
     showLoadingOverlay(message = 'Loading...') {
         const overlay = document.getElementById('loading-overlay');
         overlay.querySelector('div').innerHTML = `
-            <div uk-spinner="ratio: 2"></div>
-            <div class="uk-margin-small-top">${message}</div>
+            <div class="spinner mx-auto"></div>
+            <div class="mt-2 text-white">${message}</div>
         `;
-        overlay.classList.remove('uk-hidden');
+        overlay.classList.add('active');
     }
 
-    // hideLoadingOverlay removes the modal loading indicator, restoring normal user
-    // interaction capabilities after completion of long-running operations.
     hideLoadingOverlay() {
-        document.getElementById('loading-overlay').classList.add('uk-hidden');
+        document.getElementById('loading-overlay').classList.remove('active');
     }
 
-    // showNotification displays a temporary notification message using UIKit's
-    // notification system with configurable styling based on message type and
-    // automatic dismissal after a timeout period.
-    //
-    // Parameters:
-    //   - message: notification text to display
-    //   - type: notification style ('primary', 'success', 'warning', 'danger')
     showNotification(message, type = 'primary') {
-        UIkit.notification({
-            message: message,
-            status: type,
-            pos: 'top-right',
-            timeout: 5000
-        });
+        const container = document.getElementById('notification-container');
+        const notification = document.createElement('div');
+
+        const bgColors = {
+            primary: 'bg-kptv-blue',
+            success: 'bg-green-700',
+            warning: 'bg-orange-700',
+            danger: 'bg-red-700'
+        };
+
+        notification.className = `notification ${bgColors[type]} text-white px-4 py-3 rounded shadow-lg`;
+        notification.textContent = message;
+
+        container.appendChild(notification);
+
+        setTimeout(() => {
+            notification.remove();
+        }, 5000);
     }
 
-    // escapeHtml sanitizes text content for safe HTML insertion by converting
-    // special characters to HTML entities, preventing XSS attacks and HTML
-    // injection vulnerabilities in dynamically generated content.
-    //
-    // Parameters:
-    //   - text: raw text to sanitize
-    //
-    // Returns:
-    //   - string: HTML-safe escaped text
     escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');
@@ -1618,15 +1352,6 @@ class KPTVAdmin {
         return div.innerHTML;
     }
 
-    // obfuscateUrl masks sensitive portions of URLs for display purposes, preserving
-    // protocol and hostname while hiding paths and query parameters that may contain
-    // authentication tokens or private information.
-    //
-    // Parameters:
-    //   - url: complete URL to obfuscate
-    //
-    // Returns:
-    //   - string: partially masked URL safe for display
     obfuscateUrl(url) {
         if (!url) return '';
 
@@ -1645,15 +1370,6 @@ class KPTVAdmin {
         }
     }
 
-    // formatBytes converts raw byte counts to human-readable format with appropriate
-    // unit prefixes (B, KB, MB, GB, TB) and precision scaling based on magnitude
-    // for professional display of file sizes and bandwidth measurements.
-    //
-    // Parameters:
-    //   - bytes: raw byte count to format
-    //
-    // Returns:
-    //   - string: formatted size with unit suffix
     formatBytes(bytes) {
         if (bytes === 0) return '0 B';
 
@@ -1664,34 +1380,19 @@ class KPTVAdmin {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    // formatBitrate converts raw bitrate values to human-readable format with
-    // appropriate unit prefixes (bps, Kbps, Mbps) and precision for professional
-    // display of streaming quality and bandwidth metrics.
-    //
-    // Parameters:
-    //   - bitrate: raw bitrate in bits per second
-    //
-    // Returns:
-    //   - string: formatted bitrate with unit suffix
     formatBitrate(bitrate) {
         if (bitrate < 1000) return bitrate + ' bps';
         if (bitrate < 1000000) return (bitrate / 1000).toFixed(1) + ' Kbps';
         return (bitrate / 1000000).toFixed(2) + ' Mbps';
     }
 
-    // renderStreamSelector displays the stream selection modal with stream cards
-    // showing current status, quality information, and controls for stream activation,
-    // ordering, and management operations.
-    //
-    // Parameters:
-    //   - data: channel streams data including stream array and status information
     renderStreamSelector(data) {
         document.getElementById('stream-selector-title').textContent = `Select Stream - ${data.channelName}`;
 
         const container = document.getElementById('stream-selector-content');
 
         if (data.streams.length === 0) {
-            container.innerHTML = '<div class="uk-alert uk-alert-warning">No streams found</div>';
+            container.innerHTML = '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">No streams found</div>';
             return;
         }
 
@@ -1700,11 +1401,14 @@ class KPTVAdmin {
         this.originalStreamOrder = data.streams.map((_, index) => index);
 
         container.innerHTML = `
-            <div class="uk-margin-bottom">
-                <button class="uk-button uk-button-secondary uk-button-small" id="save-stream-order" style="display: none;">
-                    <span uk-icon="check"></span> Save Order
+            <div class="mb-4">
+                <button class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors hidden" id="save-stream-order">
+                    <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    Save Order
                 </button>
-                <span class="uk-text-small uk-text-muted uk-margin-left">Use arrows to reorder</span>
+                <span class="text-sm text-gray-400 ml-2">Use arrows to reorder</span>
             </div>
             <div id="streams-container">
                 ${this.renderStreamCards(data)}
@@ -1717,15 +1421,6 @@ class KPTVAdmin {
         }
     }
 
-    // renderStreamCards generates HTML for individual stream cards with comprehensive
-    // metadata, status indicators, ordering controls, and action buttons for stream
-    // management within the stream selector modal.
-    //
-    // Parameters:
-    //   - data: channel streams data containing stream array and status information
-    //
-    // Returns:
-    //   - string: HTML markup for all stream cards
     renderStreamCards(data) {
         const customOrder = data.streams.map((_, i) => i);
         const orderedStreams = customOrder.map(originalIndex => data.streams[originalIndex]);
@@ -1736,63 +1431,76 @@ class KPTVAdmin {
             const deadReason = stream.attributes['dead_reason'] || 'unknown';
             const reasonText = deadReason === 'manual' ? 'Manually Killed' :
                 deadReason === 'auto_blocked' ? 'Auto-Blocked (Too Many Failures)' : 'Dead';
-            const cardClass = originalIndex === data.currentStreamIndex ? 'uk-card-primary' :
-                isDead ? 'uk-card-secondary' : 'uk-card-default';
+            const cardClass = originalIndex === data.currentStreamIndex ? 'bg-kptv-blue/20 border-kptv-blue' :
+                isDead ? 'bg-kptv-gray-light' : 'bg-kptv-gray';
 
             const isFirst = displayIndex === 0;
             const isLast = displayIndex === orderedStreams.length - 1;
 
             return `
-                <div class="uk-card ${cardClass} uk-margin-small stream-card ${isDead ? 'dead-stream' : ''}" data-original-index="${originalIndex}" data-display-index="${displayIndex}">
-                    <div class="uk-card-body uk-padding-small">
-                        <div class="uk-flex uk-flex-between uk-flex-middle">
-                            <div class="uk-flex uk-flex-middle">
-                                <div class="uk-flex uk-flex-column uk-margin-small-right">
-                                    <button class="stream-order-btn" 
-                                            onclick="kptvAdmin.moveStreamUp('${this.escapeHtml(data.channelName)}', ${displayIndex}); return false;"
-                                            ${isFirst ? 'disabled' : ''}>
-                                        <span uk-icon="icon: chevron-up; ratio: 0.8"></span>
-                                    </button>
-                                    <button class="stream-order-btn uk-margin-small-top" 
-                                            onclick="kptvAdmin.moveStreamDown('${this.escapeHtml(data.channelName)}', ${displayIndex}); return false;"
-                                            ${isLast ? 'disabled' : ''}>
-                                        <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
-                                    </button>
-                                </div>
-                                <div class="uk-flex-1">
-                                    <div class="uk-text-bold">
-                                        Stream ${displayIndex + 1} 
-                                        ${originalIndex === data.preferredStreamIndex ? '<span class="uk-label uk-label-success uk-margin-small-left">Preferred</span>' : ''}
-                                        ${originalIndex === data.currentStreamIndex ? '<span class="uk-label uk-label-primary uk-margin-small-left">Current</span>' : ''}
-                                        ${isDead ? `<span class="uk-label uk-label-danger uk-margin-small-left" uk-tooltip="${reasonText}">DEAD</span>` : ''}
-                                    </div>
-                                    <div class="uk-text-small uk-text-muted">
-                                        Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
-                                    </div>
-                                    <div class="uk-text-small uk-text-muted text-truncate">
-                                        ${stream.url}
-                                    </div>
-                                    ${stream.attributes['tvg-name'] ? `
-                                        <div class="uk-text-small">
-                                            Name: ${this.escapeHtml(stream.attributes['tvg-name'])}
-                                        </div>
-                                    ` : ''}
-                                    ${stream.attributes['group-title'] ? `
-                                        <div class="uk-text-small">
-                                            Group: ${this.escapeHtml(stream.attributes['group-title'])}
-                                        </div>
-                                    ` : ''}
-                                </div>
+                <div class="stream-card ${cardClass} ${isDead ? 'dead-stream' : ''} border border-kptv-border rounded p-3 mb-2" data-original-index="${originalIndex}" data-display-index="${displayIndex}">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center flex-1">
+                            <div class="flex flex-col mr-2">
+                                <button class="stream-order-btn mb-1" 
+                                        onclick="kptvAdmin.moveStreamUp('${this.escapeHtml(data.channelName)}', ${displayIndex}); return false;"
+                                        ${isFirst ? 'disabled' : ''}>
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path>
+                                    </svg>
+                                </button>
+                                <button class="stream-order-btn" 
+                                        onclick="kptvAdmin.moveStreamDown('${this.escapeHtml(data.channelName)}', ${displayIndex}); return false;"
+                                        ${isLast ? 'disabled' : ''}>
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                    </svg>
+                                </button>
                             </div>
-                            <div class="uk-text-right uk-flex uk-flex-middle">
-                                <div class="uk-flex uk-flex-middle">
-                                    ${isDead ?
-                    `<a href="#" class="uk-icon-link uk-text-success" uk-icon="refresh" uk-tooltip="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;"></a>` :
-                    `<a href="#" class="uk-icon-link uk-text-primary uk-margin-small-right" uk-icon="play" uk-tooltip="Activate Stream" onclick="kptvAdmin.selectStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;"></a>
-                                        <a href="#" class="uk-icon-link uk-text-danger" uk-icon="ban" uk-tooltip="Mark as Dead" onclick="kptvAdmin.killStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;"></a>`
+                            <div class="flex-1">
+                                <div class="font-bold flex items-center gap-2">
+                                    Stream ${displayIndex + 1}
+                                    ${originalIndex === data.preferredStreamIndex ? '<span class="px-2 py-0.5 bg-green-700 text-white text-xs rounded">Preferred</span>' : ''}
+                                    ${originalIndex === data.currentStreamIndex ? '<span class="px-2 py-0.5 bg-kptv-blue text-white text-xs rounded">Current</span>' : ''}
+                                    ${isDead ? `<span class="px-2 py-0.5 bg-red-700 text-white text-xs rounded" title="${reasonText}">DEAD</span>` : ''}
+                                </div>
+                                <div class="text-sm text-gray-400">
+                                    Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
+                                </div>
+                                <div class="text-sm text-gray-400 text-truncate">
+                                    ${stream.url}
+                                </div>
+                                ${stream.attributes['tvg-name'] ? `
+                                    <div class="text-sm">
+                                        Name: ${this.escapeHtml(stream.attributes['tvg-name'])}
+                                    </div>
+                                ` : ''}
+                                ${stream.attributes['group-title'] ? `
+                                    <div class="text-sm">
+                                        Group: ${this.escapeHtml(stream.attributes['group-title'])}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 ml-4">
+                            ${isDead ?
+                    `<a href="#" class="text-green-500 hover:text-green-400" title="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                        </svg>
+                                    </a>` :
+                    `<a href="#" class="text-kptv-blue hover:text-kptv-blue-light" title="Activate Stream" onclick="kptvAdmin.selectStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                    </a>
+                                    <a href="#" class="text-red-500 hover:text-red-400" title="Mark as Dead" onclick="kptvAdmin.killStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+                                        </svg>
+                                    </a>`
                 }
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -1800,14 +1508,10 @@ class KPTVAdmin {
         }).join('');
     }
 
-    // saveStreamOrder collects the current stream ordering from the card display,
-    // validates the order, and submits to the API for persistent storage with
-    // immediate application without requiring restart.
     async saveStreamOrder() {
         const streamCards = document.querySelectorAll('.stream-card');
         const newOrder = [];
 
-        // Get the current display order and map back to original indexes
         streamCards.forEach(card => {
             const originalIndex = parseInt(card.getAttribute('data-original-index'));
             newOrder.push(originalIndex);
@@ -1815,7 +1519,7 @@ class KPTVAdmin {
 
         try {
             const encodedChannelName = encodeURIComponent(this.currentChannelName);
-            const result = await this.apiCall(`/api/channels/${encodedChannelName}/order`, {
+            await this.apiCall(`/api/channels/${encodedChannelName}/order`, {
                 method: 'POST',
                 body: JSON.stringify({ streamOrder: newOrder })
             });
@@ -1824,7 +1528,7 @@ class KPTVAdmin {
 
             const saveButton = document.getElementById('save-stream-order');
             if (saveButton) {
-                saveButton.style.display = 'none';
+                saveButton.classList.add('hidden');
             }
 
         } catch (error) {
@@ -1832,13 +1536,6 @@ class KPTVAdmin {
         }
     }
 
-    // selectStream activates a specific stream for a channel by sending a stream
-    // change request to the API, triggering immediate failover for active streams
-    // while updating preferred stream configuration for future connections.
-    //
-    // Parameters:
-    //   - channelName: name of channel containing the stream
-    //   - streamIndex: original index of stream to activate
     async selectStream(channelName, streamIndex) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -1849,25 +1546,16 @@ class KPTVAdmin {
 
             this.showNotification(`Stream changed to index ${streamIndex} for ${channelName}`, 'success');
 
-            // Wait a moment then refresh the stream selector
             setTimeout(() => {
                 this.showStreamSelector(channelName);
             }, 2000);
 
-            // Refresh active channels to show updated status
             this.loadActiveChannels();
         } catch (error) {
             this.showNotification('Failed to change stream', 'danger');
         }
     }
 
-    // killStream marks a stream as dead in the persistent database after user
-    // confirmation, preventing future use of the problematic stream and updating
-    // the stream selector display to reflect the dead status.
-    //
-    // Parameters:
-    //   - channelName: name of channel containing the stream
-    //   - streamIndex: original index of stream to mark dead
     async killStream(channelName, streamIndex) {
         if (!confirm('Are you sure you want to mark this stream as dead? It will not be used for playback.')) {
             return;
@@ -1882,7 +1570,6 @@ class KPTVAdmin {
 
             this.showNotification(`Stream ${streamIndex + 1} marked as dead for ${channelName}`, 'warning');
 
-            // Refresh the stream selector
             setTimeout(() => {
                 this.showStreamSelector(channelName);
             }, 1000);
@@ -1892,13 +1579,6 @@ class KPTVAdmin {
         }
     }
 
-    // reviveStream removes a stream from the dead streams database, restoring it
-    // to active status and updating the stream selector display to show the stream
-    // as available for use in failover operations.
-    //
-    // Parameters:
-    //   - channelName: name of channel containing the stream
-    //   - streamIndex: original index of stream to revive
     async reviveStream(channelName, streamIndex) {
         try {
             const encodedChannelName = encodeURIComponent(channelName);
@@ -1909,7 +1589,6 @@ class KPTVAdmin {
 
             this.showNotification(`Stream ${streamIndex + 1} revived for ${channelName}`, 'success');
 
-            // Refresh the stream selector
             setTimeout(() => {
                 this.showStreamSelector(channelName);
             }, 1000);
@@ -1919,15 +1598,9 @@ class KPTVAdmin {
         }
     }
 
-    // toggleWatcher sends a request to enable or disable the stream watcher system,
-    // updating the configuration persistently and managing watcher state immediately
-    // without requiring application restart for seamless operation.
-    //
-    // Parameters:
-    //   - enable: boolean indicating whether to enable (true) or disable (false) watcher
     async toggleWatcher(enable) {
         try {
-            const result = await this.apiCall('/api/watcher/toggle', {
+            await this.apiCall('/api/watcher/toggle', {
                 method: 'POST',
                 body: JSON.stringify({ enabled: enable })
             });
@@ -1935,20 +1608,15 @@ class KPTVAdmin {
             const status = enable ? 'enabled' : 'disabled';
             this.showNotification(`Stream watcher ${status} successfully!`, 'success');
 
-            // Update the checkbox to reflect the change
             const checkbox = document.querySelector('input[name="watcherEnabled"]');
             if (checkbox) {
                 checkbox.checked = enable;
             }
 
-            // Reload stats to update the display
             this.loadStats();
-
-            return result;
         } catch (error) {
             this.showNotification(`Failed to ${enable ? 'enable' : 'disable'} watcher: ` + error.message, 'danger');
 
-            // Revert checkbox state on error
             const checkbox = document.querySelector('input[name="watcherEnabled"]');
             if (checkbox) {
                 checkbox.checked = !enable;
@@ -1958,13 +1626,6 @@ class KPTVAdmin {
         }
     }
 
-    // moveStreamUp shifts a stream one position earlier in the display order,
-    // swapping it with the preceding stream and triggering re-render with
-    // save button display for user confirmation.
-    //
-    // Parameters:
-    //   - channelName: name of channel containing the stream
-    //   - displayIndex: current position of stream to move up
     moveStreamUp(channelName, displayIndex) {
         if (displayIndex === 0) return;
 
@@ -1975,7 +1636,7 @@ class KPTVAdmin {
 
         [currentOrder[displayIndex], currentOrder[displayIndex - 1]] = [currentOrder[displayIndex - 1], currentOrder[displayIndex]];
 
-        document.getElementById('save-stream-order').style.display = 'inline-block';
+        document.getElementById('save-stream-order').classList.remove('hidden');
 
         const data = {
             channelName: channelName,
@@ -1987,13 +1648,6 @@ class KPTVAdmin {
         container.innerHTML = this.renderStreamCards(data);
     }
 
-    // moveStreamDown shifts a stream one position later in the display order,
-    // swapping it with the following stream and triggering re-render with
-    // save button display for user confirmation.
-    //
-    // Parameters:
-    //   - channelName: name of channel containing the stream
-    //   - displayIndex: current position of stream to move down
     moveStreamDown(channelName, displayIndex) {
         const container = document.getElementById('streams-container');
         const cards = Array.from(container.querySelectorAll('.stream-card'));
@@ -2004,7 +1658,7 @@ class KPTVAdmin {
 
         [currentOrder[displayIndex], currentOrder[displayIndex + 1]] = [currentOrder[displayIndex + 1], currentOrder[displayIndex]];
 
-        document.getElementById('save-stream-order').style.display = 'inline-block';
+        document.getElementById('save-stream-order').classList.remove('hidden');
 
         const data = {
             channelName: channelName,
@@ -2016,49 +1670,16 @@ class KPTVAdmin {
         container.innerHTML = this.renderStreamCards(data);
     }
 
-    // refreshStreamCards re-renders the stream card display using current ordering
-    // state, updating the visual representation after reordering operations while
-    // preserving current stream and preferred stream indicators.
-    refreshStreamCards() {
-        const container = document.getElementById('streams-container');
-        const cards = Array.from(container.querySelectorAll('.stream-card'));
-        const currentOrder = cards.map(card => parseInt(card.getAttribute('data-original-index')));
-
-        // Create data object with current order
-        const data = {
-            channelName: this.currentChannelName,
-            currentStreamIndex: parseInt(document.querySelector('.uk-card-primary')?.getAttribute('data-original-index') || 0),
-            preferredStreamIndex: this.currentStreamData[0].index,
-            streams: currentOrder.map(originalIndex => this.currentStreamData[originalIndex])
-        };
-
-        container.innerHTML = this.renderStreamCards(data);
-    }
-
-    // getCurrentStreamIndex extracts the original stream index from the currently
-    // active stream card identified by primary styling, providing accurate stream
-    // identification across reordering operations.
-    //
-    // Returns:
-    //   - number: original index of currently active stream
     getCurrentStreamIndex() {
-        const currentCard = document.querySelector('.uk-card-primary');
+        const currentCard = document.querySelector('.bg-kptv-blue\\/20');
         return currentCard ? parseInt(currentCard.getAttribute('data-original-index')) : 0;
     }
 
-    // getPreferredStreamIndex determines the original index of the preferred stream
-    // from the current stream data array, enabling proper preferred stream indicator
-    // display during reordering operations.
-    //
-    // Returns:
-    //   - number: original index of preferred stream
     getPreferredStreamIndex() {
         return this.currentStreamData.findIndex(s => s.index === this.currentStreamData[0].index);
     }
-
 }
 
-// Initialize the admin interface when the page loads
 let kptvAdmin;
 document.addEventListener('DOMContentLoaded', () => {
     kptvAdmin = new KPTVAdmin();

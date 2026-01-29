@@ -5,240 +5,248 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KPTV Proxy</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@latest/dist/css/uikit.min.css">
     <link rel="stylesheet" href="/static/admin.css">
     <link rel="stylesheet" href="/settings/custom.css">
     <link rel="icon" type="image/png" href="https://cdn.kcp.im/tv/kptv-icon.png" />
 </head>
 
-<body>
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="loading-overlay uk-hidden">
-        <div class="uk-text-center">
-            <div uk-spinner="ratio: 2"></div>
-            <div class="uk-margin-small-top">Restarting KPTV Proxy...</div>
+<body class="bg-kptv-darker text-gray-100 min-h-screen">
+    <div id="loading-overlay" class="modal">
+        <div class="text-center">
+            <div class="spinner mx-auto"></div>
+            <div class="mt-2 text-white">Restarting KPTV Proxy...</div>
         </div>
     </div>
 
-    <!-- Navigation -->
-    <nav class="uk-navbar uk-navbar-container" uk-navbar>
-        <div class="uk-navbar-left">
-            <a class="uk-navbar-item uk-logo" href="#">
-                <img src="https://cdn.kcp.im/tv/kptv-icon.svg" alt="KPTV" style="height: 100px; width: 100px;">
-                <span>KPTV Proxy</span>
-            </a>
-        </div>
-        <div class="uk-navbar-right uk-padding uk-padding-remove-vertical">
-            <ul class="uk-navbar-nav">
-                <li>
-                    <a href="#" id="restart-btn">
-                        <span uk-icon="refresh"></span>
-                        <span class="uk-visible@s">Restart</span>
-                    </a>
-                </li>
-            </ul>
+    <nav class="bg-kptv-gray border-b border-kptv-border">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center justify-between">
+                <a href="#" class="flex items-center space-x-3">
+                    <img src="https://cdn.kcp.im/tv/kptv-icon.svg" alt="KPTV" class="h-32 w-32 -my-4">
+                    <span class="text-xl font-semibold hidden sm:block">KPTV Proxy</span>
+                </a>
+                <button id="restart-btn"
+                    class="flex items-center space-x-2 px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                        </path>
+                    </svg>
+                    <span class="hidden sm:inline">Restart</span>
+                </button>
+            </div>
         </div>
     </nav>
 
-    <div class="uk-container uk-container-expand uk-margin-top">
-        <!-- Tabs -->
-        <ul class="uk-tab" uk-tab>
-            <li class="uk-active"><a href="#">Dashboard</a></li>
-            <li><a href="#">Global Settings</a></li>
-            <li><a href="#">Sources</a></li>
-            <li><a href="#">EPGs</a></li>
-            <li><a href="#">Channels</a></li>
-            <li><a href="#">Logs</a></li>
-        </ul>
+    <div class="container mx-auto px-4 mt-4">
+        <div class="border-b border-kptv-border mb-4">
+            <nav class="flex flex-wrap -mb-px text-sm font-medium">
+                <button class="tab-btn active px-4 py-3 border-b-2 border-kptv-blue text-kptv-blue"
+                    data-tab="0">Dashboard</button>
+                <button
+                    class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                    data-tab="1">Global Settings</button>
+                <button
+                    class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                    data-tab="2">Sources</button>
+                <button
+                    class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                    data-tab="3">EPGs</button>
+                <button
+                    class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                    data-tab="4">Channels</button>
+                <button
+                    class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                    data-tab="5">Logs</button>
+            </nav>
+        </div>
 
-        <!-- Tab Content -->
-        <div class="uk-switcher uk-margin">
-
-            <!-- Dashboard Tab -->
-            <div>
-                <!-- Stats Cards -->
-                <div class="uk-grid-small uk-grid-match" uk-grid>
-                    <div class="uk-width-1-2@s uk-width-1-5@m">
-                        <div class="uk-card uk-card-body uk-text-center stat-card">
-                            <div class="stat-value" id="total-channels">-</div>
-                            <div class="stat-label">Total Channels</div>
-                        </div>
+        <div class="tab-content">
+            <div class="active">
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
+                    <div class="stat-card rounded p-6 text-center">
+                        <div class="text-4xl font-bold" id="total-channels">-</div>
+                        <div class="text-sm mt-2 opacity-90">Total Channels</div>
                     </div>
-                    <div class="uk-width-1-2@s uk-width-1-5@m">
-                        <div class="uk-card uk-card-body uk-text-center stat-card success-card">
-                            <div class="stat-value" id="active-streams">-</div>
-                            <div class="stat-label">Active Streams</div>
-                        </div>
+                    <div class="stat-card-success rounded p-6 text-center">
+                        <div class="text-4xl font-bold" id="active-streams">-</div>
+                        <div class="text-sm mt-2 opacity-90">Active Streams</div>
                     </div>
-                    <div class="uk-width-1-2@s uk-width-1-5@m">
-                        <div class="uk-card uk-card-body uk-text-center stat-card warning-card">
-                            <div class="stat-value" id="total-sources">-</div>
-                            <div class="stat-label">Sources</div>
-                        </div>
+                    <div class="stat-card-warning rounded p-6 text-center">
+                        <div class="text-4xl font-bold" id="total-sources">-</div>
+                        <div class="text-sm mt-2 opacity-90">Sources</div>
                     </div>
-                    <div class="uk-width-1-2@s uk-width-1-5@m">
-                        <div class="uk-card uk-card-body uk-text-center stat-card info-card">
-                            <div class="stat-value" id="total-epgs">-</div>
-                            <div class="stat-label">EPGs</div>
-                        </div>
+                    <div class="stat-card-yellow rounded p-6 text-center">
+                        <div class="text-4xl font-bold" id="total-epgs">-</div>
+                        <div class="text-sm mt-2 opacity-90">EPGs</div>
                     </div>
-                    <div class="uk-width-1-2@s uk-width-1-5@m">
-                        <div class="uk-card uk-card-body uk-text-center stat-card danger-card">
-                            <div class="stat-value" id="connected-clients">-</div>
-                            <div class="stat-label">Connected Clients</div>
-                        </div>
+                    <div class="stat-card-danger rounded p-6 text-center">
+                        <div class="text-4xl font-bold" id="connected-clients">-</div>
+                        <div class="text-sm mt-2 opacity-90">Connected Clients</div>
                     </div>
                 </div>
 
-                <!-- System Status -->
-                <div class="uk-grid-small uk-margin-top uk-grid-match" uk-grid>
-                    <div class="uk-width-1-3@m">
-                        <div class="uk-card uk-card-default">
-                            <div class="uk-card-header">
-                                <h3 class="uk-card-title">System Status</h3>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+                    <div class="bg-kptv-gray rounded border border-kptv-border">
+                        <div class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3">
+                            <h3 class="text-lg font-semibold">System Status</h3>
+                        </div>
+                        <div class="p-4">
+                            <div class="metric-row">
+                                <span>Server Status</span>
+                                <span class="px-2 py-1 bg-green-700 text-white text-xs rounded">Running</span>
                             </div>
-                            <div class="uk-card-body">
-                                <div class="metric-row">
-                                    <span>Server Status</span>
-                                    <span class="uk-label uk-label-success">Running</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Uptime</span>
-                                    <span id="uptime">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Memory Usage</span>
-                                    <span id="memory-usage">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Cache Status</span>
-                                    <span id="cache-status">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Stream Watcher</span>
-                                    <span id="watcher-status">Disabled</span>
-                                </div>
+                            <div class="metric-row">
+                                <span>Uptime</span>
+                                <span id="uptime">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span>Memory Usage</span>
+                                <span id="memory-usage">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span>Cache Status</span>
+                                <span id="cache-status">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span>Stream Watcher</span>
+                                <span id="watcher-status">Disabled</span>
                             </div>
                         </div>
                     </div>
-                    <div class="uk-width-1-3@m">
-                        <div class="uk-card uk-card-default">
-                            <div class="uk-card-header">
-                                <h3 class="uk-card-title">Traffic Stats</h3>
+
+                    <div class="bg-kptv-gray rounded border border-kptv-border">
+                        <div class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3">
+                            <h3 class="text-lg font-semibold">Traffic Stats</h3>
+                        </div>
+                        <div class="p-4">
+                            <div class="metric-row">
+                                <span>Total Connections</span>
+                                <span id="total-connections">-</span>
                             </div>
-                            <div class="uk-card-body">
-                                <div class="metric-row">
-                                    <span>Total Connections</span>
-                                    <span id="total-connections">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Bytes Transferred</span>
-                                    <span id="bytes-transferred">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Active Restreamers</span>
-                                    <span id="active-restreamers">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Stream Errors</span>
-                                    <span id="stream-errors">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Avg Response Time</span>
-                                    <span id="response-time">-</span>
-                                </div>
+                            <div class="metric-row">
+                                <span>Bytes Transferred</span>
+                                <span id="bytes-transferred">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span>Active Restreamers</span>
+                                <span id="active-restreamers">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span>Stream Errors</span>
+                                <span id="stream-errors">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span>Avg Response Time</span>
+                                <span id="response-time">-</span>
                             </div>
                         </div>
                     </div>
-                    <div class="uk-width-1-3@m">
-                        <div class="uk-card uk-card-default">
-                            <div class="uk-card-header">
-                                <h3 class="uk-card-title">Connection Stats</h3>
+
+                    <div class="bg-kptv-gray rounded border border-kptv-border">
+                        <div class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3">
+                            <h3 class="text-lg font-semibold">Connection Stats</h3>
+                        </div>
+                        <div class="p-4">
+                            <div class="metric-row">
+                                <span>Clients Connected</span>
+                                <span id="proxy-clients">-</span>
                             </div>
-                            <div class="uk-card-body">
-                                <div class="metric-row">
-                                    <span>Clients Connected</span>
-                                    <span id="proxy-clients">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Upstream Connections</span>
-                                    <span id="upstream-connections">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Connection Efficiency</span>
-                                    <span id="connection-efficiency">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Active Channels</span>
-                                    <span id="active-channels-stat">-</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Avg Clients per Stream</span>
-                                    <span id="avg-clients-per-stream">-</span>
-                                </div>
+                            <div class="metric-row">
+                                <span>Upstream Connections</span>
+                                <span id="upstream-connections">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span>Connection Efficiency</span>
+                                <span id="connection-efficiency">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span>Active Channels</span>
+                                <span id="active-channels-stat">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span>Avg Clients per Stream</span>
+                                <span id="avg-clients-per-stream">-</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Active Channels -->
-                <div class="uk-margin-top">
-                    <div class="uk-card uk-card-default">
-                        <div class="uk-card-header">
-                            <h3 class="uk-card-title">Active Channels</h3>
-                            <button class="uk-button uk-button-primary uk-button-small" id="refresh-channels">
-                                <span uk-icon="refresh"></span> Refresh
-                            </button>
-                        </div>
-                        <div class="uk-card-body">
-                            <div id="active-channels-list">
-                                <div class="uk-text-center uk-margin">
-                                    <div uk-spinner></div>
-                                    <div class="uk-margin-small-top">Loading channels...</div>
-                                </div>
+                <div class="bg-kptv-gray rounded border border-kptv-border">
+                    <div
+                        class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center">
+                        <h3 class="text-lg font-semibold">Active Channels</h3>
+                        <button
+                            class="px-3 py-1 bg-kptv-blue hover:bg-kptv-blue-light rounded text-sm transition-colors flex items-center space-x-1"
+                            id="refresh-channels">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                </path>
+                            </svg>
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                    <div class="p-4">
+                        <div id="active-channels-list">
+                            <div class="text-center py-8">
+                                <div class="spinner mx-auto"></div>
+                                <div class="mt-2 text-sm">Loading channels...</div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Global Settings Tab -->
             <div>
                 <form id="global-settings-form">
-                    <div class="uk-card uk-card-default">
-                        <div class="uk-card-header">
-                            <h3 class="uk-card-title">Global Configuration</h3>
+                    <div class="bg-kptv-gray rounded border border-kptv-border">
+                        <div class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3">
+                            <h3 class="text-lg font-semibold">Global Configuration</h3>
                         </div>
-                        <div class="uk-card-body">
-                            <div class="uk-grid-medium" uk-grid>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Base URL</label>
-                                    <input class="uk-input" type="url" name="baseURL"
-                                        placeholder="http://localhost:8080">
+                        <div class="p-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Base URL</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="url" name="baseURL" placeholder="http://localhost:8080">
                                 </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Global Stream Timeout</label>
-                                    <input class="uk-input" type="text" name="streamTimeout" placeholder="30s">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Global Stream Timeout</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" name="streamTimeout" placeholder="30s">
                                 </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Buffer Size Per Stream (MB)</label>
-                                    <input class="uk-input" type="number" name="bufferSizePerStream" min="1" max="256">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Buffer Size Per Stream (MB)</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="number" name="bufferSizePerStream" min="1" max="256">
                                 </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Cache Duration</label>
-                                    <input class="uk-input" type="text" name="cacheDuration" placeholder="30m">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Cache Duration</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" name="cacheDuration" placeholder="30m">
                                 </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Worker Threads</label>
-                                    <input class="uk-input" type="number" name="workerThreads" min="1" max="32">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Worker Threads</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="number" name="workerThreads" min="1" max="32">
                                 </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Max Connections to App</label>
-                                    <input class="uk-input" type="number" name="maxConnectionsToApp" min="1" max="1000">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Max Connections to App</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="number" name="maxConnectionsToApp" min="1" max="1000">
                                 </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Sort Field</label>
-                                    <select class="uk-select" name="sortField">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Sort Field</label>
+                                    <select
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        name="sortField">
                                         <option value="tvg-name">Name</option>
                                         <option value="tvg-id">ID</option>
                                         <option value="group-title">Group</option>
@@ -248,188 +256,249 @@
                                         <option value="tvg-language">Language</option>
                                     </select>
                                 </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Sort Direction</label>
-                                    <select class="uk-select" name="sortDirection">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Sort Direction</label>
+                                    <select
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        name="sortDirection">
                                         <option value="asc">Ascending</option>
                                         <option value="desc">Descending</option>
                                     </select>
                                 </div>
-                                <div class="uk-width-1-2@s">
-                                    <label class="uk-form-label">Import Refresh Interval</label>
-                                    <input class="uk-input" type="text" name="importRefreshInterval" placeholder="12h">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Import Refresh Interval</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" name="importRefreshInterval" placeholder="12h">
                                 </div>
-                                <div class="uk-width-1-2@s">&nbsp;</div>
-                                <div class="uk-width-1-2@s">
-                                    <div class="uk-width-1-1 uk-margin-bottom">
-                                        <h4 class="uk-heading-divider">FFMPEG Settings</h4>
-                                        <label><input class="uk-checkbox" type="checkbox" name="ffmpegMode"> Use FFmpeg
-                                            Proxy Mode</label>
-                                    </div>
-                                    <div class="uk-width-1-1 uk-margin-bottom">
-                                        <label class="uk-form-label">Pre-Input Arguments</label>
-                                        <input class="uk-input" type="text" name="ffmpegPreInput"
-                                            placeholder="-re -rtsp_transport tcp">
-                                        <div class="uk-text-meta">Space-separated arguments before -i</div>
-                                    </div>
-                                    <div class="uk-width-1-1">
-                                        <label class="uk-form-label">Pre-Output Arguments</label>
-                                        <input class="uk-input" type="text" name="ffmpegPreOutput"
-                                            placeholder="-c copy -movflags frag_keyframe+empty_moov">
-                                        <div class="uk-text-meta">Space-separated arguments before output</div>
-                                    </div>
-                                </div>
-                                <div class="uk-width-1-2@s">
-                                    <h4 class="uk-heading-divider">System Settings</h4>
-                                    <div class="uk-margin">
-                                        <label class="uk-form-label">Log Level</label>
-                                        <div class="uk-grid-small" uk-grid>
-                                            <div class="uk-width-1-4@s">
-                                                <label><input class="uk-radio" type="radio" name="logLevel"
-                                                        value="ERROR"> ERROR</label>
-                                            </div>
-                                            <div class="uk-width-1-4@s">
-                                                <label><input class="uk-radio" type="radio" name="logLevel"
-                                                        value="WARN"> WARN</label>
-                                            </div>
-                                            <div class="uk-width-1-4@s">
-                                                <label><input class="uk-radio" type="radio" name="logLevel" value="INFO"
-                                                        checked> INFO</label>
-                                            </div>
-                                            <div class="uk-width-1-4@s">
-                                                <label><input class="uk-radio" type="radio" name="logLevel"
-                                                        value="DEBUG"> DEBUG</label>
-                                            </div>
+                                <div></div>
+                                <div>
+                                    <h4 class="text-base font-semibold mb-3 pb-2 border-b border-kptv-border">FFMPEG
+                                        Settings</h4>
+                                    <label class="flex items-center mb-3">
+                                        <input class="mr-2" type="checkbox" name="ffmpegMode">
+                                        <span>Use FFmpeg Proxy Mode</span>
+                                    </label>
+                                    <div class="mb-3">
+                                        <label class="block text-sm font-medium mb-1">Pre-Input Arguments</label>
+                                        <input
+                                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                            type="text" name="ffmpegPreInput" placeholder="-re -rtsp_transport tcp">
+                                        <div class="text-xs text-gray-400 mt-1">Space-separated arguments before -i
                                         </div>
-                                        <div class="uk-text-meta uk-margin-small-top">Controls verbosity of application
-                                            logs</div>
                                     </div>
-                                    <label><input class="uk-checkbox" type="checkbox" name="obfuscateUrls"> Obfuscate
-                                        URLs in Logs</label><br />
-                                    <label><input class="uk-checkbox" type="checkbox" name="watcherEnabled"> Enable
-                                        Stream Watcher</label>
+                                    <div>
+                                        <label class="block text-sm font-medium mb-1">Pre-Output Arguments</label>
+                                        <input
+                                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                            type="text" name="ffmpegPreOutput"
+                                            placeholder="-c copy -movflags frag_keyframe+empty_moov">
+                                        <div class="text-xs text-gray-400 mt-1">Space-separated arguments before output
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 class="text-base font-semibold mb-3 pb-2 border-b border-kptv-border">System
+                                        Settings</h4>
+                                    <div class="mb-3">
+                                        <label class="block text-sm font-medium mb-1">Log Level</label>
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <label class="flex items-center">
+                                                <input class="mr-2" type="radio" name="logLevel" value="ERROR">
+                                                <span>ERROR</span>
+                                            </label>
+                                            <label class="flex items-center">
+                                                <input class="mr-2" type="radio" name="logLevel" value="WARN">
+                                                <span>WARN</span>
+                                            </label>
+                                            <label class="flex items-center">
+                                                <input class="mr-2" type="radio" name="logLevel" value="INFO" checked>
+                                                <span>INFO</span>
+                                            </label>
+                                            <label class="flex items-center">
+                                                <input class="mr-2" type="radio" name="logLevel" value="DEBUG">
+                                                <span>DEBUG</span>
+                                            </label>
+                                        </div>
+                                        <div class="text-xs text-gray-400 mt-2">Controls verbosity of application logs
+                                        </div>
+                                    </div>
+                                    <label class="flex items-center mb-2">
+                                        <input class="mr-2" type="checkbox" name="obfuscateUrls">
+                                        <span>Obfuscate URLs in Logs</span>
+                                    </label>
+                                    <label class="flex items-center">
+                                        <input class="mr-2" type="checkbox" name="watcherEnabled">
+                                        <span>Enable Stream Watcher</span>
+                                    </label>
                                 </div>
                             </div>
                         </div>
-                        <div class="uk-card-footer">
-                            <button class="uk-button uk-button-primary" type="submit">
-                                <span uk-icon="check"></span> Save & Restart
+                        <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex flex-wrap gap-2">
+                            <button
+                                class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"
+                                type="submit">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                <span>Save & Restart</span>
                             </button>
-                            <button class="uk-button uk-button-secondary uk-margin-small-left" type="button"
-                                id="load-global-settings">
-                                <span uk-icon="refresh"></span> Load Current
+                            <button
+                                class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors flex items-center space-x-2"
+                                type="button" id="load-global-settings">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                    </path>
+                                </svg>
+                                <span>Load Current</span>
                             </button>
                         </div>
                     </div>
                 </form>
             </div>
 
-            <!-- Sources Tab -->
             <div>
-                <div class="uk-margin-bottom">
-                    <button class="uk-button uk-button-primary" id="add-source-btn">
-                        <span uk-icon="plus"></span> Add Source
+                <div class="mb-4">
+                    <button
+                        class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"
+                        id="add-source-btn">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
+                            </path>
+                        </svg>
+                        <span>Add Source</span>
                     </button>
                 </div>
-
-                <div id="sources-container">
-                    <!-- Sources will be loaded here -->
-                </div>
+                <div id="sources-container"></div>
             </div>
 
-            <!-- EPGs Tab -->
             <div>
-                <div class="uk-margin-bottom">
-                    <button class="uk-button uk-button-primary" id="add-epg-btn">
-                        <span uk-icon="plus"></span> Add EPG
+                <div class="mb-4">
+                    <button
+                        class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"
+                        id="add-epg-btn">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
+                            </path>
+                        </svg>
+                        <span>Add EPG</span>
                     </button>
                 </div>
-
-                <div id="epgs-container">
-                    <!-- EPGs will be loaded here -->
-                </div>
+                <div id="epgs-container"></div>
             </div>
 
-            <!-- Channels Tab -->
             <div>
-                <div class="uk-card uk-card-default">
-                    <div class="uk-card-header">
-                        <h3 class="uk-card-title">All Channels</h3>
-                        <div class="uk-flex uk-flex-middle">
-                            <input class="uk-input uk-form-width-medium" type="text" placeholder="Search channels..."
-                                id="channel-search">
-                            <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left"
-                                id="refresh-all-channels" style="padding:5px 10px;">
-                                <span uk-icon="refresh"></span>
+                <div class="bg-kptv-gray rounded border border-kptv-border">
+                    <div
+                        class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <h3 class="text-lg font-semibold">All Channels</h3>
+                        <div class="flex w-full sm:w-auto gap-2">
+                            <input
+                                class="flex-1 sm:flex-initial sm:w-64 bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue text-sm"
+                                type="text" placeholder="Search channels..." id="channel-search">
+                            <button class="px-3 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
+                                id="refresh-all-channels">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                    </path>
+                                </svg>
                             </button>
                         </div>
                     </div>
-                    <div class="uk-card-body">
-                        <!-- Add pagination controls here -->
-                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-bottom">
-                            <div class="uk-text-small uk-text-muted" id="channel-pagination-info">
-                                Showing 0 of 0 channels
+                    <div class="p-4">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                            <div class="text-sm text-gray-400" id="channel-pagination-info">Showing 0 of 0 channels
                             </div>
-                            <div class="uk-flex uk-flex-middle">
-                                <ul class="uk-pagination uk-flex-nowrap uk-margin-remove" id="channel-pagination">
-                                    <li><a href="#" id="first-page" uk-tooltip="First page"><span
-                                                uk-icon="chevron-double-left"></span></a></li>
-                                    <li><a href="#" id="prev-page" uk-tooltip="Previous page"><span
-                                                uk-pagination-previous></span></a></li>
-                                    <li class="uk-visible@s">
-                                        <select class="uk-select uk-form-width-small" id="page-selector"
-                                            style="min-width: 80px;">
-                                            <option>1</option>
-                                        </select>
-                                    </li>
-                                    <li class="uk-hidden@s"><span id="current-page">1</span></li>
-                                    <li><a href="#" id="next-page" uk-tooltip="Next page"><span
-                                                uk-pagination-next></span></a></li>
-                                    <li><a href="#" id="last-page" uk-tooltip="Last page"><span
-                                                uk-icon="chevron-double-right"></span></a></li>
-                                </ul>
+                            <div class="flex items-center gap-1">
+                                <button class="px-2 py-1 hover:bg-kptv-gray-light rounded transition-colors"
+                                    id="first-page" title="First page">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+                                    </svg>
+                                </button>
+                                <button class="px-2 py-1 hover:bg-kptv-gray-light rounded transition-colors"
+                                    id="prev-page" title="Previous page">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M15 19l-7-7 7-7"></path>
+                                    </svg>
+                                </button>
+                                <select
+                                    class="hidden sm:block bg-kptv-gray-light border border-kptv-border rounded px-2 py-1 text-gray-100 text-sm mx-1 min-w-[80px]"
+                                    id="page-selector">
+                                    <option>1</option>
+                                </select>
+                                <span class="block sm:hidden px-2 text-sm" id="current-page">1</span>
+                                <button class="px-2 py-1 hover:bg-kptv-gray-light rounded transition-colors"
+                                    id="next-page" title="Next page">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M9 5l7 7-7 7"></path>
+                                    </svg>
+                                </button>
+                                <button class="px-2 py-1 hover:bg-kptv-gray-light rounded transition-colors"
+                                    id="last-page" title="Last page">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>
+                                    </svg>
+                                </button>
                             </div>
                         </div>
-
                         <div id="all-channels-list">
-                            <div class="uk-text-center uk-margin">
-                                <div uk-spinner></div>
-                                <div class="uk-margin-small-top">Loading channels...</div>
+                            <div class="text-center py-8">
+                                <div class="spinner mx-auto"></div>
+                                <div class="mt-2 text-sm">Loading channels...</div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Logs Tab -->
             <div>
-                <div class="uk-card uk-card-default">
-                    <div class="uk-card-header">
-                        <h3 class="uk-card-title">Application Logs</h3>
-                        <div class="uk-flex uk-flex-middle">
-                            <select class="uk-select uk-form-width-small" id="log-level">
+                <div class="bg-kptv-gray rounded border border-kptv-border">
+                    <div
+                        class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <h3 class="text-lg font-semibold">Application Logs</h3>
+                        <div class="flex w-full sm:w-auto gap-2">
+                            <select
+                                class="flex-1 sm:flex-initial bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 text-sm"
+                                id="log-level">
                                 <option value="all">All Levels</option>
                                 <option value="error">Errors</option>
                                 <option value="warning">Warnings</option>
                                 <option value="info">Info</option>
                                 <option value="debug">Debug</option>
                             </select>
-                            <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left"
+                            <button class="px-3 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
                                 id="refresh-logs">
-                                <span uk-icon="refresh"></span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                    </path>
+                                </svg>
                             </button>
-                            <button class="uk-button uk-button-secondary uk-button-small uk-margin-small-left"
+                            <button
+                                class="px-3 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
                                 id="clear-logs">
-                                <span uk-icon="trash"></span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                    </path>
+                                </svg>
                             </button>
                         </div>
                     </div>
-                    <div class="uk-card-body">
+                    <div class="p-4">
                         <div id="logs-container"
-                            style="height: 500px; overflow-y: auto; background: #1a1a1a; padding: 1rem; font-family: monospace; font-size: 0.875rem;">
-                            <div class="uk-text-center uk-margin">
-                                <div uk-spinner></div>
-                                <div class="uk-margin-small-top">Loading logs...</div>
+                            class="h-[500px] overflow-y-auto bg-black/50 p-4 font-mono text-sm rounded border border-kptv-border">
+                            <div class="text-center py-8">
+                                <div class="spinner mx-auto"></div>
+                                <div class="mt-2 text-sm">Loading logs...</div>
                             </div>
                         </div>
                     </div>
@@ -438,215 +507,275 @@
         </div>
     </div>
 
-    <!-- Source Modal -->
-    <div id="source-modal" uk-modal>
-        <div class="uk-modal-dialog">
-            <button class="uk-modal-close-default" type="button" uk-close></button>
-            <div class="uk-modal-header">
-                <h2 class="uk-modal-title" id="source-modal-title">Add Source</h2>
+    <div id="source-modal" class="modal">
+        <div
+            class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+            <div
+                class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="source-modal-title">Add Source</h2>
+                <button class="text-gray-400 hover:text-white" id="close-source-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
             </div>
-            <div class="uk-modal-body uk-padding-remove-top">
+            <div class="p-4">
                 <form id="source-form">
                     <input type="hidden" id="source-index" value="">
-
-                    <!-- Tab navigation -->
-                    <ul uk-tab>
-                        <li><a href="#">Basic Settings</a></li>
-                        <li><a href="#">Content Filtering</a></li>
-                        <li><a href="#">HTTP Headers</a></li>
-                    </ul>
-
-                    <!-- Tab content -->
-                    <ul class="uk-switcher uk-margin">
-                        <!-- Basic Settings Tab -->
-                        <li>
-                            <div class="uk-margin">
-                                <label class="uk-form-label">Name</label>
-                                <input class="uk-input" type="text" id="source-name" placeholder="Source Name" required>
+                    <div class="border-b border-kptv-border mb-4">
+                        <nav class="flex flex-wrap -mb-px text-sm font-medium">
+                            <button type="button"
+                                class="source-tab-btn active px-4 py-3 border-b-2 border-kptv-blue text-kptv-blue"
+                                data-tab="0">Basic Settings</button>
+                            <button type="button"
+                                class="source-tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                                data-tab="1">Content Filtering</button>
+                            <button type="button"
+                                class="source-tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                                data-tab="2">HTTP Headers</button>
+                        </nav>
+                    </div>
+                    <div class="source-tab-content">
+                        <div class="active">
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium mb-1">Name</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="source-name" placeholder="Source Name" required>
                             </div>
-                            <div class="uk-margin">
-                                <label class="uk-form-label">URL/XC Domain</label>
-                                <input class="uk-input" type="url" id="source-url"
-                                    placeholder="http://example.com/playlist.m3u8" required>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium mb-1">URL/XC Domain</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="url" id="source-url" placeholder="http://example.com/playlist.m3u8" required>
                             </div>
-                            <div class="uk-grid-small" uk-grid>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">XC Username</label>
-                                    <input class="uk-input" type="text" id="source-username" placeholder="Username...">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">XC Username</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-username" placeholder="Username...">
                                 </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">XC Password</label>
-                                    <input class="uk-input" type="text" id="source-password" placeholder="Password...">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">XC Password</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-password" placeholder="Password...">
                                 </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Order</label>
-                                    <input class="uk-input" type="number" id="source-order" min="1" value="1">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Order</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="number" id="source-order" min="1" value="1">
                                 </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Max Connections</label>
-                                    <input class="uk-input" type="number" id="source-max-connections" min="1" value="5">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Max Connections</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="number" id="source-max-connections" min="1" value="5">
                                 </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Max Stream Timeout</label>
-                                    <input class="uk-input" type="text" id="source-max-stream-timeout"
-                                        placeholder="30s">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Max Stream Timeout</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-max-stream-timeout" placeholder="30s">
                                 </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Retry Delay</label>
-                                    <input class="uk-input" type="text" id="source-retry-delay" placeholder="5s">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Retry Delay</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-retry-delay" placeholder="5s">
                                 </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Max Retries</label>
-                                    <input class="uk-input" type="number" id="source-max-retries" min="1" value="3">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Max Retries</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="number" id="source-max-retries" min="1" value="3">
                                 </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Max Failures Before Block</label>
-                                    <input class="uk-input" type="number" id="source-max-failures" min="1" value="5">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Max Failures Before Block</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="number" id="source-max-failures" min="1" value="5">
                                 </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Min Data Size (KB)</label>
-                                    <input class="uk-input" type="number" id="source-min-data-size" min="1" value="2">
-                                </div>
-                            </div>
-                        </li>
-
-                        <!-- Content Filtering Tab -->
-                        <li>
-                            <div class="uk-grid-small" uk-grid>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Live Include Regex</label>
-                                    <input class="uk-input" type="text" id="source-live-include-regex"
-                                        placeholder=".*live.*">
-                                </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Live Exclude Regex</label>
-                                    <input class="uk-input" type="text" id="source-live-exclude-regex"
-                                        placeholder=".*adult.*">
-                                </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Series Include Regex</label>
-                                    <input class="uk-input" type="text" id="source-series-include-regex"
-                                        placeholder=".*series.*">
-                                </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">Series Exclude Regex</label>
-                                    <input class="uk-input" type="text" id="source-series-exclude-regex"
-                                        placeholder=".*adult.*">
-                                </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">VOD Include Regex</label>
-                                    <input class="uk-input" type="text" id="source-vod-include-regex"
-                                        placeholder=".*movie.*">
-                                </div>
-                                <div class="uk-width-1-2">
-                                    <label class="uk-form-label">VOD Exclude Regex</label>
-                                    <input class="uk-input" type="text" id="source-vod-exclude-regex"
-                                        placeholder=".*adult.*">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Min Data Size (KB)</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="number" id="source-min-data-size" min="1" value="2">
                                 </div>
                             </div>
-                        </li>
-
-                        <!-- Headers -->
-                        <li>
-                            <div class="uk-grid-small" uk-grid>
-                                <div class="uk-width-1-1">
-                                    <label class="uk-form-label">User Agent</label>
-                                    <input class="uk-input" type="text" id="source-user-agent"
-                                        placeholder="VLC/3.0.18 LibVLC/3.0.18">
+                        </div>
+                        <div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Live Include Regex</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-live-include-regex" placeholder=".*live.*">
                                 </div>
-                                <div class="uk-width-1-1">
-                                    <label class="uk-form-label">Origin</label>
-                                    <input class="uk-input" type="text" id="source-origin"
-                                        placeholder="https://example.com">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Live Exclude Regex</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-live-exclude-regex" placeholder=".*adult.*">
                                 </div>
-                                <div class="uk-width-1-1">
-                                    <label class="uk-form-label">Referrer</label>
-                                    <input class="uk-input" type="text" id="source-referrer"
-                                        placeholder="https://example.com/player">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Series Include Regex</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-series-include-regex" placeholder=".*series.*">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Series Exclude Regex</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-series-exclude-regex" placeholder=".*adult.*">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">VOD Include Regex</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-vod-include-regex" placeholder=".*movie.*">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">VOD Exclude Regex</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-vod-exclude-regex" placeholder=".*adult.*">
                                 </div>
                             </div>
-                        </li>
-                    </ul>
+                        </div>
+                        <div>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">User Agent</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-user-agent" placeholder="VLC/3.0.18 LibVLC/3.0.18">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Origin</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-origin" placeholder="https://example.com">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Referrer</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" id="source-referrer" placeholder="https://example.com/player">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </form>
             </div>
-            <div class="uk-modal-footer uk-text-right">
-                <button class="uk-button uk-button-secondary uk-modal-close" type="button">Cancel</button>
-                <button class="uk-button uk-button-primary" id="save-source-btn" type="button">Save</button>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-end gap-2">
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-source-btn" type="button">Cancel</button>
+                <button class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
+                    id="save-source-btn" type="button">Save</button>
             </div>
         </div>
     </div>
 
-    <!-- EPG Modal -->
-    <div id="epg-modal" uk-modal>
-        <div class="uk-modal-dialog">
-            <button class="uk-modal-close-default" type="button" uk-close></button>
-            <div class="uk-modal-header">
-                <h2 class="uk-modal-title" id="epg-modal-title">Add EPG</h2>
+    <div id="stream-selector-modal" class="modal">
+        <div
+            class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+            <div
+                class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="stream-selector-title">Select Stream</h2>
+                <button class="text-gray-400 hover:text-white" id="close-stream-selector-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
             </div>
-            <div class="uk-modal-body">
-                <form id="epg-form">
-                    <input type="hidden" id="epg-index" value="">
-                    <div class="uk-margin">
-                        <label class="uk-form-label">Name</label>
-                        <input class="uk-input" type="text" id="epg-name" placeholder="EPG Name" required>
-                    </div>
-                    <div class="uk-margin">
-                        <label class="uk-form-label">EPG URL</label>
-                        <input class="uk-input" type="url" id="epg-url" placeholder="https://example.com/epg.xml"
-                            required>
-                    </div>
-                    <div class="uk-margin">
-                        <label class="uk-form-label">Order</label>
-                        <input class="uk-input" type="number" id="epg-order" min="1" value="1">
-                    </div>
-                </form>
-            </div>
-            <div class="uk-modal-footer uk-text-right">
-                <button class="uk-button uk-button-secondary uk-modal-close" type="button">Cancel</button>
-                <button class="uk-button uk-button-primary" id="save-epg-btn" type="button">Save</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Selector Modal -->
-    <div id="stream-selector-modal" uk-modal>
-        <div class="uk-modal-dialog">
-            <button class="uk-modal-close-default" type="button" uk-close></button>
-            <div class="uk-modal-header">
-                <h2 class="uk-modal-title" id="stream-selector-title">Select Stream</h2>
-            </div>
-            <div class="uk-modal-body">
+            <div class="p-4">
                 <div id="stream-selector-content">
-                    <div class="uk-text-center uk-margin">
-                        <div uk-spinner></div>
-                        <div class="uk-margin-small-top">Loading streams...</div>
+                    <div class="text-center py-8">
+                        <div class="spinner mx-auto"></div>
+                        <div class="mt-2 text-sm">Loading streams...</div>
                     </div>
                 </div>
             </div>
-            <div class="uk-modal-footer uk-text-right">
-                <button class="uk-button uk-button-secondary uk-modal-close" type="button">Cancel</button>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-end">
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-stream-selector-btn" type="button">Cancel</button>
             </div>
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="uk-section uk-section-small uk-text-center"
-        style="margin-top: 2rem; border-top: 1px solid var(--uk-border-color);">
-        <div class="uk-container">
-            <p class="uk-text-muted uk-margin-remove">
-                Copyright &copy;
-                <script>document.write(new Date().getFullYear());</script> <a href="https://kevinpirnie.com"
-                    target="_blank">Kevin C. Pirnie</a> Licensed under MIT License. All Rights Reserved<br />
-                <small>Visit <a href="https://github.com/kpirnie/kptv-proxy" target="_blank">GitHub</a> for
-                    updates</small>
+    <div id="epg-modal" class="modal">
+        <div
+            class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-lg max-h-[90vh] overflow-y-auto m-4">
+            <div
+                class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="epg-modal-title">Add EPG</h2>
+                <button class="text-gray-400 hover:text-white" id="close-epg-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <form id="epg-form">
+                    <input type="hidden" id="epg-index" value="">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Name</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="epg-name" placeholder="EPG Name" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">EPG URL</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="url" id="epg-url" placeholder="https://example.com/epg.xml" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Order</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="number" id="epg-order" min="1" value="1">
+                    </div>
+                </form>
+            </div>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-end gap-2">
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-epg-btn" type="button">Cancel</button>
+                <button class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
+                    id="save-epg-btn" type="button">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="mt-8 border-t border-kptv-border py-6">
+        <div class="container mx-auto px-4 text-center">
+            <p class="text-gray-400 text-sm">
+                Copyright &copy; <span id="footer-year"></span> <a href="https://kevinpirnie.com" target="_blank"
+                    class="text-kptv-blue hover:text-kptv-blue-light">Kevin C. Pirnie</a> Licensed under MIT License.
+                All Rights Reserved<br>
+                <small class="text-xs">Visit <a href="https://github.com/kpirnie/kptv-proxy" target="_blank"
+                        class="text-kptv-blue hover:text-kptv-blue-light">GitHub</a> for updates</small>
             </p>
         </div>
-        <div class="">
-            <a href="#" class="in-totop" data-uk-scroll><i class="dark-or-light" uk-icon="icon: chevron-up;"></i></a>
-        </div>
+        <a href="#" class="in-totop" id="scroll-to-top">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path>
+            </svg>
+        </a>
     </footer>
-    <script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit-icons.min.js"></script>
+
+    <div id="notification-container" class="fixed top-4 right-4 z-[9999] space-y-2"></div>
+
     <script src="/static/admin.js"></script>
 </body>
 

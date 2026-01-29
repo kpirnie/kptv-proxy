@@ -1,0 +1,248 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+}
+
+@layer components {
+    .notification {
+        @apply fixed top-4 right-4 z-[9999] max-w-sm;
+        animation: slideIn 0.3s ease-out;
+    }
+
+    .spinner {
+        @apply border-4 border-white/30 border-t-white rounded-full w-10 h-10;
+        animation: spin 1s linear infinite;
+    }
+
+    .modal {
+        @apply hidden fixed inset-0 z-[9998] bg-black/75 items-center justify-center p-4;
+    }
+
+    .modal.active {
+        @apply flex;
+        animation: fadeIn 0.2s ease-out;
+    }
+
+    .modal-content {
+        animation: slideUp 0.3s ease-out;
+    }
+
+    .tab-content>div {
+        @apply hidden;
+    }
+
+    .tab-content>div.active {
+        @apply block;
+    }
+
+    .source-tab-content>div {
+        @apply hidden;
+    }
+
+    .source-tab-content>div.active {
+        @apply block;
+    }
+
+    .stat-card {
+        @apply bg-gradient-to-br from-kptv-blue to-kptv-blue-light text-white;
+    }
+
+    .stat-card-success {
+        @apply bg-gradient-to-br from-green-700 to-green-600 text-white;
+    }
+
+    .stat-card-warning {
+        @apply bg-gradient-to-br from-orange-700 to-orange-600 text-white;
+    }
+
+    .stat-card-danger {
+        @apply bg-gradient-to-br from-red-700 to-red-600 text-white;
+    }
+
+    .stat-card-yellow {
+        @apply bg-gradient-to-br from-yellow-700 to-yellow-600 text-white;
+    }
+
+    .channel-item {
+        @apply bg-kptv-gray border-l-4 border-green-600 p-4 mb-2 rounded-r transition-all duration-300;
+    }
+
+    .channel-item:hover {
+        @apply bg-kptv-gray-light translate-x-0.5;
+    }
+
+    .channel-inactive {
+        @apply border-gray-500 opacity-90;
+    }
+
+    .source-item {
+        @apply bg-kptv-gray border border-kptv-border rounded-lg p-4 mb-4 transition-all duration-300;
+    }
+
+    .source-item:hover {
+        @apply border-kptv-blue -translate-y-0.5 shadow-xl;
+    }
+
+    .status-indicator {
+        @apply w-3 h-3 rounded-full inline-block mr-2;
+    }
+
+    .status-active {
+        @apply bg-green-600;
+        box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+    }
+
+    .status-warning {
+        @apply bg-orange-600;
+        box-shadow: 0 0 8px rgba(255, 152, 0, 0.5);
+    }
+
+    .status-error {
+        @apply bg-red-600;
+        box-shadow: 0 0 8px rgba(244, 67, 54, 0.5);
+    }
+
+    .metric-row {
+        @apply flex justify-between items-center py-2 border-b border-kptv-border;
+    }
+
+    .metric-row:last-child {
+        @apply border-b-0;
+    }
+
+    .log-entry {
+        @apply mb-1 py-1 border-l-4 border-transparent pl-2;
+    }
+
+    .log-error {
+        @apply border-red-600 bg-red-900/10;
+    }
+
+    .log-warning {
+        @apply border-orange-600 bg-orange-900/10;
+    }
+
+    .log-info {
+        @apply border-kptv-blue bg-kptv-blue/10;
+    }
+
+    .log-debug {
+        @apply border-gray-500 bg-gray-900/10;
+    }
+
+    .connection-dot {
+        @apply w-2 h-2 rounded-full inline-block mr-1.5;
+        animation: pulse 2s infinite;
+    }
+
+    .stream-card {
+        @apply transition-all duration-200 relative;
+    }
+
+    .stream-card:hover {
+        @apply -translate-y-0.5 shadow-lg;
+    }
+
+    .dead-stream {
+        @apply opacity-60;
+        background: linear-gradient(45deg, transparent 40%, rgba(244, 67, 54, 0.1) 50%, transparent 60%) !important;
+    }
+
+    .dead-stream .relative::before {
+        content: "DEAD";
+        @apply absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-[-45deg] text-4xl font-bold text-red-600/20 pointer-events-none z-10;
+    }
+
+    .stat-badge {
+        @apply bg-black text-gray-300 text-xs px-2 py-1 border border-kptv-border rounded;
+    }
+
+    .stream-order-btn {
+        @apply p-1 leading-none bg-kptv-gray border border-kptv-border rounded transition-colors;
+    }
+
+    .stream-order-btn:hover:not(:disabled) {
+        @apply bg-kptv-blue border-kptv-blue;
+    }
+
+    .stream-order-btn:disabled {
+        @apply opacity-30 cursor-not-allowed;
+    }
+
+    .in-totop {
+        @apply fixed right-6 bottom-6 w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center text-white text-lg opacity-0 transition-opacity;
+    }
+
+    .in-totop.visible {
+        @apply opacity-100;
+    }
+}
+
+@layer utilities {
+    .text-truncate {
+        @apply overflow-hidden text-ellipsis whitespace-nowrap;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(50px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}

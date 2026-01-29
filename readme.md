@@ -265,58 +265,52 @@ You can customize the admin interface appearance by creating a custom CSS file a
 
 **Available Custom CSS Classes**:
 
-**Layout & Cards**:
+### Stat Cards
+- `.stat-card` - Primary blue gradient
+- `.stat-card-success` - Green gradient
+- `.stat-card-warning` - Orange gradient
+- `.stat-card-danger` - Red gradient
+- `.stat-card-yellow` - Yellow gradient
 
-- `.stat-card` - Dashboard statistics cards
-- `.success-card` - Green success styling
-- `.warning-card` - Orange warning styling  
-- `.danger-card` - Red danger styling
-- `.loading-overlay` - Full-screen loading indicator
+### Status Indicators
+- `.status-indicator` - Base indicator dot
+- `.status-active` - Green with glow
+- `.status-warning` - Orange with glow
+- `.status-error` - Red with glow
 
-**Channel & Source Management**:
+### Channel/Source Items
+- `.channel-item` - Channel list item with left border
+- `.channel-inactive` - Inactive channel styling
+- `.source-item` - Source configuration card
 
-- `.channel-item` - Individual channel list items
-- `.channel-inactive` - Styling for inactive channels
-- `.source-item` - Individual source configuration items
-- `.source-actions` - Action buttons for source management
+### Stream Cards
+- `.stream-card` - Stream selector card
+- `.dead-stream` - Dead stream styling with diagonal overlay
+- `.stream-order-btn` - Stream reorder buttons
 
-**Status Indicators**:
+### Log Entries
+- `.log-entry` - Base log entry
+- `.log-error` - Error level
+- `.log-warning` - Warning level
+- `.log-info` - Info level
+- `.log-debug` - Debug level
 
-- `.status-indicator` - Base status dot styling
-- `.status-active` - Green active status
-- `.status-warning` - Orange warning status
-- `.status-error` - Red error status
-- `.connection-dot` - Animated connection indicators
+### UI Components
+- `.stat-badge` - Stream statistics badge
+- `.metric-row` - Dashboard metric row
+- `.connection-dot` - Animated connection indicator
+- `.in-totop` - Scroll to top button
 
-**Stream Management**:
+### Modals & Tabs
+- `.modal` - Modal overlay (use `.active` to show)
+- `.modal-content` - Modal dialog content
+- `.tab-content > div` - Tab panel (use `.active` to show)
+- `.source-tab-content > div` - Source modal tab panel
 
-- `.dead-stream` - Styling for dead/blocked streams
-- `.stream-selector-current` - Currently active stream
-- `.stream-selector-preferred` - Preferred stream indicator
-- `.watcher-status` - Stream watcher status indicator
-
-**Logging & Debug**:
-
-- `.log-entry` - Base log entry styling
-- `.log-error` - Error level logs
-- `.log-warning` - Warning level logs
-- `.log-info` - Info level logs  
-- `.log-debug` - Debug level logs
-- `.log-timestamp` - Log timestamp styling
-
-**UI Elements**:
-
-- `.metric-row` - Statistics display rows
-- `.channel-details` - Channel metadata display
-- `.channel-name` - Channel name styling
-- `.channel-url` - URL display formatting
-
-**Utilities**:
-
-- `.text-truncate` - Text overflow handling
-- `.text-monospace` - Monospace font styling
-- `.fade-in` - Fade-in animation
-- `.loading` - Loading state styling
+### Utilities
+- `.text-truncate` - Truncate text with ellipsis
+- `.spinner` - Loading spinner animation
+- `.notification` - Toast notification container
 
 ### Dashboard
 

@@ -14,6 +14,7 @@ kptv-proxy
 
 # Dependency directories
 vendor/
+node_modules/
 
 # Go workspace file
 go.work
@@ -67,3 +68,5 @@ __debug_bin
 
 other/
 settings/
+
+package-lock.json
