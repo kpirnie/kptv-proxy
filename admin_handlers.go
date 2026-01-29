@@ -35,6 +35,7 @@ type StatsResponse struct {
 	TotalChannels       int     `json:"totalChannels"`
 	ActiveStreams       int     `json:"activeStreams"`
 	TotalSources        int     `json:"totalSources"`
+	TotalEpgs           int     `json:"totalEpgs"`
 	ConnectedClients    int     `json:"connectedClients"`
 	Uptime              string  `json:"uptime"`
 	MemoryUsage         string  `json:"memoryUsage"`

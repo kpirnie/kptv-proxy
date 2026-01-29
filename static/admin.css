@@ -9,6 +9,7 @@
     --uk-border-color: #636363;
     --uk-success: #265228;
     --uk-warning: #7e4b00;
+    --uk-info: #7c7e00;
     --uk-danger: #76211b;
     --uk-primary: #154872;
 }
@@ -177,6 +178,10 @@ body {
 
 .warning-card {
     background: linear-gradient(135deg, var(--uk-warning), #8c4600);
+}
+
+.info-card {
+    background: linear-gradient(135deg, var(--uk-info), #8c8a00);
 }
 
 .danger-card {

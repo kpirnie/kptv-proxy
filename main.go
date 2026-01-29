@@ -60,6 +60,7 @@ func main() {
 
 	// Create proxy instance
 	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, cacheInstance)
+	defer proxyInstance.EPGCache.Close()
 
 	// Initialize master playlist handler
 	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger, cfg)
