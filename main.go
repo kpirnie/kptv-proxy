@@ -15,6 +15,7 @@ import (
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/handlers"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/types"
@@ -38,7 +39,7 @@ func main() {
 	cfg := config.LoadConfig()
 
 	// Set up logging
-	logger := log.New(os.Stdout, "[KPTV-PROXY] ", log.LstdFlags)
+	logger.SetLogLevel(cfg.LogLevel)
 
 	// Initialize buffer pool
 	bufferPool := buffer.NewBufferPool(cfg.BufferSizePerStream * 1024 * 1024)
@@ -49,7 +50,8 @@ func main() {
 	// Initialize worker pool, then make sure it gets released
 	workerPool, err := ants.NewPool(cfg.WorkerThreads, ants.WithPreAlloc(true))
 	if err != nil {
-		log.Fatalf("Failed to create worker pool: %v", err)
+		logger.Error("Failed to create worker pool: %v", err)
+		os.Exit(1)
 	}
 	defer workerPool.Release()
 	defer bufferPool.Cleanup()
@@ -59,11 +61,11 @@ func main() {
 	defer cacheInstance.Close()
 
 	// Create proxy instance
-	proxyInstance := proxy.New(cfg, logger, bufferPool, httpClient, workerPool, cacheInstance)
+	proxyInstance := proxy.New(cfg, bufferPool, httpClient, workerPool, cacheInstance)
 	defer proxyInstance.EPGCache.Close()
 
 	// Initialize master playlist handler
-	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(logger, cfg)
+	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(cfg)
 
 	// Start restreamer cleanup routine
 	go proxyInstance.RestreamCleanup()
@@ -106,20 +108,20 @@ func main() {
 	addr := fmt.Sprintf(":%d", 8080)
 
 	// show info
-	logger.Printf("Starting KPTV Proxy %s", Version)
-	logger.Printf("Server configuration:")
-	logger.Printf("  - Base URL: %s", cfg.BaseURL)
-	logger.Printf("  - Worker Threads: %d", cfg.WorkerThreads)
-	logger.Printf("  - Sources: %d", len(cfg.Sources))
-	logger.Printf("  - EPGs: %d", len(cfg.EPGs))
-	logger.Printf("  - Pre-Stream Buffer Size: %s", utils.FormatBytes(cfg.BufferSizePerStream*1024*1024))
-	logger.Printf("  - Cache Enabled: %v", cfg.CacheEnabled)
-	logger.Printf("  - Cache Duration: %s", cfg.CacheDuration)
-	logger.Printf("  - Source Refresh Rate: %s", cfg.ImportRefreshInterval)
-	logger.Printf("  - Stream Sort Attr.: %s", cfg.SortField)
-	logger.Printf("  - Stream Sort Dir.: %s", cfg.SortDirection)
-	logger.Printf("  - Debug Enabled: %v", cfg.Debug)
-	logger.Printf("  - URL Obfuscation: %v", cfg.ObfuscateUrls)
+	logger.Info("Starting KPTV Proxy %s", Version)
+	logger.Info("Server configuration:")
+	logger.Info("  - Base URL: %s", cfg.BaseURL)
+	logger.Info("  - Worker Threads: %d", cfg.WorkerThreads)
+	logger.Info("  - Sources: %d", len(cfg.Sources))
+	logger.Info("  - EPGs: %d", len(cfg.EPGs))
+	logger.Info("  - Pre-Stream Buffer Size: %s", utils.FormatBytes(cfg.BufferSizePerStream*1024*1024))
+	logger.Info("  - Cache Enabled: %v", cfg.CacheEnabled)
+	logger.Info("  - Cache Duration: %s", cfg.CacheDuration)
+	logger.Info("  - Source Refresh Rate: %s", cfg.ImportRefreshInterval)
+	logger.Info("  - Stream Sort Attr.: %s", cfg.SortField)
+	logger.Info("  - Stream Sort Dir.: %s", cfg.SortDirection)
+	logger.Info("  - Log Level: %v", cfg.LogLevel)
+	logger.Info("  - URL Obfuscation: %v", cfg.ObfuscateUrls)
 
 	// gracefully restart if it's requested to do.
 	go func() {
@@ -129,14 +131,10 @@ func main() {
 			<-restartChan
 
 			// debug logging
-			if cfg.Debug {
-				logger.Printf("Graceful restart requested...")
-			}
+			logger.Debug("Graceful restart requested...")
 
 			// Stop/Start watcher based on new config
-			if cfg.Debug {
-				logger.Printf("Managing watcher state during restart...")
-			}
+			logger.Debug("Managing watcher state during restart...")
 			proxyInstance.WatcherManager.Stop()
 
 			// if its enabled
@@ -165,9 +163,7 @@ func main() {
 			go proxyInstance.StartImportRefresh()
 
 			// debug logging
-			if cfg.Debug {
-				logger.Printf("Graceful restart completed - loaded %d sources", len(newConfig.Sources))
-			}
+			logger.Debug("Graceful restart completed - loaded %d sources", len(newConfig.Sources))
 
 		}
 
@@ -175,7 +171,8 @@ func main() {
 
 	// fire us up, if there's an error log it
 	if err := http.ListenAndServe(addr, router); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+		logger.Error("Server failed to start: %v", err)
+		os.Exit(1)
 	}
 
 }

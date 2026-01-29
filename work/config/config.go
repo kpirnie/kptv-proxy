@@ -432,8 +432,7 @@ func (c *Config) GetSourcesByOrder() []SourceConfig {
 //   - error: if write fails
 func CreateExampleConfig(path string) error {
 	example := ConfigFile{
-		BaseURL: "http://localhost:8080",
-		//MaxBufferSize:         256,
+		BaseURL:               "http://localhost:8080",
 		BufferSizePerStream:   16,
 		CacheEnabled:          true,
 		CacheDuration:         "30m",

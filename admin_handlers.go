@@ -129,8 +129,7 @@ var (
 func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("/static/"))))
 
-	router.HandleFunc("/admin", handleAdminInterface).Methods("GET")
-	router.HandleFunc("/admin/", handleAdminInterface).Methods("GET")
+	router.HandleFunc("/", handleAdminInterface).Methods("GET")
 
 	router.HandleFunc("/api/config", corsMiddleware(middleware.GzipMiddleware(handleGetConfig(proxyInstance)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/config", corsMiddleware(handleSetConfig(proxyInstance))).Methods("POST", "OPTIONS")
