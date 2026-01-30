@@ -4,9 +4,11 @@
     "description": "KPTV Proxy Admin Interface",
     "scripts": {
         "build:css": "tailwindcss -i ./static/admin-source.css -o ./static/admin.css --minify",
-        "watch:css": "tailwindcss -i ./static/admin-source.css -o ./static/admin.css --watch"
+        "build:js": "terser static/admin-source.js -o static/admin.js -c -m",
+        "build": "npm run build:css && npm run build:js"
     },
     "devDependencies": {
-        "tailwindcss": "^3.4.1"
+        "tailwindcss": "^3.4.1",
+        "terser": "^5.36.0"
     }
 }

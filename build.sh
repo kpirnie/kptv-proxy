@@ -12,7 +12,7 @@ chown -R $APP_USER:$APP_USER $APP_PATH*;
 # make sure node modules are up to date, and we build the css
 rm -rf $APP_PATH/node_modules
 npm install --prefix "$APP_PATH"
-npm run build:css --prefix "$APP_PATH"
+npm run build --prefix "$APP_PATH"
 
 # make sure we own it one last time
 chown -R $APP_USER:$APP_USER $APP_PATH*;
