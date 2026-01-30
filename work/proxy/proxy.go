@@ -80,7 +80,7 @@ func New(cfg *config.Config, bufferPool *buffer.BufferPool, httpClient *client.H
 		Config:                cfg,
 		Channels:              xsync.NewMapOf[string, *types.Channel](),
 		Cache:                 cacheInstance,
-		EPGCache:              cache.NewCache(60 * time.Minute),
+		EPGCache:              cache.NewCache(12 * time.Hour),
 		BufferPool:            bufferPool,
 		HttpClient:            httpClient,
 		WorkerPool:            workerPool,

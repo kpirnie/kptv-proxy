@@ -49,6 +49,16 @@ func (c *Cache) SetEPG(key, value string) {
 	c.cache.SetWithTTL(hashKey(key), value, int64(len(value)), c.duration)
 }
 
+// warmup the EPG cache
+func (c *Cache) WarmUpEPG(fetchFunc func() string) {
+	go func() {
+		data := fetchFunc()
+		if data != "" {
+			c.SetEPG("merged", data)
+		}
+	}()
+}
+
 // GetM3U8 retrieves an M3U8 playlist from the cache by key.
 func (c *Cache) GetM3U8(key string) (string, bool) {
 	value, found := c.cache.Get(hashKey(key))

@@ -73,6 +73,9 @@ func main() {
 	// Start import refresh routine
 	go proxyInstance.StartImportRefresh()
 
+	// fire up the EPG warmup
+	proxyInstance.StartEPGWarmup()
+
 	// Start watcher if enabled
 	if cfg.WatcherEnabled {
 		proxyInstance.WatcherManager.Start()
