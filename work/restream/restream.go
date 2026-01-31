@@ -1100,13 +1100,14 @@ func (r *Restream) resetBufferSafely() {
 		r.Buffer.Reset()
 		logger.Debug("[BUFFER_RESET_SAFE] Channel %s: Buffer reset", r.Channel.Name)
 
-	} else {
-		// Use BufferSizePerStream instead of MaxBufferSize
+	} else if r.Buffer == nil {
+		// Only create new buffer if none exists
 		bufferSize := r.Config.BufferSizePerStream * 1024 * 1024
 		r.Buffer = bbuffer.NewRingBuffer(bufferSize)
-		logger.Debug("[BUFFER_RECREATED] Channel %s: New buffer created (%d MB)", r.Channel.Name, r.Config.BufferSizePerStream)
+		logger.Debug("[BUFFER_CREATED] Channel %s: New buffer created (%d MB)", r.Channel.Name, r.Config.BufferSizePerStream)
 
 	}
+	// If buffer is destroyed, don't recreate - let Stream() handle it
 }
 
 // trackStreamStart records when a stream begins for duration tracking
