@@ -1,5 +1,6 @@
 package buffer
 
+// package imports
 import (
 	"runtime"
 	"sync"
@@ -287,6 +288,7 @@ func (rb *RingBuffer) Reset() {
 		return
 	}
 
+	// thread safe lock
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
@@ -316,6 +318,7 @@ func (rb *RingBuffer) Destroy() {
 		return
 	}
 
+	// thread safe lock
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
@@ -380,7 +383,7 @@ func (rb *RingBuffer) PeekRecentData(maxBytes int64) []byte {
 		return nil
 	}
 
-	// acquire the lock
+	// thread safe lock
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
 

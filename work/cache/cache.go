@@ -32,7 +32,7 @@ func newEPGStore(dir string, ttl time.Duration) (*epgStore, error) {
 
 	// try to create the EPG cache directory
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		logger.Error("[cache - newEPGStore] failed to create EPG store directory: %v", err)
+		logger.Error("{cache(epg) - newEPGStore} failed to create EPG store directory: %v", err)
 		return nil, err
 	}
 
@@ -54,7 +54,7 @@ func (e *epgStore) set(key, value string) error {
 	// try to create the temp file path and set its name
 	tmp, err := os.CreateTemp(e.dir, "epg-*.tmp")
 	if err != nil {
-		logger.Error("[cache - set] create temp: %v", err)
+		logger.Error("{cache(epg) - set} create temp: %v", err)
 		return err
 	}
 	tmpName := tmp.Name()
@@ -63,24 +63,28 @@ func (e *epgStore) set(key, value string) error {
 	if _, err := io.WriteString(tmp, value); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
-		logger.Error("[cache - set] write temp: %v", err)
+		logger.Error("{cache(epg) - set} write temp: %v", err)
 		return err
 	}
 
 	// close the temp file before renaming
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
-		logger.Error("[cache - set] close temp: %v", err)
+		logger.Error("{cache(epg) - set} close temp: %v", err)
 		return err
 	}
 
 	// atomic rename into place
 	if err := os.Rename(tmpName, target); err != nil {
 		os.Remove(tmpName)
-		logger.Error("[cache - set] rename: %v", err)
+		logger.Error("{cache(epg) - set} rename: %v", err)
 		return err
 	}
 
+	// debug logging
+	logger.Debug("{cache(epg) - set} set epg to cache")
+
+	// dont return anything
 	return nil
 }
 
@@ -94,6 +98,7 @@ func (e *epgStore) get(key string) (*os.File, int64, bool) {
 	// stat the file to check existence and mod time
 	info, err := os.Stat(target)
 	if err != nil {
+		logger.Error("{cache(epg) - get} doesnt exist: %v", err)
 		return nil, 0, false
 	}
 
@@ -105,9 +110,14 @@ func (e *epgStore) get(key string) (*os.File, int64, bool) {
 	// open and return the file handle
 	f, err := os.Open(target)
 	if err != nil {
+		logger.Error("{cache(epg) - get} cannot open: %v", err)
 		return nil, 0, false
 	}
 
+	// debug logging
+	logger.Debug("{cache(epg) - get} got epg from cache")
+
+	// return the file
 	return f, info.Size(), true
 }
 
@@ -129,6 +139,7 @@ func (e *epgStore) remainingTTL(key string) int {
 		return 0
 	}
 
+	// return the number of seconds remaining
 	return int(remaining.Seconds())
 }
 
@@ -142,7 +153,7 @@ func (c *Cache) GetEPGFile(key string) (*os.File, int64, bool) {
 // SetEPG writes EPG XML data to disk.
 func (c *Cache) SetEPG(key, value string) {
 	if err := c.epg.set(key, value); err != nil {
-		logger.Error("[EPG_CACHE] Failed to write EPG to disk: %v", err)
+		logger.Error("{cache(epg) - SetEPG} Failed to write EPG to disk: %v", err)
 	}
 }
 
@@ -162,7 +173,7 @@ func (c *Cache) WarmUpEPG(fetchFunc func() string) {
 	}()
 }
 
-// GetEPG reads the full EPG from disk into a string. Prefer GetEPGFile
+// GetEPG reads the full EPG from disk into a string
 // for streaming to HTTP responses.
 func (c *Cache) GetEPG(key string) (string, bool) {
 	f, _, ok := c.epg.get(key)
@@ -171,11 +182,17 @@ func (c *Cache) GetEPG(key string) (string, bool) {
 	}
 	defer f.Close()
 
+	// read in the epg
 	data, err := io.ReadAll(f)
 	if err != nil {
-		logger.Error("[EPG_CACHE] Failed to read EPG from disk: %v", err)
+		logger.Error("{cache(epg) - GetEPG} Failed to read EPG from disk: %v", err)
 		return "", false
 	}
+
+	// debug logging
+	logger.Debug("{cache(epg) - GetEPG} Get the epg")
+
+	// return the epg
 	return string(data), true
 }
 
@@ -194,7 +211,8 @@ func NewCache(duration time.Duration) (*Cache, error) {
 	// create the disk-backed EPG store
 	epg, err := newEPGStore("/tmp/kptv-epg", 12*time.Hour)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create EPG store: %w", err)
+		logger.Error("{cache - NewCache} failed to create EPG store: %v", err)
+		return nil, err
 	}
 
 	// return the cache object
@@ -207,29 +225,33 @@ func NewCache(duration time.Duration) (*Cache, error) {
 
 // GetM3U8 retrieves an M3U8 playlist from the in-memory cache.
 func (c *Cache) GetM3U8(key string) (string, bool) {
+	logger.Debug("{cache - GetM3U8} get the cached m3u8")
 	value, ok := c.cache.GetIfPresent(fmt.Sprintf("%d", hashKey(key)))
 	return value, ok
 }
 
 // SetM3U8 stores an M3U8 playlist in the in-memory cache.
 func (c *Cache) SetM3U8(key, value string) {
+	logger.Debug("{cache - SetM3U8} set m3u8 to cache")
 	c.cache.Set(fmt.Sprintf("%d", hashKey(key)), value)
 }
 
 // GetXCData retrieves XC API response data from the in-memory cache.
 func (c *Cache) GetXCData(key string) (string, bool) {
+	logger.Debug("{cache - GetXCData} get the cached xtream code data")
 	value, ok := c.cache.GetIfPresent(fmt.Sprintf("%d", hashKey(key)))
 	return value, ok
 }
 
 // SetXCData stores XC API response data in the in-memory cache.
 func (c *Cache) SetXCData(key, value string) {
+	logger.Debug("{cache - SetXCData} set the xtream code data to cache")
 	c.cache.Set(fmt.Sprintf("%d", hashKey(key)), value)
 }
 
 // ClearIfNeeded is kept for API compatibility. Otter handles eviction automatically.
 func (c *Cache) ClearIfNeeded() {
-
+	logger.Debug("{cache - ClearIfNeeded} clear the cache")
 	// clear the cache and finish pending operations...
 	c.cache.InvalidateAll()
 	c.cache.CleanUp()
@@ -237,6 +259,7 @@ func (c *Cache) ClearIfNeeded() {
 
 // Close is kept for API compatibility.
 func (c *Cache) Close() {
+	logger.Debug("{cache - Close} close the cache")
 
 	// finish up pending operations, and stop all cache GO routines
 	c.cache.CleanUp()

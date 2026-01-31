@@ -1,6 +1,7 @@
 package client
 
 import (
+	"kptv-proxy/work/logger"
 	"net/http"
 	"time"
 )
@@ -45,6 +46,7 @@ func NewHeaderSettingClient() *HeaderSettingClient {
 		},
 	}
 
+	// return the custom client
 	return &HeaderSettingClient{
 		Client: client,
 	}
@@ -60,6 +62,9 @@ func NewHeaderSettingClient() *HeaderSettingClient {
 //   - *http.Response: the HTTP response
 //   - error: any error encountered while making the request
 func (hsc *HeaderSettingClient) Do(req *http.Request) (*http.Response, error) {
+	logger.Debug("{client - Do} execute the http request")
+
+	// return the actual execution
 	return hsc.Client.Do(req)
 }
 
@@ -77,7 +82,7 @@ func (hsc *HeaderSettingClient) Do(req *http.Request) (*http.Response, error) {
 //   - *http.Response: the HTTP response
 //   - error: any error encountered while making the request
 func (hsc *HeaderSettingClient) DoWithHeaders(req *http.Request, userAgent, origin, referrer string) (*http.Response, error) {
-
+	logger.Debug("{client - DoWithHeaders} execute the http request after setting the headers")
 	// Set common headers before executing
 	hsc.setHeaders(req, userAgent, origin, referrer)
 	return hsc.Client.Do(req)
@@ -93,6 +98,7 @@ func (hsc *HeaderSettingClient) DoWithHeaders(req *http.Request, userAgent, orig
 //   - origin: optional Origin value
 //   - referrer: optional Referer value
 func (hsc *HeaderSettingClient) setHeaders(req *http.Request, userAgent, origin, referrer string) {
+	logger.Debug("{client - setHeaders} set the default headers")
 
 	// Apply User-Agent if provided
 	if userAgent != "" {
@@ -124,6 +130,8 @@ func (hsc *HeaderSettingClient) setHeaders(req *http.Request, userAgent, origin,
 // Returns:
 //   - *CustomResponseWriter: wrapped response writer with tracking
 func NewCustomResponseWriter(w http.ResponseWriter) *CustomResponseWriter {
+
+	// return the custom response writer
 	return &CustomResponseWriter{
 		ResponseWriter: w,
 		WroteHeader:    false, // Headers not written yet
@@ -153,6 +161,8 @@ func (crw *CustomResponseWriter) WriteHeader(statusCode int) {
 	crw.statusCode = statusCode
 	crw.ResponseWriter.WriteHeader(statusCode)
 	crw.WroteHeader = true // Mark headers as written
+
+	logger.Debug("{client - WriteHeader} write the default headers")
 }
 
 // Write writes the data to the connection as part of an HTTP response.
@@ -166,11 +176,14 @@ func (crw *CustomResponseWriter) WriteHeader(statusCode int) {
 //   - int: number of bytes written
 //   - error: any error encountered while writing
 func (crw *CustomResponseWriter) Write(b []byte) (int, error) {
+	logger.Debug("{client - Write} write the http response")
 
 	// Ensure headers are sent before writing body
 	if !crw.WroteHeader {
 		crw.WriteHeader(http.StatusOK)
 	}
+
+	// return the number of bytes written
 	return crw.ResponseWriter.Write(b)
 }
 
@@ -181,6 +194,7 @@ func (crw *CustomResponseWriter) Flush() {
 
 	// Check if underlying writer supports Flusher
 	if flusher, ok := crw.ResponseWriter.(http.Flusher); ok {
+		logger.Debug("{client - Flush} flush the http response")
 		flusher.Flush()
 	}
 }
