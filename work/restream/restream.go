@@ -448,6 +448,9 @@ func (r *Restream) Stream() {
 
 		}
 
+		// Add jitter to prevent thundering herd when multiple channels fail simultaneously
+		jitter := time.Duration(50+(time.Now().UnixNano()%450)) * time.Millisecond // 50-500ms jitter
+
 		// Sleep briefly before retry
 		select {
 		case <-r.Ctx.Done():
@@ -484,7 +487,7 @@ func (r *Restream) Stream() {
 			}
 
 			return
-		case <-time.After(500 * time.Millisecond): // only .5 seconds
+		case <-time.After(jitter): // between .05 and .5 seconds
 		}
 
 	}
