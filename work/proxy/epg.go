@@ -176,13 +176,18 @@ func (sp *StreamProxy) FetchAndMergeEPG() string {
 	return result.String()
 }
 
-// fire up the EPG warmer
+// StartEPGWarmup runs an initial EPG warmup and then refreshes every 12 hours.
 func (sp *StreamProxy) StartEPGWarmup() {
+	// Initial warmup
+	sp.Cache.WarmUpEPG(func() string {
+		return sp.FetchAndMergeEPG()
+	})
+
 	ticker := time.NewTicker(12 * time.Hour)
 	go func() {
 		defer ticker.Stop()
 		for range ticker.C {
-			sp.EPGCache.WarmUpEPG(func() string {
+			sp.Cache.WarmUpEPG(func() string {
 				return sp.FetchAndMergeEPG()
 			})
 		}

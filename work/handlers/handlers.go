@@ -1,28 +1,19 @@
 package handlers
 
 import (
+	"fmt"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/middleware"
 	"kptv-proxy/work/proxy"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/gorilla/mux"
 )
 
 // HandlePlaylist returns an HTTP handler function that generates a complete M3U8 playlist
-// containing all available channels from all configured sources. The handler delegates
-// to the StreamProxy's GeneratePlaylist method with an empty group filter, ensuring
-// all channels are included regardless of their group classification.
-//
-// This handler is typically mounted at the root playlist endpoint (e.g., "/playlist.m3u8")
-// and serves as the primary entry point for IPTV clients that want access to the full
-// channel lineup without any filtering applied.
-//
-// Parameters:
-//   - sp: pointer to the StreamProxy instance containing channel data and configuration
-//
-// Returns:
-//   - http.HandlerFunc: HTTP handler that processes playlist requests and writes M3U8 responses
+// containing all available channels from all configured sources.
 func HandlePlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -32,21 +23,7 @@ func HandlePlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 }
 
 // HandleGroupPlaylist returns an HTTP handler function that generates a filtered M3U8 playlist
-// containing only channels belonging to a specific group. The group name is extracted from
-// the URL path variables and used to filter the channel list before playlist generation.
-//
-// This handler enables IPTV clients to request focused playlists containing only channels
-// from categories of interest (e.g., "Sports", "News", "Entertainment"), reducing bandwidth
-// and improving user experience by eliminating irrelevant content.
-//
-// The group matching is performed case-insensitively against channel attributes such as
-// "tvg-group" and "group-title" from the original M3U8 sources.
-//
-// Parameters:
-//   - sp: pointer to the StreamProxy instance containing channel data and configuration
-//
-// Returns:
-//   - http.HandlerFunc: HTTP handler that processes group playlist requests and writes filtered M3U8 responses
+// containing only channels belonging to a specific group.
 func HandleGroupPlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -58,26 +35,7 @@ func HandleGroupPlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 }
 
 // HandleStream returns an HTTP handler function that initiates streaming of a specific channel
-// to the requesting client. The handler performs channel lookup, validation, and client
-// attachment to enable real-time video/audio streaming through the restreaming infrastructure.
-//
-// The process involves several key steps:
-//  1. Extract the safe (URL-encoded) channel name from the request path
-//  2. Resolve the safe name back to the original channel name
-//  3. Locate the channel in the proxy's channel store
-//  4. Validate channel existence and availability
-//  5. Attach the client to the channel's restreamer for data distribution
-//
-// The handler supports automatic failover between multiple stream sources per channel,
-// buffer management for efficient data distribution, and proper cleanup when clients disconnect.
-// It operates in restreaming mode, where a single upstream connection serves multiple clients
-// to minimize load on source servers while maintaining scalability.
-//
-// Parameters:
-//   - sp: pointer to the StreamProxy instance containing channels and streaming infrastructure
-//
-// Returns:
-//   - http.HandlerFunc: HTTP handler that processes stream requests and manages client connections
+// to the requesting client.
 func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -95,24 +53,41 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
-// HandleEPG serves combined EPG data from all XC sources, M3U8 sources with EPG URLs, and manually configured EPGs
-// work/handlers/handlers.go - Update HandleEPG to use WarmUpEPG
+// HandleEPG serves combined EPG data from disk cache, streaming directly to the
+// client via http.ServeContent. Sets Cache-Control max-age to the remaining TTL
+// so downstream players (Emby/Plex/Channels) cache appropriately.
 func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		if cached, ok := sp.Cache.GetEPG("merged"); ok {
-			logger.Debug("[EPG] Serving from cache (%d bytes)", len(cached))
+		// Try to serve from disk cache via streaming
+		if f, size, ok := sp.Cache.GetEPGFile("merged"); ok {
+			defer f.Close()
+
+			remainingTTL := sp.Cache.EPGRemainingTTL("merged")
+			if remainingTTL <= 0 {
+				remainingTTL = 3600
+			}
+
+			modTime := epgModTime(f)
+
+			logger.Debug("[EPG] Streaming from disk cache (%d bytes, ttl=%ds)", size, remainingTTL)
+
 			w.Header().Set("Content-Type", "application/xml")
-			w.Header().Set("Cache-Control", "public, max-age=3600")
-			w.Write([]byte(cached))
+			w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", remainingTTL))
+
+			// http.ServeContent handles Content-Length, Range requests, and
+			// Last-Modified/If-Modified-Since automatically.
+			http.ServeContent(w, r, "epg.xml", modTime, f)
 			return
 		}
 
+		// Cache miss — trigger background warmup
 		logger.Debug("[EPG] Cache miss, triggering background warmup")
 		sp.Cache.WarmUpEPG(func() string {
 			return sp.FetchAndMergeEPG()
 		})
 
+		// Serve fresh data inline for this request
 		sources := sp.GetEPGSources()
 		if len(sources) == 0 {
 			logger.Warn("[EPG] No EPG sources available")
@@ -149,4 +124,14 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 		w.Write([]byte("</tv>"))
 		flusher.Flush()
 	}
+}
+
+// epgModTime returns the modification time of the given file for use with
+// http.ServeContent. Returns zero time on error.
+func epgModTime(f *os.File) time.Time {
+	info, err := f.Stat()
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
 }

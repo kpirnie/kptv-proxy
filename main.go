@@ -57,12 +57,15 @@ func main() {
 	defer bufferPool.Cleanup()
 
 	// Initialize cache and defer killing it.
-	cacheInstance := cache.NewCache(cfg.CacheDuration)
+	cacheInstance, err := cache.NewCache(cfg.CacheDuration)
+	if err != nil {
+		logger.Error("Failed to create cache: %v", err)
+		os.Exit(1)
+	}
 	defer cacheInstance.Close()
 
 	// Create proxy instance
 	proxyInstance := proxy.New(cfg, bufferPool, httpClient, workerPool, cacheInstance)
-	defer proxyInstance.EPGCache.Close()
 
 	// Initialize master playlist handler
 	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(cfg)
@@ -117,7 +120,7 @@ func main() {
 	logger.Info("  - Worker Threads: %d", cfg.WorkerThreads)
 	logger.Info("  - Sources: %d", len(cfg.Sources))
 	logger.Info("  - EPGs: %d", len(cfg.EPGs))
-	logger.Info("  - Pre-Stream Buffer Size: %s", utils.FormatBytes(cfg.BufferSizePerStream*1024*1024))
+	logger.Info("  - Per-Stream Buffer: %s", utils.FormatBytes(cfg.BufferSizePerStream*1024*1024))
 	logger.Info("  - Cache Enabled: %v", cfg.CacheEnabled)
 	logger.Info("  - Cache Duration: %s", cfg.CacheDuration)
 	logger.Info("  - Source Refresh Rate: %s", cfg.ImportRefreshInterval)
