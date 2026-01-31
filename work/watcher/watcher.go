@@ -851,7 +851,7 @@ func (sw *StreamWatcher) findNextAvailableStream() int {
 		}
 
 		// Validate source connection availability without consuming connection slots
-		currentConns := atomic.LoadInt32(&stream.Source.ActiveConns)
+		currentConns := stream.Source.ActiveConns.Load()
 		if currentConns >= int32(stream.Source.MaxConnections) {
 			logger.Debug("[WATCHER] Source at connection limit (%d/%d), skipping: %s",
 				currentConns, stream.Source.MaxConnections, stream.Source.Name)

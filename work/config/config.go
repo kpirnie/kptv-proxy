@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -57,7 +58,7 @@ type SourceConfig struct {
 	UserAgent              string        `json:"userAgent"`              // HTTP User-Agent header for requests
 	ReqOrigin              string        `json:"reqOrigin"`              // HTTP Origin header for requests
 	ReqReferrer            string        `json:"reqReferrer"`            // HTTP Referer header for requests
-	ActiveConns            int32         `json:"-"`                      // Runtime-only: tracks active connections (not serialized)
+	ActiveConns            atomic.Int32  `json:"-"`                      // Runtime-only: tracks active connections (not serialized)
 	Username               string        `json:"username"`               // XC Username
 	Password               string        `json:"password"`               // XC Password
 	LiveIncludeRegex       string        `json:"liveIncludeRegex,omitempty"`

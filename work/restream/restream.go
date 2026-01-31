@@ -589,15 +589,15 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 	}
 
 	// Enforce connection limit for this source
-	if atomic.LoadInt32(&stream.Source.ActiveConns) >= int32(stream.Source.MaxConnections) {
+	if stream.Source.ActiveConns.Load() >= int32(stream.Source.MaxConnections) {
 		logger.Debug("[STREAM_LIMIT] Channel %s: Stream %d source at max connections (%d)", r.Channel.Name, index, stream.Source.MaxConnections)
 
 		return false, 0
 	}
 
 	// Increment active connections for the source
-	atomic.AddInt32(&stream.Source.ActiveConns, 1)
-	defer atomic.AddInt32(&stream.Source.ActiveConns, -1) // ensure decrement when function exits
+	stream.Source.ActiveConns.Add(1)
+	defer stream.Source.ActiveConns.Add(-1) // ensure decrement when function exits
 
 	// Retrieve variants (single or master playlist)
 	variants, isMaster, err := r.getStreamVariants(stream.URL, stream.Source)

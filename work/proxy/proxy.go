@@ -178,7 +178,7 @@ func (sp *StreamProxy) ImportStreams() {
 			defer wg.Done()
 
 			// Enforce per-source connection limits to prevent resource exhaustion
-			currentConns := atomic.LoadInt32(&src.ActiveConns)
+			currentConns := src.ActiveConns.Load()
 			if currentConns >= int32(src.MaxConnections) {
 				logger.Warn("Cannot import from source (connection limit %d/%d): %s",
 					currentConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
@@ -187,14 +187,14 @@ func (sp *StreamProxy) ImportStreams() {
 			}
 
 			// Acquire connection slot with atomic increment for thread safety
-			newConns := atomic.AddInt32(&src.ActiveConns, 1)
+			newConns := src.ActiveConns.Add(1)
 			logger.Debug("[IMPORT_CONNECTION] Acquired connection %d/%d for parsing: %s",
 				newConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
 
 			defer func() {
 
 				// Always release connection slot when parsing completes
-				remainingConns := atomic.AddInt32(&src.ActiveConns, -1)
+				remainingConns := src.ActiveConns.Add(-1)
 				logger.Debug("[IMPORT_RELEASE] Released parsing connection, remaining: %d/%d for: %s",
 					remainingConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
 
