@@ -134,7 +134,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                                  │
                     ┌────────────▼────────────┐
                     │   Unified M3U8          │
-                    │   /playlist.m3u8        │
+                    │   /pl                   │
                     └─────────────────────────┘
                                  │
           ┌──────────────────────┼──────────────────────┐
@@ -245,9 +245,9 @@ podman-compose up -d
 1. **Access your services:**
 
 ```
-Unified Playlist: http://your-server-ip:9500/playlist
-Group Filtered Playlist: http://your-server-ip:9500/playlist/{group}
-Admin Interface:  http://your-server-ip:9500/admin
+Unified Playlist: http://your-server-ip:9500/pl
+Group Filtered Playlist: http://your-server-ip:9500/pl/{group}
+Admin Interface:  http://your-server-ip:9500/
 Stream Management: Use admin interface to activate/kill streams per channel
 ```
 
@@ -255,17 +255,18 @@ Stream Management: Use admin interface to activate/kill streams per channel
 
 ## Web Admin Interface
 
-Access the admin interface at `http://your-server:port/admin` for comprehensive management:
+Access the admin interface at `http://your-server:port/` for comprehensive management:
 
 ### Custom Styling
 
 You can customize the admin interface appearance by creating a custom CSS file at `/settings/custom.css`. This file will be automatically loaded by the admin interface.
 
-**Base Framework**: The admin interface uses UIKit 3. For comprehensive styling documentation, visit: <https://getuikit.com/docs/introduction>
+**Base Framework**: The admin interface uses TailWindCSS. For comprehensive styling documentation, visit: <https://tailwindcss.com/docs/styling-with-utility-classes#overview>
 
 **Available Custom CSS Classes**:
 
 ### Stat Cards
+
 - `.stat-card` - Primary blue gradient
 - `.stat-card-success` - Green gradient
 - `.stat-card-warning` - Orange gradient
@@ -273,22 +274,26 @@ You can customize the admin interface appearance by creating a custom CSS file a
 - `.stat-card-yellow` - Yellow gradient
 
 ### Status Indicators
+
 - `.status-indicator` - Base indicator dot
 - `.status-active` - Green with glow
 - `.status-warning` - Orange with glow
 - `.status-error` - Red with glow
 
 ### Channel/Source Items
+
 - `.channel-item` - Channel list item with left border
 - `.channel-inactive` - Inactive channel styling
 - `.source-item` - Source configuration card
 
 ### Stream Cards
+
 - `.stream-card` - Stream selector card
 - `.dead-stream` - Dead stream styling with diagonal overlay
 - `.stream-order-btn` - Stream reorder buttons
 
 ### Log Entries
+
 - `.log-entry` - Base log entry
 - `.log-error` - Error level
 - `.log-warning` - Warning level
@@ -296,18 +301,21 @@ You can customize the admin interface appearance by creating a custom CSS file a
 - `.log-debug` - Debug level
 
 ### UI Components
+
 - `.stat-badge` - Stream statistics badge
 - `.metric-row` - Dashboard metric row
 - `.connection-dot` - Animated connection indicator
 - `.in-totop` - Scroll to top button
 
 ### Modals & Tabs
+
 - `.modal` - Modal overlay (use `.active` to show)
 - `.modal-content` - Modal dialog content
 - `.tab-content > div` - Tab panel (use `.active` to show)
 - `.source-tab-content > div` - Source modal tab panel
 
 ### Utilities
+
 - `.text-truncate` - Truncate text with ellipsis
 - `.spinner` - Loading spinner animation
 - `.notification` - Toast notification container
@@ -458,19 +466,22 @@ The Stream Watcher runs as a background service that monitors active streams eve
 - **Seamless Transition**: Maintains client connections during stream changes
 - **Resource Respect**: Uses existing connection limits and stream management
 
+## APP Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Web admin interface |
+| `GET /metrics` | Prometheus metrics |
+| `GET /pl` | Unified playlist (all channels) |
+| `GET /pl/{group}` | Group-filtered playlist |
+| `GET /s/{channel}` | Stream proxy with automatic failover |
+| `GET /epg` | EPG |
+| `GET /epg.xml` | EPG |
+
 ## API Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /pl` | Unified playlist (all channels) |
-| `GET /playlist` | Unified playlist (all channels) |
-| `GET /pl/{group}` | Group-filtered playlist |
-| `GET /playlist/{group}` | Group-filtered playlist |
-| `GET /s/{channel}` | Stream proxy with automatic failover |
-| `GET /epg` | EPG |
-| `GET /epg.xml` | EPG |
-| `GET /metrics` | Prometheus metrics |
-| `GET /admin` | Web admin interface |
 | `GET /api/config` | Get current configuration |
 | `POST /api/config` | Update configuration |
 | `GET /api/stats` | System statistics |
@@ -549,7 +560,7 @@ services:
     
     # Health check
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/playlist"]
+      test: [ "CMD", "curl", "-v", "http://127.0.0.1:8080/api/stats" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -708,20 +719,20 @@ docker-compose logs kptv-proxy | grep WATCHER
 ### VLC Media Player
 
 ```
-Network → Open Network Stream → http://your-server:9500/playlist
+Network → Open Network Stream → http://your-server:9500/pl
 ```
 
 ### Kodi/LibreELEC
 
 ```
 Add-ons → PVR IPTV Simple Client
-M3U Play List URL: http://your-server:9500/playlist
+M3U Play List URL: http://your-server:9500/pl
 ```
 
 ### Android/iOS IPTV Apps
 
 ```
-Playlist URL: http://your-server:9500/playlist
+Playlist URL: http://your-server:9500/pl
 Format: M3U8/HLS
 ```
 
@@ -800,8 +811,10 @@ MIT License - see [LICENSE](LICENSE) file for details.
 This project incorporates or uses the following third-party software:
 
 - **FFmpeg/FFprobe**: Licensed under LGPL v2.1 or later - [https://ffmpeg.org/legal.html](https://ffmpeg.org/legal.html)
-- **UIKit 3**: MIT License - [https://getuikit.com](https://getuikit.com)
+- **TailwindCSS**: MIT License - [https://tailwindcss.com/](https://tailwindcss.com/)
 
 ---
 
-**Need Help?** Use the web admin interface at `http://your-server:port/admin` for easy configuration management, customize the appearance with `/settings/custom.css`, or enable debug mode and check the logs for detailed information about stream processing, connection attempts, and error details. The automatic Stream Watcher will help maintain stream reliability in the background, and FFmpeg integration provides advanced streaming capabilities for complex media formats.
+**Need Help?** Use the web admin interface at `http://your-server:port/` for easy configuration management, customize the appearance with `/settings/custom.css`, or enable debug mode and check the logs for detailed information about stream processing, connection attempts, and error details. The automatic Stream Watcher will help maintain stream reliability in the background, and FFmpeg integration provides advanced streaming capabilities for complex media formats.
+
+**Still Need Help?**
