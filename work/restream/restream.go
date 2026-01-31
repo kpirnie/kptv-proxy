@@ -685,12 +685,14 @@ func (r *Restream) testAndStreamVariant(variant parser.StreamVariant, source *co
 
 	// Use FFmpeg if enabled, bypassing all variant testing
 	if r.Config.FFmpegMode {
+
 		return r.streamWithFFmpeg(variant.URL)
 	}
 
 	// Build HTTP GET request for the variant
 	testReq, err := http.NewRequest("GET", variant.URL, nil)
 	if err != nil {
+
 		return false, 0
 	}
 
@@ -702,17 +704,39 @@ func (r *Restream) testAndStreamVariant(variant parser.StreamVariant, source *co
 	// Execute the request
 	resp, err := r.HttpClient.DoWithHeaders(testReq, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
+
 		return false, 0
 	}
 	defer resp.Body.Close()
 
 	// Reject if status code is not OK
 	if resp.StatusCode != http.StatusOK {
+
 		return false, 0
 	}
 
-	// Read a small buffer to validate the response content
-	testBuffer := make([]byte, 8192) // 8 KB peek
+	// Check Content-Type header first - most efficient detection
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+
+	// If Content-Type clearly indicates MPEG-TS, stream directly
+	if strings.Contains(contentType, "video/mp2t") ||
+		strings.Contains(contentType, "video/mpeg") {
+		logger.Debug("[STREAM_VARIANT] Direct stream detected via Content-Type: %s", contentType)
+
+		return r.streamFromURL(variant.URL, source)
+	}
+
+	// If Content-Type clearly indicates playlist, use HLS
+	if strings.Contains(contentType, "application/vnd.apple.mpegurl") ||
+		strings.Contains(contentType, "application/x-mpegurl") ||
+		strings.Contains(contentType, "audio/mpegurl") {
+		logger.Debug("[STREAM_VARIANT] HLS playlist detected via Content-Type: %s", contentType)
+
+		return r.streamHLSSegments(variant.URL)
+	}
+
+	// Content-Type ambiguous or missing - need to peek at content
+	testBuffer := make([]byte, 512) // Reduced from 8KB - only need first few bytes
 	n, err := resp.Body.Read(testBuffer)
 	if err != nil && err != io.EOF {
 		return false, 0
@@ -725,7 +749,7 @@ func (r *Restream) testAndStreamVariant(variant parser.StreamVariant, source *co
 	content := string(testBuffer[:n])
 
 	// If this looks like an HLS playlist (contains EXTINF tags)
-	if strings.Contains(content, "#EXTINF") {
+	if strings.Contains(content, "#EXTINF") || strings.Contains(content, "#EXTM3U") {
 		// Use HLS segment streaming method
 		return r.streamHLSSegments(variant.URL)
 	}
