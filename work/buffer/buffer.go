@@ -87,6 +87,7 @@ func NewBufferPool(bufferSize int64) *BufferPool {
 		},
 	}
 
+	// return the buffer pool
 	return bp
 }
 
@@ -109,6 +110,7 @@ func (bp *BufferPool) Get() *ByteBuffer {
 		buf.B = make([]byte, 0, bp.bufferSize)
 	}
 
+	// return the buffer
 	return buf
 }
 
@@ -140,6 +142,7 @@ func (bp *BufferPool) Put(buf *ByteBuffer) {
 // shutdown or when performing comprehensive resource cleanup to ensure all pooled
 // memory is properly released back to the system.
 func (bp *BufferPool) Cleanup() {
+
 	// sync.Pool entries are automatically cleared between GC cycles;
 	// trigger collection to reclaim idle pool entries immediately
 	runtime.GC()
@@ -172,11 +175,15 @@ type RingBuffer struct {
 // Returns:
 //   - *RingBuffer: initialized circular buffer ready for read/write operations
 func NewRingBuffer(size int64) *RingBuffer {
+
+	// create the ring buffer
 	rb := &RingBuffer{
 		data: make([]byte, size),
 		size: size,
 	}
 	rb.destroyed.Store(false)
+
+	// return the ring buffer
 	return rb
 }
 
@@ -189,6 +196,7 @@ func NewRingBuffer(size int64) *RingBuffer {
 // Parameters:
 //   - data: byte slice to write into the circular buffer
 func (rb *RingBuffer) Write(data []byte) {
+
 	// Early return if buffer has been destroyed
 	if rb.destroyed.Load() {
 		return
@@ -328,6 +336,8 @@ func (rb *RingBuffer) Destroy() {
 // Returns:
 //   - bool: true if Destroy() has been called, false otherwise
 func (rb *RingBuffer) IsDestroyed() bool {
+
+	// return if the ring buffer actually has been destroyed
 	return rb.destroyed.Load()
 }
 
@@ -340,6 +350,8 @@ func (rb *RingBuffer) GetWritePosition() int64 {
 	if rb.destroyed.Load() {
 		return 0
 	}
+
+	// return the ring buffers position
 	return rb.writePos.Load()
 }
 
@@ -397,5 +409,6 @@ func (rb *RingBuffer) PeekRecentData(maxBytes int64) []byte {
 		copy(result[firstChunk:], rb.data[:dataSize-firstChunk])
 	}
 
+	// return the recent buffer data copy
 	return result
 }
