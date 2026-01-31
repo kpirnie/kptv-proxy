@@ -16,6 +16,7 @@ import (
 // containing all available channels from all configured sources.
 func HandlePlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logger.Debug("{handlers - HandlePlaylist} present the playlist")
 		middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 			sp.GeneratePlaylist(w, r, "")
 		})(w, r)
@@ -26,6 +27,7 @@ func HandlePlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 // containing only channels belonging to a specific group.
 func HandleGroupPlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logger.Debug("{handlers - HandleGroupPlaylist} present the grouped playlist")
 		middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 			vars := mux.Vars(r)
 			group := vars["group"]
@@ -43,12 +45,12 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		channelName := sp.FindChannelBySafeName(safeName)
 		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
-			logger.Error("Channel not found: %s", channelName)
+			logger.Error("{handlers - HandleStream} Channel not found: %s", channelName)
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
 
-		logger.Debug("Using RESTREAMING mode for channel: %s", channelName)
+		logger.Debug("{handlers - HandleStream} handling stream for channel: %s", channelName)
 		sp.HandleRestreamingClient(w, r, channel)
 	}
 }
@@ -69,8 +71,7 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 			}
 
 			modTime := epgModTime(f)
-
-			logger.Debug("[EPG] Streaming from disk cache (%d bytes, ttl=%ds)", size, remainingTTL)
+			logger.Debug("{handlers - HandleEPG} from disk cache (%d bytes, ttl=%ds)", size, remainingTTL)
 
 			w.Header().Set("Content-Type", "application/xml")
 			w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", remainingTTL))
@@ -82,7 +83,7 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		// Cache miss — trigger background warmup
-		logger.Debug("[EPG] Cache miss, triggering background warmup")
+		logger.Debug("{handlers - HandleEPG} Cache miss, triggering background warmup")
 		sp.Cache.WarmUpEPG(func() string {
 			return sp.FetchAndMergeEPG()
 		})
@@ -90,17 +91,18 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 		// Serve fresh data inline for this request
 		sources := sp.GetEPGSources()
 		if len(sources) == 0 {
-			logger.Warn("[EPG] No EPG sources available")
+			logger.Warn("{handlers - HandleEPG} No EPG sources available")
 			return
 		}
 
-		logger.Debug("[EPG] Streaming fresh EPG to client")
+		logger.Debug("{handlers - HandleEPG} Streaming fresh EPG to client")
 		w.Header().Set("Content-Type", "application/xml")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		w.Header().Set("Transfer-Encoding", "chunked")
 
 		flusher, ok := w.(http.Flusher)
 		if !ok {
+			logger.Error("{handlers - HandleEPG} streaming not supported")
 			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 			return
 		}
@@ -111,18 +113,20 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		channels, programmes := sp.FetchEPGData(sources)
 
+		// write the data and flush the output
 		for _, channelData := range channels {
 			w.Write([]byte(channelData))
 			flusher.Flush()
 		}
-
 		for _, programmeData := range programmes {
 			w.Write([]byte(programmeData))
 			flusher.Flush()
 		}
 
+		// write the end of the EPG and flush the response
 		w.Write([]byte("</tv>"))
 		flusher.Flush()
+		logger.Debug("{handlers - HandleEPG} flushed the stream")
 	}
 }
 
