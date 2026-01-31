@@ -146,7 +146,7 @@ func (sp *StreamProxy) ImportStreams() {
 			}
 
 			if sp != nil && sp.FilterManager != nil {
-				streams = filter.FilterStreams(streams, src, sp.FilterManager, sp.Config.Debug)
+				streams = filter.FilterStreams(streams, src, sp.FilterManager)
 			}
 
 			if src.Username != "" && src.Password != "" {
@@ -192,7 +192,7 @@ func (sp *StreamProxy) ImportStreams() {
 		parser.SortStreams(channel.Streams, sp.Config, channelName)
 
 		customOrder, _ := streamorder.GetChannelStreamOrder(channelName)
-		if customOrder != nil && len(customOrder) > 0 {
+		if len(customOrder) > 0 {
 			reorderedStreams := make([]*types.Stream, 0, len(channel.Streams))
 
 			for _, idx := range customOrder {
