@@ -1047,6 +1047,13 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 	// Mark this as a manual switch so context cancellation won't be treated as failure
 	r.ManualSwitch.Store(true)
 
+	// Destroy buffer before cancelling context to prevent memory leak
+	if r.Buffer != nil && !r.Buffer.IsDestroyed() {
+		r.Buffer.Destroy()
+		logger.Debug("[FORCE_SWITCH] Channel %s: Buffer destroyed before switch", r.Channel.Name)
+
+	}
+
 	// Cancel current context to trigger restart with new stream index
 	r.Cancel()
 }
