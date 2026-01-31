@@ -523,26 +523,27 @@ func (r *Restream) Stream() {
 //   - int64: number of bytes successfully transferred
 func (r *Restream) StreamFromSource(index int) (bool, int64) {
 
+	// debug logger
 	logger.Debug("[STREAM_ATTEMPT] Channel %s: Attempting to stream from index %d", r.Channel.Name, index)
 
-	// CHECK FFMPEG MODE FIRST - BEFORE ANYTHING ELSE
-	if r.Config.FFmpegMode {
+	// Acquire read lock ONCE to access the channel's stream list safely
+	r.Channel.Mu.RLock()
+	if index >= len(r.Channel.Streams) {
+		r.Channel.Mu.RUnlock()
+		return false, 0
+	}
 
-		// Get the stream URL for FFmpeg
-		r.Channel.Mu.RLock()
-		if index >= len(r.Channel.Streams) {
-			r.Channel.Mu.RUnlock()
-			return false, 0
-		}
+	// CHECK FFMPEG MODE - with lock already held
+	if r.Config.FFmpegMode {
 		streamURL := r.Channel.Streams[index].URL
 		r.Channel.Mu.RUnlock()
 
+		// debug logger
 		logger.Debug("[FFMPEG_MODE] Channel %s", r.Channel.Name)
+
 		return r.streamWithFFmpeg(streamURL)
 	}
 
-	// Acquire read lock to access the channel's stream list safely
-	r.Channel.Mu.RLock()
 	if index >= len(r.Channel.Streams) {
 
 		// If the requested index is invalid, unlock and exit
