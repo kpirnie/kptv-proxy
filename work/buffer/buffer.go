@@ -73,6 +73,8 @@ type BufferPool struct {
 // Returns:
 //   - *BufferPool: initialized pool ready for concurrent Get/Put operations
 func NewBufferPool(bufferSize int64) *BufferPool {
+
+	// set the buffer size
 	size := int(bufferSize)
 	bp := &BufferPool{
 		bufferSize: size,
@@ -99,6 +101,7 @@ func NewBufferPool(bufferSize int64) *BufferPool {
 // Returns:
 //   - *ByteBuffer: ready-to-use buffer with at minimum the configured capacity
 func (bp *BufferPool) Get() *ByteBuffer {
+
 	// Retrieve buffer from pool (may be recycled or newly allocated)
 	buf := bp.pool.Get().(*ByteBuffer)
 
@@ -122,6 +125,8 @@ func (bp *BufferPool) Get() *ByteBuffer {
 // Parameters:
 //   - buf: ByteBuffer to return to the pool, nil values are safely ignored
 func (bp *BufferPool) Put(buf *ByteBuffer) {
+
+	// dump if there's nothing in the pool
 	if buf == nil {
 		return
 	}
@@ -256,6 +261,7 @@ func (rb *RingBuffer) UpdateClientPosition(clientID string, pos int64) {
 		return
 	}
 
+	// store it
 	rb.readPos.Store(clientID, pos)
 }
 
@@ -269,6 +275,7 @@ func (rb *RingBuffer) RemoveClient(clientID string) {
 		return
 	}
 
+	// delete it
 	rb.readPos.Delete(clientID)
 }
 
@@ -303,6 +310,7 @@ func (rb *RingBuffer) Reset() {
 // is irreversible and thread-safe through atomic compare-and-swap on the destruction
 // flag, ensuring exactly-once execution even under concurrent invocation.
 func (rb *RingBuffer) Destroy() {
+
 	// Atomic CAS ensures exactly-once destruction semantics
 	if !rb.destroyed.CompareAndSwap(false, true) {
 		return
@@ -372,6 +380,7 @@ func (rb *RingBuffer) PeekRecentData(maxBytes int64) []byte {
 		return nil
 	}
 
+	// acquire the lock
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
 
@@ -379,29 +388,23 @@ func (rb *RingBuffer) PeekRecentData(maxBytes int64) []byte {
 	if rb.destroyed.Load() {
 		return nil
 	}
-
 	writePos := rb.writePos.Load()
 	if writePos == 0 {
 		return nil
 	}
 
 	// Clamp data size to available content and buffer capacity
-	dataSize := maxBytes
-	if dataSize > writePos {
-		dataSize = writePos
-	}
-	if dataSize > rb.size {
-		dataSize = rb.size
-	}
+	dataSize := min(
+		maxBytes, // Limit by maximum bytes to write
+		writePos, // Limit by current write position
+		rb.size,  // Limit by ring buffer size
+	)
 
 	result := make([]byte, dataSize)
 	startPos := (writePos - dataSize) % rb.size
 
 	// First chunk: from start position to end of buffer (or end of needed data)
-	firstChunk := rb.size - startPos
-	if firstChunk > dataSize {
-		firstChunk = dataSize
-	}
+	firstChunk := min(rb.size-startPos, dataSize)
 	copy(result[:firstChunk], rb.data[startPos:startPos+firstChunk])
 
 	// Second chunk: wrap around from beginning if data spans the boundary
