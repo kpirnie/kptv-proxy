@@ -1,8 +1,6 @@
 module kptv-proxy
 
-go 1.24.0
-
-toolchain go1.24.5
+go 1.25.6
 
 require (
 	github.com/dgraph-io/ristretto/v2 v2.3.0
@@ -10,11 +8,9 @@ require (
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
 	github.com/grafov/m3u8 v0.12.1
 	github.com/klauspost/compress v1.18.0
-	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/panjf2000/ants/v2 v2.11.3
 	github.com/prometheus/client_golang v1.23.0
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
-	github.com/valyala/bytebufferpool v1.0.0
 	go.uber.org/ratelimit v0.3.1
 )
 
