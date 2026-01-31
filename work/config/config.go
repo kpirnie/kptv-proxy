@@ -131,19 +131,20 @@ func EnsureConfigExists() error {
 
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+
 		// Ensure directory exists
 		if err := os.MkdirAll("/settings", 0755); err != nil {
-			logger.Error("failed to create settings directory: %v", err)
+			logger.Error("{config - EnsureConfigExists} failed to create settings directory: %v", err)
 			return err
 		}
 
 		// Create default config file
 		log.Println("Config file not found, creating default config at", configPath)
 		if err := CreateExampleConfig(configPath); err != nil {
-			logger.Error("failed to create default config: %v", err)
+			logger.Error("{config - EnsureConfigExists} failed to create default config: %v", err)
 			return err
 		}
-		logger.Debug("Default config file created successfully")
+		logger.Debug("{config - EnsureConfigExists} Default config file created successfully")
 	}
 
 	return nil
@@ -179,8 +180,7 @@ func LoadConfig() *Config {
 	configPath := "/settings/config.json"
 	config, err := loadFromFile(configPath)
 	if err != nil {
-		logger.Error("Failed to load config from %s: %v", configPath, err)
-		logger.Error("Falling back to default configuration...")
+		logger.Error("{config - LoadConfig} Failed to load config from %s: %v", configPath, err)
 		config = getDefaultConfig()
 	}
 
@@ -191,8 +191,9 @@ func LoadConfig() *Config {
 	configCache = config
 
 	// Debug logging of loaded config
-	logger.Debug("Configuration loaded")
+	logger.Debug("{config - LoadConfig} Configuration loaded")
 
+	// return the config
 	return config
 }
 
@@ -209,16 +210,17 @@ func loadFromFile(path string) (*Config, error) {
 	// read from tthe file
 	data, err := os.ReadFile(path)
 	if err != nil {
-		logger.Error("failed to read config file: %v", err)
+		logger.Error("{config - loadFromFile} failed to read config file: %v", err)
 		return nil, err
 	}
 
 	// unmarshal the config file
 	var configFile ConfigFile
 	if err := json.Unmarshal(data, &configFile); err != nil {
-		logger.Error("failed to parse config JSON: %v", err)
+		logger.Error("{config - loadFromFile} failed to parse config JSON: %v", err)
 		return nil, err
 	}
+	logger.Debug("{config - loadFromFile} parsed the config file")
 
 	// convert to our settings
 	return convertFromFile(&configFile)
@@ -247,15 +249,15 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 	// Parse duration fields
 	var err error
 	if config.CacheDuration, err = time.ParseDuration(cf.CacheDuration); err != nil {
-		logger.Error("invalid cacheDuration: %v", err)
+		logger.Error("{config - convertFromFile} invalid cacheDuration: %v", err)
 		return nil, err
 	}
 	if config.ImportRefreshInterval, err = time.ParseDuration(cf.ImportRefreshInterval); err != nil {
-		logger.Error("invalid importRefreshInterval: %v", err)
+		logger.Error("{config - convertFromFile} invalid importRefreshInterval: %v", err)
 		return nil, err
 	}
 	if config.StreamTimeout, err = time.ParseDuration(cf.StreamTimeout); err != nil {
-		logger.Error("invalid streamTimeout: %v", err)
+		logger.Error("{config - convertFromFile} invalid streamTimeout: %v", err)
 		return nil, err
 	}
 
@@ -284,24 +286,27 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 
 		// Parse per-source durations
 		if src.MaxStreamTimeout, err = time.ParseDuration(srcFile.MaxStreamTimeout); err != nil {
-			logger.Error("invalid maxStreamTimeout for source %s: %v", src.Name, err)
+			logger.Error("{config - convertFromFile} invalid maxStreamTimeout for source %s: %v", src.Name, err)
 			return nil, err
 		}
 		if src.RetryDelay, err = time.ParseDuration(srcFile.RetryDelay); err != nil {
-			logger.Error("invalid retryDelay for source %s: %v", src.Name, err)
+			logger.Error("{config - convertFromFile} invalid retryDelay for source %s: %v", src.Name, err)
 			return nil, err
 		}
 	}
 
 	// Simple copy since EPGConfig has no duration fields
 	config.EPGs = cf.EPGs
-
+	logger.Debug("{config - convertFromFile} convert from the json settings")
+	// return the config
 	return config, nil
 }
 
 // getDefaultConfig returns a baseline configuration
 // with sensible defaults when no file is present.
 func getDefaultConfig() *Config {
+
+	// return the default config
 	return &Config{
 		BaseURL:               "http://localhost:8080",
 		BufferSizePerStream:   1,                // Default: 1 MB per stream
@@ -495,10 +500,10 @@ func CreateExampleConfig(path string) error {
 	// setup the data properly
 	data, err := json.MarshalIndent(example, "", "  ")
 	if err != nil {
-		logger.Error("Example config: %v", err)
+		logger.Error("{config - CreateExampleConfig} example config: %v", err)
 		return err
 	}
-
+	logger.Debug("{config - CreateExampleConfig} created the example config")
 	// write the config file
 	return os.WriteFile(path, data, 0644)
 }
