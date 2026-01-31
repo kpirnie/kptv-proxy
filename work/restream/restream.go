@@ -123,6 +123,9 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 		go r.Stream()
 		go r.monitorClientHealth()
 		go r.StartStatsCollection()
+
+		// Brief delay to allow buffer to pre-warm before client writes
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
