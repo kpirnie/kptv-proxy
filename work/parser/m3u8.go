@@ -31,14 +31,16 @@ var (
 
 // classifyStreamContent applies the same content classification logic as XC API parsing
 func classifyStreamContent(streamName, streamURL string, existingGroup string) string {
+
 	// If there's already a meaningful group-title, preserve it unless we have a better classification
 	if existingGroup != "" && !strings.EqualFold(existingGroup, "uncategorized") {
+
 		// Still check if our regex patterns suggest a different classification
 		seriesNameMatch := seriesRegex.MatchString(streamName)
 		vodNameMatch := vodRegex.MatchString(streamName)
 		seriesURLMatch := seriesRegex.MatchString(streamURL)
 		vodURLMatch := vodRegex.MatchString(streamURL)
-
+		logger.Debug("{parser/m3u8 - classifyStreamContent} classify the stream content - group")
 		if seriesNameMatch || seriesURLMatch {
 			return "series"
 		}
@@ -55,7 +57,7 @@ func classifyStreamContent(streamName, streamURL string, existingGroup string) s
 	vodNameMatch := vodRegex.MatchString(streamName)
 	seriesURLMatch := seriesRegex.MatchString(streamURL)
 	vodURLMatch := vodRegex.MatchString(streamURL)
-
+	logger.Debug("{parser/m3u8 - classifyStreamContent} classify the stream content")
 	if seriesNameMatch || seriesURLMatch {
 		return "series"
 	}
@@ -86,87 +88,85 @@ func classifyStreamContent(streamName, streamURL string, existingGroup string) s
 // Returns:
 //   - []*types.Stream: slice of parsed stream objects, or nil if parsing fails completely
 func ParseM3U8(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
-	logger.Debug("Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
+	logger.Debug("{parser/m3u8 - ParseM3U8} Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
 
 	cacheKey := fmt.Sprintf("m3u8:%s", source.URL)
 	if cached, found := cache.GetXCData(cacheKey); found {
-		logger.Debug("[M3U8_CACHE_HIT] Using cached M3U8 data for %s", source.Name)
+		logger.Debug("{parser/m3u8 - ParseM3U8} Using cached M3U8 data for %s", source.Name)
 		var streams []*types.Stream
 		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
+			logger.Error("{parser/m3u8 - ParseM3U8} %v", err)
 			return streams
 		}
 	}
 
+	// ratelimiter
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		logger.Debug("[RATE_LIMIT] Applied rate limit for source: %s", source.Name)
-
+		logger.Debug("{parser/m3u8 - ParseM3U8} Applied rate limit for source: %s", source.Name)
 	}
 
+	// setup a cancellation
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequest("GET", source.URL, nil)
 	if err != nil {
-		logger.Debug("Error creating request for %s: %v", utils.LogURL(cfg, source.URL), err)
-
+		logger.Error("{parser/m3u8 - ParseM3U8} creating request for %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
 	req = req.WithContext(ctx)
 
 	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
-		logger.Debug("Error fetching M3U8 from %s: %v", utils.LogURL(cfg, source.URL), err)
-
+		logger.Error("{parser/m3u8 - ParseM3U8} fetching M3U8 from %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
 
+	// defer the connection closing
 	defer func() {
 		resp.Body.Close()
-		logger.Debug("[PARSE_CONNECTION_CLOSE] Closed connection for: %s", utils.LogURL(cfg, source.URL))
+		logger.Debug("{parser/m3u8 - ParseM3U8} Closed connection for: %s", utils.LogURL(cfg, source.URL))
 
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Debug("HTTP error %d when fetching %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
-
+		logger.Error("{parser/m3u8 - ParseM3U8} HTTP error %d when fetching %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
 		return nil
 	}
 
+	// hold the streams and the playlist
 	var streams []*types.Stream
 	playlist, listType, err := m3u8.DecodeFrom(bufio.NewReader(resp.Body), true)
 	if err == nil {
-		logger.Debug("Successfully parsed with grafov parser: %s", utils.LogURL(cfg, source.URL))
-
+		logger.Debug("{parser/m3u8 - ParseM3U8} Successfully parsed with grafov parser: %s", utils.LogURL(cfg, source.URL))
 		streams = ParseWithGrafov(playlist, listType, source, cfg)
 	} else {
-		logger.Debug("Grafov parser failed, using fallback parser: %v", err)
-
+		logger.Debug("{parser/m3u8 - ParseM3U8} Grafov parser failed, using fallback parser: %v", err)
 		resp.Body.Close()
 
 		req2, err := http.NewRequest("GET", source.URL, nil)
 		if err != nil {
-			logger.Debug("Error creating fallback request for %s: %v", utils.LogURL(cfg, source.URL), err)
-
+			logger.Error("{parser/m3u8 - ParseM3U8} creating fallback request for %s: %v", utils.LogURL(cfg, source.URL), err)
 			return nil
 		}
 		req2 = req2.WithContext(ctx)
 
 		resp2, err := httpClient.DoWithHeaders(req2, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 		if err != nil {
-			logger.Debug("Error re-fetching for fallback parser: %v", err)
-
+			logger.Error("{parser/m3u8 - ParseM3U8} re-fetching for fallback parser: %v", err)
 			return nil
 		}
+
+		// close the fallback connection
 		defer func() {
 			resp2.Body.Close()
-			logger.Debug("[PARSE_FALLBACK_CLOSE] Closed fallback connection for: %s", utils.LogURL(cfg, source.URL))
+			logger.Debug("{parser/m3u8 - ParseM3U8} Closed fallback connection for: %s", utils.LogURL(cfg, source.URL))
 
 		}()
 
 		if resp2.StatusCode != http.StatusOK {
-			logger.Debug("HTTP error %d on fallback fetch from %s", resp2.StatusCode, utils.LogURL(cfg, source.URL))
-
+			logger.Error("{parser/m3u8 - ParseM3U8} HTTP error %d on fallback fetch from %s", resp2.StatusCode, utils.LogURL(cfg, source.URL))
 			return nil
 		}
 
@@ -175,14 +175,16 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, cfg *config.Config, sourc
 		streams = ParseM3U8Fallback(resp2.Body, source, cfg)
 	}
 
+	// if there's actually streams
 	if len(streams) > 0 {
 		if data, err := json.Marshal(streams); err == nil {
 			cache.SetXCData(cacheKey, string(data))
-			logger.Debug("[M3U8_CACHE_SET] Cached %d streams for %s", len(streams), source.Name)
+			logger.Debug("{parser/m3u8 - ParseM3U8} Cached %d streams for %s", len(streams), source.Name)
 
 		}
 	}
 
+	// return the streams
 	return streams
 }
 
@@ -206,8 +208,11 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, cfg *config.Config, sourc
 // Returns:
 //   - []*types.Stream: slice of Stream objects extracted from the playlist variants or media
 func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *config.SourceConfig, cfg *config.Config) []*types.Stream {
+
+	// hold the streams
 	var streams []*types.Stream
 
+	// swtich the type of list we need
 	switch listType {
 	case m3u8.MEDIA:
 		stream := &types.Stream{
@@ -220,7 +225,9 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 		group := classifyStreamContent(stream.Name, stream.URL, "")
 		stream.Attributes["group-title"] = group
 
+		// append the streams
 		streams = append(streams, stream)
+		logger.Debug("{parser/m3u8 - ParseWithGrafov} parse a normal playlist")
 
 	case m3u8.MASTER:
 		masterpl := playlist.(*m3u8.MasterPlaylist)
@@ -253,13 +260,14 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 
 			group := classifyStreamContent(stream.Name, stream.URL, "")
 			stream.Attributes["group-title"] = group
-
+			// append the streams
 			streams = append(streams, stream)
+			logger.Debug("{parser/m3u8 - ParseWithGrafov} parse a master playlist")
 		}
 	}
+	logger.Debug("{parser/m3u8 - ParseWithGrafov} Grafov parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
 
-	logger.Debug("Grafov parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
-
+	// return the streams
 	return streams
 }
 
@@ -284,6 +292,8 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 // Returns:
 //   - []*types.Stream: slice of Stream objects parsed from playlist content
 func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *config.Config) []*types.Stream {
+
+	// setup the streams slice
 	var streams []*types.Stream
 	scanner := bufio.NewScanner(reader)
 	var currentAttrs map[string]string
@@ -328,9 +338,9 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 					}
 				}
 			}
+			logger.Debug("{parser/m3u8 - ParseM3U8Fallback} Parsed EXTINF attributes: %+v", currentAttrs)
 
-			logger.Debug("Parsed EXTINF attributes: %+v", currentAttrs)
-
+			// maybe its a url line
 		} else if currentAttrs != nil && (strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://")) {
 
 			// Found stream URL following EXTINF line
@@ -355,18 +365,18 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 			group := classifyStreamContent(stream.Name, stream.URL, existingGroup)
 			stream.Attributes["group-title"] = group
 
-			logger.Debug("Classified stream '%s' as '%s' (URL: %s)", stream.Name, group, utils.LogURL(cfg, stream.URL))
+			logger.Debug("{parser/m3u8 - ParseM3U8Fallback} Classified stream '%s' as '%s' (URL: %s)", stream.Name, group, utils.LogURL(cfg, stream.URL))
 
 			streams = append(streams, stream)
-			logger.Debug("Added stream: %s (URL: %s)", stream.Name, utils.LogURL(cfg, stream.URL))
+			logger.Debug("{parser/m3u8 - ParseM3U8Fallback} Added stream: %s (URL: %s)", stream.Name, utils.LogURL(cfg, stream.URL))
 
 			// Reset attributes for next stream entry
 			currentAttrs = nil
 		}
 	}
+	logger.Debug("{parser/m3u8 - ParseM3U8Fallback} Fallback parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
 
-	logger.Debug("Fallback parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
-
+	// returrn the streams
 	return streams
 }
 
@@ -464,7 +474,7 @@ func ParseEXTINF(line string) map[string]string {
 //   - channelName: channel name for debug logging context
 func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string) {
 	if len(streams) > 1 {
-		logger.Debug("[SORT_BEFORE] Channel %s: Sorting %d streams", channelName, len(streams))
+		logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Sorting %d streams", channelName, len(streams))
 	}
 
 	// Check if there's a custom order for this channel
@@ -482,7 +492,7 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 		}
 
 		if valid {
-			logger.Debug("[SORT_CUSTOM] Channel %s: Applying custom order %v", channelName, customOrder)
+			logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applying custom order %v", channelName, customOrder)
 
 			// Create a new slice with the custom order
 			orderedStreams := make([]*types.Stream, len(streams))
@@ -493,11 +503,11 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 			// Copy back to original slice
 			copy(streams, orderedStreams)
 
-			logger.Debug("[SORT_AFTER] Channel %s: Applied custom ordering", channelName)
+			logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applied custom ordering", channelName)
 
 			return
 		} else {
-			logger.Debug("[SORT_CUSTOM] Channel %s: Invalid custom order, falling back to default", channelName)
+			logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Invalid custom order, falling back to default", channelName)
 
 		}
 	}
@@ -521,6 +531,6 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 	})
 
 	if len(streams) > 1 {
-		logger.Debug("[SORT_AFTER] Channel %s: Applied default sorting", channelName)
+		logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applied default sorting", channelName)
 	}
 }
