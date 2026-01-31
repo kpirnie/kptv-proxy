@@ -575,6 +575,16 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		return false, 0
 	}
 
+	// CRITICAL: Apply rate limiting BEFORE attempting connection to provider
+	// This prevents overwhelming the provider with too many simultaneous connection attempts
+	if r.RateLimiter != nil {
+		r.RateLimiter.Take()
+		if r.Config.Debug {
+			logger.Debug("[RATE_LIMIT] Channel %s: Applied rate limit for stream %d (source: %s)",
+				r.Channel.Name, index, stream.Source.Name)
+		}
+	}
+
 	// Enforce connection limit for this source
 	if atomic.LoadInt32(&stream.Source.ActiveConns) >= int32(stream.Source.MaxConnections) {
 		logger.Debug("[STREAM_LIMIT] Channel %s: Stream %d source at max connections (%d)", r.Channel.Name, index, stream.Source.MaxConnections)
@@ -598,7 +608,7 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 	if isMaster {
 		logger.Debug("[STREAM_MASTER] Channel %s: Master playlist detected with %d variants", r.Channel.Name, len(variants))
 
-		// loop over all viriants to test them
+		// loop over all variants to test them
 		for i, variant := range variants {
 			logger.Debug("[STREAM_MASTER_VARIANT] Channel %s: Testing variant %d (%s)", r.Channel.Name, i, variant.URL)
 
@@ -799,11 +809,9 @@ func (r *Restream) shouldCheckForMasterPlaylist(resp *http.Response) bool {
 //   - bool: success flag
 //   - int64: total number of bytes streamed
 func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool, int64) {
-	if r.RateLimiter != nil {
-		r.RateLimiter.Take()
-	}
 
 	if r.Config.FFmpegMode {
+
 		return r.streamWithFFmpeg(url)
 	}
 
