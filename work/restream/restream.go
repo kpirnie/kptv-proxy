@@ -26,6 +26,15 @@ import (
 	"go.uber.org/ratelimit"
 )
 
+// fallback video cache variables
+// these will be used to cache the local fallback video when it's available
+// and necessary to do so
+var (
+	fallbackVideoCache     []byte
+	fallbackVideoCacheMu   sync.RWMutex
+	fallbackVideoCachePath string
+)
+
 // streamBufferPool provides a sync.Pool for reusing 32KB buffers during stream
 // processing operations. This reduces memory allocations and GC pressure by
 // recycling buffers across multiple stream reads instead of allocating new
@@ -1166,13 +1175,33 @@ func (r *Restream) streamFallbackVideo() {
 func (r *Restream) streamLocalFallback(filePath string) {
 	logger.Debug("[FALLBACK_LOCAL] Channel %s: Starting local fallback from %s", r.Channel.Name, filePath)
 
-	file, err := os.Open(filePath)
-	if err != nil {
-		logger.Error("[FALLBACK_LOCAL] Channel %s: Failed to open file: %v", r.Channel.Name, err)
+	// Load fallback video into cache if not already loaded
+	fallbackVideoCacheMu.RLock()
+	needsLoad := fallbackVideoCachePath != filePath || len(fallbackVideoCache) == 0
+	fallbackVideoCacheMu.RUnlock()
 
-		return
+	if needsLoad {
+		fallbackVideoCacheMu.Lock()
+		// Double-check after acquiring write lock
+		if fallbackVideoCachePath != filePath || len(fallbackVideoCache) == 0 {
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				fallbackVideoCacheMu.Unlock()
+				logger.Debug("[FALLBACK_LOCAL] Channel %s: Failed to load file: %v", r.Channel.Name, err)
+
+				return
+			}
+			fallbackVideoCache = data
+			fallbackVideoCachePath = filePath
+			logger.Debug("[FALLBACK_LOCAL] Cached fallback video: %d bytes", len(data))
+
+		}
+		fallbackVideoCacheMu.Unlock()
 	}
-	defer file.Close()
+
+	fallbackVideoCacheMu.RLock()
+	videoData := fallbackVideoCache
+	fallbackVideoCacheMu.RUnlock()
 
 	bufPtr := getStreamBuffer()
 	buf := *bufPtr
@@ -1180,6 +1209,7 @@ func (r *Restream) streamLocalFallback(filePath string) {
 
 	lastActivityUpdate := time.Now()
 	totalBytes := int64(0)
+	offset := 0
 
 	for {
 		select {
@@ -1203,7 +1233,24 @@ func (r *Restream) streamLocalFallback(filePath string) {
 			return
 		}
 
-		n, err := file.Read(buf)
+		// Read from cached memory
+		remaining := len(videoData) - offset
+		if remaining <= 0 {
+
+			// Loop back to beginning
+			offset = 0
+			remaining = len(videoData)
+			logger.Debug("[FALLBACK_LOCAL] Channel %s: Looping fallback video", r.Channel.Name)
+
+		}
+
+		n := copy(buf, videoData[offset:])
+		offset += n
+		var err error
+		if offset >= len(videoData) {
+			err = io.EOF
+		}
+
 		if n > 0 {
 			totalBytes += int64(n)
 			chunk := buf[:n]
@@ -1234,16 +1281,9 @@ func (r *Restream) streamLocalFallback(filePath string) {
 
 		if err != nil {
 			if err == io.EOF {
-				logger.Debug("[FALLBACK_LOCAL] Channel %s: Finished loop (%d bytes), restarting", r.Channel.Name, totalBytes)
-
-				// Seek back to beginning for loop
-				file.Seek(0, 0)
-				totalBytes = 0
+				// Already handled by offset reset above
 				continue
 			}
-			logger.Error("[FALLBACK_LOCAL] Channel %s: Read error: %v", r.Channel.Name, err)
-
-			return
 		}
 	}
 }
