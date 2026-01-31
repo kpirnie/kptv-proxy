@@ -120,6 +120,7 @@ type SourceConfigFile struct {
 	VODExcludeRegex        string `json:"vodExcludeRegex,omitempty"`
 }
 
+// hold the config cache
 var (
 	configCache *Config      // Cached configuration instance (singleton)
 	configMutex sync.RWMutex // Mutex for safe concurrent access to configCache
@@ -144,9 +145,10 @@ func EnsureConfigExists() error {
 			logger.Error("{config - EnsureConfigExists} failed to create default config: %v", err)
 			return err
 		}
-		logger.Debug("{config - EnsureConfigExists} Default config file created successfully")
+		logger.Debug("{config - EnsureConfigExists} config exists")
 	}
 
+	// dont return anything
 	return nil
 }
 
@@ -161,6 +163,8 @@ func EnsureConfigExists() error {
 // Returns:
 //   - *Config: fully validated configuration object
 func LoadConfig() *Config {
+
+	// set a lock for the config cache
 	configMutex.RLock()
 	if configCache != nil {
 		defer configMutex.RUnlock()
@@ -168,6 +172,7 @@ func LoadConfig() *Config {
 	}
 	configMutex.RUnlock()
 
+	// do it again!
 	configMutex.Lock()
 	defer configMutex.Unlock()
 
@@ -298,6 +303,7 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 	// Simple copy since EPGConfig has no duration fields
 	config.EPGs = cf.EPGs
 	logger.Debug("{config - convertFromFile} convert from the json settings")
+
 	// return the config
 	return config, nil
 }
@@ -305,6 +311,7 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 // getDefaultConfig returns a baseline configuration
 // with sensible defaults when no file is present.
 func getDefaultConfig() *Config {
+	logger.Debug("{config - getDefaultConfig} load the default config")
 
 	// return the default config
 	return &Config{
@@ -397,7 +404,7 @@ func validateAndSetDefaults(config *Config) {
 // GetSourceByURL returns a pointer to the SourceConfig matching the given URL.
 // Returns nil if no match is found.
 func (c *Config) GetSourceByURL(url string) *SourceConfig {
-
+	logger.Debug("{config - GetSourceByURL} get the source config by the url")
 	// loop the sources to make sure the url is valid
 	for i := range c.Sources {
 		if c.Sources[i].URL == url {
@@ -410,6 +417,7 @@ func (c *Config) GetSourceByURL(url string) *SourceConfig {
 // GetSourcesByOrder returns a copy of sources sorted by their Order field.
 // Original slice remains unmodified.
 func (c *Config) GetSourcesByOrder() []SourceConfig {
+	logger.Debug("{config - GetSourcesByOrder} get the ordered sources")
 
 	// setup the original sources
 	sources := make([]SourceConfig, len(c.Sources))
@@ -424,6 +432,7 @@ func (c *Config) GetSourcesByOrder() []SourceConfig {
 		}
 	}
 
+	// return the sorted sources
 	return sources
 }
 
@@ -511,6 +520,7 @@ func CreateExampleConfig(path string) error {
 // ClearConfigCache resets the configCache to nil.
 // Forces a reload on the next LoadConfig() call.
 func ClearConfigCache() {
+	logger.Debug("{config - ClearConfigCache} clear the config cache")
 	configMutex.Lock()
 	defer configMutex.Unlock()
 	configCache = nil

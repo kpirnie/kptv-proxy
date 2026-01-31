@@ -44,7 +44,7 @@ func LoadDeadStreams() (*DeadStreamsFile, error) {
 
 	// Check if file exists on disk
 	if _, err := os.Stat(deadStreamsPath); os.IsNotExist(err) {
-
+		logger.Debug("{deadstreams - LoadDeadStreams} no deadstream file")
 		// File doesn't exist - return empty structure for first-time initialization
 		return &DeadStreamsFile{DeadStreams: []DeadStreamEntry{}}, nil
 	}
@@ -52,13 +52,14 @@ func LoadDeadStreams() (*DeadStreamsFile, error) {
 	// Attempt to read the entire file contents
 	data, err := os.ReadFile(deadStreamsPath)
 	if err != nil {
-		logger.Error("failed to read dead streams file: %v", err)
+		logger.Error("{deadstreams - LoadDeadStreams} failed to read dead streams file: %v", err)
 		return nil, err
 	}
 
 	// Handle empty or whitespace-only files gracefully
 	trimmedData := strings.TrimSpace(string(data))
 	if len(data) == 0 || trimmedData == "" {
+		logger.Debug("{deadstreams - LoadDeadStreams} no content in deadstream file")
 		return &DeadStreamsFile{DeadStreams: []DeadStreamEntry{}}, nil
 	}
 
@@ -69,14 +70,16 @@ func LoadDeadStreams() (*DeadStreamsFile, error) {
 		// Create timestamped backup of corrupted file for debugging
 		backupPath := deadStreamsPath + ".corrupted." + time.Now().Format("20060102-150405")
 		if backupErr := os.WriteFile(backupPath, data, 0644); backupErr != nil {
-			logger.Warn("could not backup corrupted dead streams file: %v", backupErr)
+			logger.Warn("{deadstreams - LoadDeadStreams} could not backup corrupted dead streams file: %v", backupErr)
 		}
 
 		// Replace corrupted file with clean empty structure
 		emptyStructure := &DeadStreamsFile{DeadStreams: []DeadStreamEntry{}}
 		if saveErr := SaveDeadStreams(emptyStructure); saveErr != nil {
-			logger.Warn("could not save empty dead streams file: %v\n", saveErr)
+			logger.Warn("could not save empty dead streams file: %v", saveErr)
 		}
+
+		logger.Error("{deadstreams - LoadDeadStreams} error parsing %v", err)
 		return emptyStructure, nil
 	}
 
@@ -84,7 +87,7 @@ func LoadDeadStreams() (*DeadStreamsFile, error) {
 	if deadStreams.DeadStreams == nil {
 		deadStreams.DeadStreams = []DeadStreamEntry{}
 	}
-
+	logger.Debug("{deadstreams - LoadDeadStreams} load deadstreams json")
 	return &deadStreams, nil
 }
 
@@ -108,7 +111,7 @@ func SaveDeadStreams(deadStreams *DeadStreamsFile) error {
 		logger.Error("failed to marshal dead streams: %v", err)
 		return err
 	}
-
+	logger.Debug("{deadstreams - SaveDeadStreams} write the deadstreams")
 	// Write atomically to disk with appropriate file permissions
 	return os.WriteFile(deadStreamsPath, data, 0644)
 }
@@ -132,6 +135,7 @@ func MarkStreamDead(channelName string, streamIndex int, url, sourceName, reason
 	// Load current dead streams database
 	deadStreams, err := LoadDeadStreams()
 	if err != nil {
+		logger.Error("{deadstreams - MarkDeadStream} loading deadstreams %v", err)
 		return err
 	}
 
@@ -145,7 +149,7 @@ func MarkStreamDead(channelName string, streamIndex int, url, sourceName, reason
 				deadStreams.DeadStreams[i].Timestamp = time.Now().Format(time.RFC3339)
 				return SaveDeadStreams(deadStreams)
 			}
-
+			logger.Warn("{deadstreams - MarkDeadStream} deadstream already exists")
 			// Entry already exists with same reason - no update needed
 			return nil
 		}
@@ -200,10 +204,10 @@ func ReviveStream(channelName string, streamIndex int) error {
 
 	// Verify the target stream was actually found
 	if !found {
-		logger.Error("stream not found in dead streams list")
+		logger.Error("{deadstreams - ReviveStream} stream not found")
 		return nil
 	}
-
+	logger.Debug("{deadstreams - ReviveStream} revive stream")
 	// Update database with revised stream list
 	deadStreams.DeadStreams = newDeadStreams
 	return SaveDeadStreams(deadStreams)
@@ -224,12 +228,14 @@ func IsStreamDead(channelName string, streamIndex int) bool {
 	// Load dead streams database (return false on any error for safety)
 	deadStreams, err := LoadDeadStreams()
 	if err != nil {
+		logger.Error("{deadstreams - IsStreamDead} error loading %v", err)
 		return false
 	}
 
 	// Search for matching dead stream entry
 	for _, entry := range deadStreams.DeadStreams {
 		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
+			logger.Debug("{deadstreams - IsStreamDead} dead stream: %v(%v)", channelName, streamIndex)
 			return true
 		}
 	}
@@ -251,12 +257,14 @@ func GetDeadStreamReason(channelName string, streamIndex int) string {
 	// Load dead streams database (return empty string on any error)
 	deadStreams, err := LoadDeadStreams()
 	if err != nil {
+		logger.Error("{deadstreams - GetDeadStreamReason} error loading %v", err)
 		return ""
 	}
 
 	// Search for matching entry and return its reason
 	for _, entry := range deadStreams.DeadStreams {
 		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
+			logger.Debug("{deadstreams - GetDeadStreamReason} dead reason %v", entry.Reason)
 			return entry.Reason
 		}
 	}

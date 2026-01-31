@@ -46,6 +46,7 @@ func NewHeaderSettingClient() *HeaderSettingClient {
 		},
 	}
 
+	logger.Debug("{client - NewHeaderSettingClient} setup the http client")
 	// return the custom client
 	return &HeaderSettingClient{
 		Client: client,
@@ -130,7 +131,7 @@ func (hsc *HeaderSettingClient) setHeaders(req *http.Request, userAgent, origin,
 // Returns:
 //   - *CustomResponseWriter: wrapped response writer with tracking
 func NewCustomResponseWriter(w http.ResponseWriter) *CustomResponseWriter {
-
+	logger.Debug("{client - NewCustomResponseWriter} return the response writer")
 	// return the custom response writer
 	return &CustomResponseWriter{
 		ResponseWriter: w,
@@ -176,13 +177,12 @@ func (crw *CustomResponseWriter) WriteHeader(statusCode int) {
 //   - int: number of bytes written
 //   - error: any error encountered while writing
 func (crw *CustomResponseWriter) Write(b []byte) (int, error) {
-	logger.Debug("{client - Write} write the http response")
 
 	// Ensure headers are sent before writing body
 	if !crw.WroteHeader {
 		crw.WriteHeader(http.StatusOK)
 	}
-
+	logger.Debug("{client - Write} write the http response")
 	// return the number of bytes written
 	return crw.ResponseWriter.Write(b)
 }

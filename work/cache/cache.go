@@ -35,6 +35,7 @@ func newEPGStore(dir string, ttl time.Duration) (*epgStore, error) {
 		logger.Error("{cache(epg) - newEPGStore} failed to create EPG store directory: %v", err)
 		return nil, err
 	}
+	logger.Debug("{cache(epg) - newEPGStore} create epg cache store")
 
 	// return it
 	return &epgStore{dir: dir, ttl: ttl}, nil
@@ -104,6 +105,7 @@ func (e *epgStore) get(key string) (*os.File, int64, bool) {
 
 	// check if the cached file has expired
 	if time.Since(info.ModTime()) > e.ttl {
+		// dont bother logging here
 		return nil, 0, false
 	}
 
@@ -128,6 +130,7 @@ func (e *epgStore) remainingTTL(key string) int {
 	// stat the file to check mod time
 	target := e.path(key)
 
+	// check the file status
 	info, err := os.Stat(target)
 	if err != nil {
 		return 0
@@ -155,6 +158,7 @@ func (c *Cache) SetEPG(key, value string) {
 	if err := c.epg.set(key, value); err != nil {
 		logger.Error("{cache(epg) - SetEPG} Failed to write EPG to disk: %v", err)
 	}
+
 }
 
 // EPGRemainingTTL returns seconds remaining before the EPG cache expires.
@@ -214,6 +218,7 @@ func NewCache(duration time.Duration) (*Cache, error) {
 		logger.Error("{cache - NewCache} failed to create EPG store: %v", err)
 		return nil, err
 	}
+	logger.Debug("{cache - NewCache} creating the cache")
 
 	// return the cache object
 	return &Cache{
