@@ -116,8 +116,7 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 			if err != nil {
 
 				// Log parsing errors but continue processing remaining variants
-				logger.Error("parsing stream info: %v", err)
-
+				logger.Error("{parser/master - ParseMasterPlaylist} parsing stream info: %v", err)
 				continue
 			}
 			currentVariant = &variant
@@ -126,8 +125,8 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 
 			// Process variant URL line following #EXT-X-STREAM-INF
 			resolvedURL := mph.resolveURL(line, baseURL)
-			logger.Debug("Original variant URL: %s", line)
-			logger.Debug("Resolved variant URL: %s", utils.LogURL(mph.config, resolvedURL))
+			logger.Debug("{parser/master - ParseMasterPlaylist} Original variant URL: %s", line)
+			logger.Debug("{parser/master - ParseMasterPlaylist} Resolved variant URL: %s", utils.LogURL(mph.config, resolvedURL))
 
 			// Complete variant object with resolved URL
 			currentVariant.URL = resolvedURL
@@ -138,13 +137,13 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 
 	// Check for scanner errors during content processing
 	if err := scanner.Err(); err != nil {
-		logger.Error("error scanning playlist: %v", err)
+		logger.Error("{parser/master - ParseMasterPlaylist} error scanning playlist: %v", err)
 		return nil, err
 	}
 
 	// Validate that at least one variant was successfully parsed
 	if len(variants) == 0 {
-		logger.Error("no variants found in master playlist")
+		logger.Error("{parser/master - ParseMasterPlaylist} no variants found in master playlist")
 		return nil, nil
 	}
 
@@ -179,46 +178,43 @@ func (mph *MasterPlaylistHandler) ProcessMasterPlaylist(content string, original
 
 	// Determine playlist type through content analysis
 	if mph.IsMasterPlaylist(content) {
-		logger.Debug("Master playlist detected for channel %s", channelName)
+		logger.Debug("{parser/master - ProcessMasterPlaylist} Master playlist detected for channel %s", channelName)
 
 		// Parse all available variants from master playlist
 		variants, err := mph.ParseMasterPlaylist(content, originalURL)
 		if err != nil {
-			logger.Error("failed to parse master playlist: %v", err)
+			logger.Error("{parser/master - ProcessMasterPlaylist} failed to parse master playlist: %v", err)
 			return "", false, err
 		}
-
-		logger.Debug("Found %d variants for channel %s", len(variants), channelName)
+		logger.Debug("{parser/master - ProcessMasterPlaylist} Found %d variants for channel %s", len(variants), channelName)
 
 		// Log detailed information about each variant for debugging
 		for i, variant := range variants {
-			logger.Debug("Variant %d: %s (%d kbps)",
+			logger.Debug("{parser/master - ProcessMasterPlaylist} Variant %d: %s (%d kbps)",
 				i, variant.Resolution, variant.Bandwidth/1000)
 		}
 
 		// Select highest quality variant (first in sorted array)
 		if len(variants) > 0 {
 			selectedVariant := variants[0]
-			logger.Debug("Selected variant for channel %s: %s (%d kbps)",
+			logger.Debug("{parser/master - ProcessMasterPlaylist} Selected variant for channel %s: %s (%d kbps)",
 				channelName, selectedVariant.Resolution, selectedVariant.Bandwidth/1000)
-
 			return selectedVariant.URL, true, nil
 		}
 
+		logger.Error("{parser/master - ProcessMasterPlaylist} no working variants found")
 		return "", false, fmt.Errorf("no working variants found")
 
 	} else if mph.IsMediaPlaylist(content) {
 
 		// Media playlist - return original URL unchanged
-		logger.Debug("Media playlist detected for channel %s (no variant selection needed)", channelName)
-
+		logger.Debug("{parser/master - ProcessMasterPlaylist} Media playlist detected for channel %s (no variant selection needed)", channelName)
 		return originalURL, false, nil
 
 	} else {
 
 		// Content is not a recognized M3U8 playlist format
-		logger.Debug("Content is not an M3U8 playlist for channel %s", channelName)
-
+		logger.Debug("{parser/master - ProcessMasterPlaylist} Content is not an M3U8 playlist for channel %s", channelName)
 		return originalURL, false, nil
 	}
 }
@@ -267,10 +263,11 @@ func (mph *MasterPlaylistHandler) parseStreamInf(line string) (StreamVariant, er
 
 	// Validate that required bandwidth attribute was successfully parsed
 	if variant.Bandwidth == 0 {
-		logger.Error("bandwidth is required for stream variant")
+		logger.Error("{parser/master - parseStreamInf} bandwidth is required for stream variant")
 		return variant, nil
 	}
 
+	logger.Debug("{parser/master - parseStreamInf} parse stream info")
 	return variant, nil
 }
 
@@ -305,6 +302,7 @@ func (mph *MasterPlaylistHandler) parseAttributes(params string) map[string]stri
 		}
 	}
 
+	logger.Debug("{parser/master - parseAttributes} parse playlist attributes")
 	return attributes
 }
 
@@ -326,32 +324,29 @@ func (mph *MasterPlaylistHandler) resolveURL(streamURL, baseURL string) string {
 
 	// Return absolute URLs unchanged (no resolution needed)
 	if strings.HasPrefix(streamURL, "http://") || strings.HasPrefix(streamURL, "https://") {
-		logger.Debug("URL is already absolute: %s", utils.LogURL(mph.config, streamURL))
-
+		logger.Debug("{parser/master - resolveURL} URL is already absolute: %s", utils.LogURL(mph.config, streamURL))
 		return streamURL
 	}
 
-	logger.Debug("Resolving relative URL: %s against base: %s", utils.LogURL(mph.config, streamURL), utils.LogURL(mph.config, baseURL))
+	logger.Debug("{parser/master - resolveURL} Resolving relative URL: %s against base: %s", utils.LogURL(mph.config, streamURL), utils.LogURL(mph.config, baseURL))
 
 	// Parse base URL for resolution context
 	base, err := url.Parse(baseURL)
 	if err != nil {
-		logger.Error("Error parsing base URL %s: %v", utils.LogURL(mph.config, baseURL), err)
-
+		logger.Error("{parser/master - resolveURL} parsing base URL %s: %v", utils.LogURL(mph.config, baseURL), err)
 		return streamURL
 	}
 
 	// Parse relative URL for resolution
 	rel, err := url.Parse(streamURL)
 	if err != nil {
-		logger.Error("Error parsing relative URL %s: %v", utils.LogURL(mph.config, streamURL), err)
-
+		logger.Error("{parser/master - resolveURL} parsing relative URL %s: %v", utils.LogURL(mph.config, streamURL), err)
 		return streamURL
 	}
 
 	// Resolve relative URL against base using standard URL resolution
 	resolved := base.ResolveReference(rel)
-	logger.Debug("Final resolved URL: %s", resolved.String())
+	logger.Debug("{parser/master - resolveURL} Final resolved URL: %s", resolved.String())
 
 	return resolved.String()
 }
@@ -377,42 +372,54 @@ func (mph *MasterPlaylistHandler) SelectVariant(variants []StreamVariant, strate
 
 	// Return empty variant if no options available
 	if len(variants) == 0 {
+		logger.Warn("{parser/master - SelectVariant} no variants available")
 		return StreamVariant{}
 	}
 
 	switch strategy {
 	case "lowest":
-
+		logger.Debug("{parser/master - SelectVariant} lowest variant selected")
 		// Select minimum bandwidth variant (last in bandwidth-sorted array)
 		return variants[len(variants)-1]
 
 	case "highest":
-
+		logger.Debug("{parser/master - SelectVariant} highest variant selected")
 		// Select maximum bandwidth variant (first in bandwidth-sorted array)
 		return variants[0]
 
 	case "medium":
-
+		logger.Debug("{parser/master - SelectVariant} medium variant selected")
 		// Select middle-tier variant for balanced quality/bandwidth trade-off
 		idx := len(variants) / 2
 		return variants[idx]
 
-	case "720p":
+	case "1080p", "1080i":
+		logger.Debug("{parser/master - SelectVariant} 1080 variant selected")
+		// Search for 720p resolution variant specifically
+		for _, variant := range variants {
+			if strings.Contains(variant.Resolution, "1920x1080") {
+				return variant
+			}
+		}
+		// Fallback to medium quality if no 1080p variant found
+		return mph.SelectVariant(variants, "highest")
 
+	case "720p":
+		logger.Debug("{parser/master - SelectVariant} 720p variant selected")
 		// Search for 720p resolution variant specifically
 		for _, variant := range variants {
 			if strings.Contains(variant.Resolution, "1280x720") {
 				return variant
 			}
 		}
-
 		// Fallback to medium quality if no 720p variant found
 		return mph.SelectVariant(variants, "medium")
 
 	default:
-
+		logger.Debug("{parser/master - SelectVariant} default highest variant selected")
 		// Default to highest quality for best user experience
 		return variants[0]
+
 	}
 }
 
@@ -440,16 +447,18 @@ func (mph *MasterPlaylistHandler) ProcessMasterPlaylistVariants(content string, 
 		// Parse and return all variants from master playlist
 		variants, err := mph.ParseMasterPlaylist(content, originalURL)
 		if err != nil {
+			logger.Error("{parser/master - ProcessMasterPlaylistVariants} parsing master playlist %v", err)
 			return nil, false, err
 		}
+		logger.Debug("{parser/master - ProcessMasterPlaylistVariants} parsing master playlist")
 		return variants, true, nil
 	} else if mph.IsMediaPlaylist(content) {
-
+		logger.Debug("{parser/master - ProcessMasterPlaylistVariants} m3u playlist")
 		// Create single variant representing the media playlist
 		singleVariant := StreamVariant{URL: originalURL, Bandwidth: 0, Resolution: "unknown"}
 		return []StreamVariant{singleVariant}, false, nil
 	} else {
-
+		logger.Debug("{parser/master - ProcessMasterPlaylistVariants} fallback m3u playlist")
 		// Create single variant for non-playlist content (fallback behavior)
 		singleVariant := StreamVariant{URL: originalURL, Bandwidth: 0, Resolution: "unknown"}
 		return []StreamVariant{singleVariant}, false, nil
@@ -471,7 +480,7 @@ func (mph *MasterPlaylistHandler) ProcessMasterPlaylistVariants(content string, 
 // Returns:
 //   - []StreamVariant: new slice with variants sorted by bandwidth (highest first)
 func (mph *MasterPlaylistHandler) GetVariantsOrderedByQuality(variants []StreamVariant) []StreamVariant {
-
+	logger.Debug("{parser/master - GetVariantsOrderedByQuality} order variants by quality")
 	// Create independent copy to avoid modifying original slice
 	orderedVariants := make([]StreamVariant, len(variants))
 	copy(orderedVariants, variants)
