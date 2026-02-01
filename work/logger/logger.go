@@ -5,7 +5,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 )
 
 type LogLevel int
@@ -105,9 +104,8 @@ func (l *Logger) shouldLog(level LogLevel) bool {
 
 // logMessage formats and outputs the log message
 func logMessage(level string, format string, v ...interface{}) {
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	message := fmt.Sprintf(format, v...)
-	log.Printf("[%s] [%s] %s", timestamp, level, message)
+	log.Printf("[%s] %s", level, message)
 }
 
 // Instance methods (for use with struct fields like s.logger.Info())
