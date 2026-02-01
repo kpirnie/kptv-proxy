@@ -88,7 +88,9 @@ type xcSeriesWork struct {
 //   - []*types.Stream: slice of processed streams ready for channel aggregation
 func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *regexp.Regexp, source *config.SourceConfig, seriesRegex, vodRegex *regexp.Regexp) []*types.Stream {
 	results := make([]*types.Stream, 0, len(batch))
+	logger.Debug("{parser/xtremecodes - processLiveBatchWorker} process the live batch")
 
+	// loop the stream objects
 	for _, stream := range batch {
 		if liveInclude != nil && !liveInclude.MatchString(stream.Name) {
 			continue
@@ -97,8 +99,10 @@ func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *rege
 			continue
 		}
 
+		// set the stream URL
 		streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
 
+		// setup the group
 		group := "live"
 		if seriesRegex.MatchString(stream.Name) || seriesRegex.MatchString(streamURL) {
 			group = "series"
@@ -106,6 +110,7 @@ func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *rege
 			group = "vod"
 		}
 
+		// create the stream group
 		s := &types.Stream{
 			URL:    streamURL,
 			Name:   stream.Name,
@@ -118,15 +123,17 @@ func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *rege
 			},
 		}
 
+		// if there's a logo or tvg-id
 		if stream.StreamIcon != "" {
 			s.Attributes["tvg-logo"] = stream.StreamIcon
 		}
 		if stream.EpgChannelID != "" {
 			s.Attributes["tvg-id"] = stream.EpgChannelID
 		}
-
+		logger.Debug("{parser/xtremecodes - processLiveBatchWorker} process the live stream %v", stream.Name)
 		results = append(results, s)
 	}
+	logger.Debug("{parser/xtremecodes - processLiveBatchWorker} live batch results")
 	return results
 }
 
@@ -147,7 +154,9 @@ func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *rege
 //   - []*types.Stream: slice of processed series streams ready for channel aggregation
 func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *regexp.Regexp, source *config.SourceConfig) []*types.Stream {
 	results := make([]*types.Stream, 0, len(batch))
+	logger.Debug("{parser/xtremecodes - processSeriesBatchWorker} process the series batch")
 
+	// loop the stream objects
 	for _, serie := range batch {
 		if seriesInclude != nil && !seriesInclude.MatchString(serie.Name) {
 			continue
@@ -156,8 +165,10 @@ func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *re
 			continue
 		}
 
+		// setup the stream url
 		streamURL := fmt.Sprintf("%s/series/%s/%s/%d.ts", source.URL, source.Username, source.Password, serie.SeriesID)
 
+		// setup the stream
 		s := &types.Stream{
 			URL:    streamURL,
 			Name:   serie.Name,
@@ -169,13 +180,14 @@ func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *re
 				"category-id": serie.CategoryID,
 			},
 		}
-
+		// if theres a logo
 		if serie.Cover != "" {
 			s.Attributes["tvg-logo"] = serie.Cover
 		}
-
+		logger.Debug("{parser/xtremecodes - processSeriesBatchWorker} process the live stream %v", serie.Name)
 		results = append(results, s)
 	}
+	logger.Debug("{parser/xtremecodes - processSeriesBatchWorker} series batch results")
 	return results
 }
 
@@ -200,66 +212,73 @@ func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *re
 // Returns:
 //   - []*types.Stream: aggregated collection of streams from all three API endpoints
 func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
-	logger.Debug("Parsing Xtreme Codes API from %s with optimized batch processing", utils.LogURL(cfg, source.URL))
+	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} from %s with optimized batch processing", utils.LogURL(cfg, source.URL))
 
 	cacheKey := fmt.Sprintf("xc:%s:%s:%s", source.URL, source.Username, source.Password)
 	if cached, found := cache.GetXCData(cacheKey); found {
-		logger.Debug("[XC_CACHE_HIT] Using cached XC API data for %s", source.Name)
-
+		logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Using cached XC API data for %s", source.Name)
 		var streams []*types.Stream
 		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
 			return streams
 		}
 	}
 
+	// setup the timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
+	// setup the filters and error
 	var liveInclude, liveExclude, seriesInclude, seriesExclude *regexp.Regexp
 	var err error
 
+	// the filters
 	if source.LiveIncludeRegex != "" {
 		liveInclude, err = regexp.Compile(source.LiveIncludeRegex)
 		if err != nil {
-			logger.Error("Invalid LiveIncludeRegex: %v", err)
+			logger.Error("{parser/xtremecodes - ParseXtremeCodesAPI} Invalid LiveIncludeRegex: %v", err)
 		}
 	}
 	if source.LiveExcludeRegex != "" {
 		liveExclude, err = regexp.Compile(source.LiveExcludeRegex)
 		if err != nil {
-			logger.Error("Invalid LiveExcludeRegex: %v", err)
+			logger.Error("{parser/xtremecodes - ParseXtremeCodesAPI} Invalid LiveExcludeRegex: %v", err)
 		}
 	}
 	if source.SeriesIncludeRegex != "" {
 		seriesInclude, err = regexp.Compile(source.SeriesIncludeRegex)
 		if err != nil {
-			logger.Error("Invalid SeriesIncludeRegex: %v", err)
+			logger.Error("{parser/xtremecodes - ParseXtremeCodesAPI} Invalid SeriesIncludeRegex: %v", err)
 		}
 	}
 	if source.SeriesExcludeRegex != "" {
 		seriesExclude, err = regexp.Compile(source.SeriesExcludeRegex)
 		if err != nil {
-			logger.Error("Invalid SeriesExcludeRegex: %v", err)
+			logger.Error("{parser/xtremecodes - ParseXtremeCodesAPI} Invalid SeriesExcludeRegex: %v", err)
 		}
 	}
 
+	// series and vod regex
 	seriesRegex := regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
 	vodRegex := regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
 
+	// hold all the streams
 	var allStreams []*types.Stream
 	var allStreamsMu sync.Mutex
 
-	logger.Debug("[XC_DEBUG] Starting live streams fetch")
-
+	// try to get the streams
 	liveStreams := fetchXCLiveStreams(httpClient, cfg, source, rateLimiter)
-	logger.Debug("[XC_DEBUG] Fetched %d live streams", len(liveStreams))
+	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Fetched %d live streams", len(liveStreams))
 
+	// if we actually have live streams
 	if len(liveStreams) > 0 {
+
+		// setup the batch and background workers
 		const batchSize = 1000
 		workers := cfg.WorkerThreads
 		workChan := make(chan xcWork, workers)
 		resultsChan := make(chan []*types.Stream, workers)
 
+		// setup the background workder then loop them
 		var wg sync.WaitGroup
 		for i := 0; i < workers; i++ {
 			wg.Add(1)
@@ -271,12 +290,14 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 						return
 					default:
 					}
+					logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} process the live batch %v", i)
 					results := processLiveBatchWorker(work.streams, liveInclude, liveExclude, source, seriesRegex, vodRegex)
 					resultsChan <- results
 				}
 			}()
 		}
 
+		// run the batch and close it
 		go func() {
 			for i := 0; i < len(liveStreams); i += batchSize {
 				end := i + batchSize
@@ -288,40 +309,43 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 			close(workChan)
 		}()
 
+		// wait the thread then do the closing
 		go func() {
 			wg.Wait()
 			close(resultsChan)
 		}()
 
+		// loop the results channel
 		for results := range resultsChan {
 			allStreamsMu.Lock()
 			allStreams = append(allStreams, results...)
 			allStreamsMu.Unlock()
 		}
-
-		logger.Debug("[XC_DEBUG] Live streams completed: %d total kept", len(allStreams))
+		logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Live streams completed: %d total kept", len(allStreams))
 
 	}
 
 	select {
 	case <-ctx.Done():
-		logger.Debug("[XC_DEBUG] Context cancelled after live streams")
-
+		logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Context cancelled after live streams")
 		return allStreams
 	default:
 	}
 
-	logger.Debug("[XC_DEBUG] Starting series fetch")
-
+	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Starting series fetch")
 	series := fetchXCSeries(httpClient, cfg, source, rateLimiter)
-	logger.Debug("[XC_DEBUG] Fetched %d series", len(series))
+	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Fetched %d series", len(series))
 
+	// if there are series streams
 	if len(series) > 0 {
+
+		// setup the batch and background workers
 		const batchSize = 1000
 		workers := cfg.WorkerThreads
 		workChan := make(chan xcSeriesWork, workers)
 		resultsChan := make(chan []*types.Stream, workers)
 
+		// setup the background worker then loop them
 		var wg sync.WaitGroup
 		for i := 0; i < workers; i++ {
 			wg.Add(1)
@@ -333,12 +357,14 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 						return
 					default:
 					}
+					logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} process the series batch %v", i)
 					results := processSeriesBatchWorker(work.series, seriesInclude, seriesExclude, source)
 					resultsChan <- results
 				}
 			}()
 		}
 
+		// run the batch and close it
 		go func() {
 			for i := 0; i < len(series); i += batchSize {
 				end := i + batchSize
@@ -350,31 +376,30 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 			close(workChan)
 		}()
 
+		// wait the thread then really close it
 		go func() {
 			wg.Wait()
 			close(resultsChan)
 		}()
 
+		// loop the results channel
 		for results := range resultsChan {
 			allStreamsMu.Lock()
 			allStreams = append(allStreams, results...)
 			allStreamsMu.Unlock()
 		}
-
-		logger.Debug("[XC_DEBUG] Series completed: total streams now %d", len(allStreams))
+		logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Series completed: total streams now %d", len(allStreams))
 
 	}
+	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} XC API parsing complete: %d total streams", len(allStreams))
 
-	logger.Debug("[XC_DEBUG] XC API parsing complete: %d total streams", len(allStreams))
-
+	// do we actually have any streams?
 	if len(allStreams) > 0 {
 		if data, err := json.Marshal(allStreams); err == nil {
 			cache.SetXCData(cacheKey, string(data))
-			logger.Debug("[XC_CACHE_SET] Cached %d streams for %s", len(allStreams), source.Name)
-
+			logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Cached %d streams for %s", len(allStreams), source.Name)
 		}
 	}
-
 	return allStreams
 }
 
@@ -383,8 +408,7 @@ func fetchXCLiveStreamsWithContext(ctx context.Context, httpClient *client.Heade
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		logger.Debug("Applied rate limit for XC live streams request: %s", source.Name)
-
+		logger.Debug("{parser/xtremecodes - fetchXCLiveStreamsWithContext} Applied rate limit for XC live streams request: %s", source.Name)
 	}
 
 	// Construct API URL for live streams endpoint with authentication parameters
@@ -393,13 +417,11 @@ func fetchXCLiveStreamsWithContext(ctx context.Context, httpClient *client.Heade
 	// Execute generic API data fetching with proper error handling
 	streams, err := fetchXCDataWithContext[XCLiveStream](ctx, httpClient, cfg, source, url)
 	if err != nil {
-		logger.Error("Failed to fetch XC live streams from %s: %v", utils.LogURL(cfg, source.URL), err)
-
+		logger.Error("{parser/xtremecodes - fetchXCLiveStreamsWithContext} Failed to fetch XC live streams from %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
 
-	logger.Debug("Successfully fetched %d live streams from XC API", len(streams))
-
+	logger.Debug("{parser/xtremecodes - fetchXCLiveStreamsWithContext} Successfully fetched %d live streams from XC API", len(streams))
 	return streams
 }
 
@@ -408,8 +430,7 @@ func fetchXCSeriesWithContext(ctx context.Context, httpClient *client.HeaderSett
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		logger.Debug("Applied rate limit for XC series request: %s", source.Name)
-
+		logger.Debug("{parser/xtremecodes - fetchXCSeriesWithContext} Applied rate limit for XC series request: %s", source.Name)
 	}
 
 	// Construct API URL for series endpoint with authentication parameters
@@ -418,13 +439,10 @@ func fetchXCSeriesWithContext(ctx context.Context, httpClient *client.HeaderSett
 	// Execute generic API data fetching with proper error handling
 	series, err := fetchXCDataWithContext[XCSeries](ctx, httpClient, cfg, source, url)
 	if err != nil {
-		logger.Error("Failed to fetch XC series from %s: %v", utils.LogURL(cfg, source.URL), err)
-
+		logger.Error("{parser/xtremecodes - fetchXCSeriesWithContext} Failed to fetch XC series from %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
-
-	logger.Debug("Successfully fetched %d series from XC API", len(series))
-
+	logger.Debug("{parser/xtremecodes - fetchXCSeriesWithContext} Successfully fetched %d series from XC API", len(series))
 	return series
 }
 
@@ -433,43 +451,43 @@ func fetchXCDataWithContext[T any](ctx context.Context, httpClient *client.Heade
 	// Create request with the provided context
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		logger.Error("Failed to create XC API request: %v", err)
-
+		logger.Error("{parser/xtremecodes - fetchXCDataWithContext} Failed to create XC API request: %v", err)
 		return nil, err
 	}
 
+	// set the keep-alive
 	req.Header.Set("Connection", "keep-alive")
 
+	// do the request with the right headers
 	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
-		logger.Error("XC API request failed: %v", err)
-
+		logger.Error("{parser/xtremecodes - fetchXCDataWithContext} XC API request failed: %v", err)
 		return nil, err
 	}
 
+	// close the connection
 	defer func() {
 		resp.Body.Close()
-		logger.Debug("Closed XC API connection for: %s", utils.LogURL(cfg, source.URL))
+		logger.Debug("{parser/xtremecodes - fetchXCDataWithContext} Closed XC API connection for: %s", utils.LogURL(cfg, source.URL))
 
 	}()
 
+	// invalid response
 	if resp.StatusCode != http.StatusOK {
-		logger.Error("XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
-
+		logger.Error("{parser/xtremecodes - fetchXCDataWithContext} XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
 		return nil, nil
 	}
 
 	decoder := json.NewDecoder(resp.Body)
 	var data []T
 
+	// decode the response
 	if err := decoder.Decode(&data); err != nil {
-		logger.Error("Failed to parse XC API JSON response: %v", err)
-
+		logger.Error("{parser/xtremecodes - fetchXCDataWithContext} Failed to parse XC API JSON response: %v", err)
 		return nil, err
 	}
 
-	logger.Debug("Successfully parsed %d items from XC API response", len(data))
-
+	logger.Debug("{parser/xtremecodes - fetchXCDataWithContext} Successfully parsed %d items from XC API response", len(data))
 	return data, nil
 }
 
@@ -492,8 +510,7 @@ func fetchXCLiveStreams(httpClient *client.HeaderSettingClient, cfg *config.Conf
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		logger.Debug("Applied rate limit for XC live streams request: %s", source.Name)
-
+		logger.Debug("{parser/xtremecodes - fetchXCLiveStreams} Applied rate limit for XC live streams request: %s", source.Name)
 	}
 
 	// Construct API URL for live streams endpoint with authentication parameters
@@ -502,13 +519,11 @@ func fetchXCLiveStreams(httpClient *client.HeaderSettingClient, cfg *config.Conf
 	// Execute generic API data fetching with proper error handling
 	streams, err := fetchXCData[XCLiveStream](httpClient, cfg, source, url)
 	if err != nil {
-		logger.Error("Failed to fetch XC live streams from %s: %v", utils.LogURL(cfg, source.URL), err)
-
+		logger.Error("{parser/xtremecodes - fetchXCLiveStreams} Failed to fetch XC live streams from %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
 
-	logger.Debug("Successfully fetched %d live streams from XC API", len(streams))
-
+	logger.Debug("{parser/xtremecodes - fetchXCLiveStreams} Successfully fetched %d live streams from XC API", len(streams))
 	return streams
 }
 
@@ -531,8 +546,7 @@ func fetchXCSeries(httpClient *client.HeaderSettingClient, cfg *config.Config, s
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		logger.Debug("Applied rate limit for XC series request: %s", source.Name)
-
+		logger.Debug("{parser/xtremecodes - fetchXCSeries} Applied rate limit for XC series request: %s", source.Name)
 	}
 
 	// Construct API URL for series endpoint with authentication parameters
@@ -541,13 +555,11 @@ func fetchXCSeries(httpClient *client.HeaderSettingClient, cfg *config.Config, s
 	// Execute generic API data fetching with proper error handling
 	series, err := fetchXCData[XCSeries](httpClient, cfg, source, url)
 	if err != nil {
-		logger.Error("Failed to fetch XC series from %s: %v", utils.LogURL(cfg, source.URL), err)
-
+		logger.Error("{parser/xtremecodes - fetchXCSeries} Failed to fetch XC series from %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
 
-	logger.Debug("Successfully fetched %d series from XC API", len(series))
-
+	logger.Debug("{parser/xtremecodes - fetchXCSeries} Successfully fetched %d series from XC API", len(series))
 	return series
 }
 
@@ -570,8 +582,7 @@ func fetchXCVODStreams(httpClient *client.HeaderSettingClient, cfg *config.Confi
 	// Apply rate limiting before making API request to prevent server overload
 	if rateLimiter != nil {
 		rateLimiter.Take()
-		logger.Debug("Applied rate limit for XC VOD streams request: %s", source.Name)
-
+		logger.Debug("{parser/xtremecodes - fetchXCVODStreams} Applied rate limit for XC VOD streams request: %s", source.Name)
 	}
 
 	// Construct API URL for VOD streams endpoint with authentication parameters
@@ -580,13 +591,11 @@ func fetchXCVODStreams(httpClient *client.HeaderSettingClient, cfg *config.Confi
 	// Execute generic API data fetching with proper error handling
 	streams, err := fetchXCData[XCVODStream](httpClient, cfg, source, url)
 	if err != nil {
-		logger.Error("Failed to fetch XC VOD streams from %s: %v", utils.LogURL(cfg, source.URL), err)
-
+		logger.Error("{parser/xtremecodes - fetchXCVODStreams} Failed to fetch XC VOD streams from %s: %v", utils.LogURL(cfg, source.URL), err)
 		return nil
 	}
 
-	logger.Debug("Successfully fetched %d VOD streams from XC API", len(streams))
-
+	logger.Debug("{parser/xtremecodes - fetchXCVODStreams} Successfully fetched %d VOD streams from XC API", len(streams))
 	return streams
 }
 
@@ -615,43 +624,46 @@ func fetchXCData[T any](httpClient *client.HeaderSettingClient, cfg *config.Conf
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
+	// make the request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		logger.Error("Failed to create XC API request: %v", err)
+		logger.Error("{parser/xtremecodes - fetchXCData} Failed to create XC API request: %v", err)
 		return nil, err
 	}
 
+	// setup the closing context
 	req = req.WithContext(ctx)
+
+	// set the keep-alive header
 	req.Header.Set("Connection", "keep-alive")
 
+	// make the request with the proper headers
 	resp, err := httpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
-		logger.Debug("XC API request failed: %v", err)
-
+		logger.Debug("{parser/xtremecodes - fetchXCData} XC API request failed: %v", err)
 		return nil, err
 	}
 
+	// close hte connection
 	defer func() {
 		resp.Body.Close()
-		logger.Debug("Closed XC API connection for: %s", utils.LogURL(cfg, source.URL))
-
+		logger.Debug("{parser/xtremecodes - fetchXCData} Closed XC API connection for: %s", utils.LogURL(cfg, source.URL))
 	}()
 
+	// invalid response code
 	if resp.StatusCode != http.StatusOK {
-		logger.Error("XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
-
+		logger.Error("{parser/xtremecodes - fetchXCData} XC API returned HTTP %d for: %s", resp.StatusCode, utils.LogURL(cfg, source.URL))
 		return nil, nil
 	}
 
+	// setup the json decoder
 	decoder := json.NewDecoder(resp.Body)
 	var data []T
-
 	if err := decoder.Decode(&data); err != nil {
-		logger.Error("Failed to parse XC API JSON response: %v", err)
+		logger.Error("{parser/xtremecodes - fetchXCData} Failed to parse XC API JSON response: %v", err)
 		return nil, err
 	}
 
-	logger.Debug("Successfully parsed %d items from XC API response", len(data))
-
+	logger.Debug("{parser/xtremecodes - fetchXCData} Successfully parsed %d items from XC API response", len(data))
 	return data, nil
 }
