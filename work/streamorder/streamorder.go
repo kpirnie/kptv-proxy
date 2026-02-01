@@ -2,22 +2,26 @@ package streamorder
 
 import (
 	"encoding/json"
-	"fmt"
+	"kptv-proxy/work/logger"
 	"os"
 	"sync"
 )
 
-// ChannelStreamOrder represents the custom ordering configuration for a single channel's
-// streams, storing the channel identifier and an ordered array of stream indices that
-// define the user's preferred sequence for stream selection and display.
+/**
+ * ChannelStreamOrder represents the custom ordering configuration for a single channel's
+ * streams, storing the channel identifier and an ordered array of stream indices that
+ * define the user's preferred sequence for stream selection and display.
+ */
 type ChannelStreamOrder struct {
 	Channel     string `json:"channel"`
 	StreamOrder []int  `json:"streamOrder"` // Array of stream indexes in custom order
 }
 
-// StreamOrderFile represents the complete persistent storage structure for all channel
-// stream ordering configurations, wrapping an array of ChannelStreamOrder objects to
-// provide a consistent file format and enable future extension with additional metadata.
+/**
+ * StreamOrderFile represents the complete persistent storage structure for all channel
+ * stream ordering configurations, wrapping an array of ChannelStreamOrder objects to
+ * provide a consistent file format and enable future extension with additional metadata.
+ */
 type StreamOrderFile struct {
 	ChannelOrders []ChannelStreamOrder `json:"channelOrders"`
 }
@@ -29,150 +33,254 @@ var (
 	orderMutex sync.RWMutex
 )
 
-// LoadStreamOrders reads and parses the stream ordering database from disk, creating
-// an empty structure if the file doesn't exist and handling corrupted data gracefully
-// by returning an empty configuration rather than failing completely.
-//
-// Returns:
-//   - *StreamOrderFile: parsed stream orders or empty structure on error
-//   - error: non-nil only for serious I/O failures that prevent operation
+/**
+ * LoadStreamOrders reads and parses the stream ordering database from disk, creating
+ * an empty structure if the file doesn't exist and handling corrupted data gracefully
+ * by returning an empty configuration rather than failing completely.
+ *
+ * The function implements defensive file handling:
+ * - Creates file with default structure if missing
+ * - Returns empty structure for corrupted JSON
+ * - Ensures ChannelOrders array is always initialized
+ * - Sets appropriate file permissions (0644)
+ *
+ * @return (*StreamOrderFile, error) - parsed stream orders or empty structure, error on I/O failure
+ */
 func LoadStreamOrders() (*StreamOrderFile, error) {
 	orderPath := "/settings/stream-orders.json"
+	logger.Debug("{stream/stream - HandleStreamFailure} Loading stream orders from: %s", orderPath)
 
+	// Check if file exists, create if missing
 	if _, err := os.Stat(orderPath); os.IsNotExist(err) {
+		logger.Debug("{stream/stream - HandleStreamFailure} File does not exist, creating new stream orders file: %s", orderPath)
+
 		// Create empty file with proper permissions
 		emptyFile := &StreamOrderFile{ChannelOrders: []ChannelStreamOrder{}}
 		data, _ := json.MarshalIndent(emptyFile, "", "  ")
 		if err := os.WriteFile(orderPath, data, 0644); err != nil {
-			return nil, fmt.Errorf("failed to create stream orders file: %w", err)
+			logger.Error("{stream/stream - HandleStreamFailure} Failed to create stream orders file: %v", err)
+			return nil, err
 		}
+		logger.Debug("{stream/stream - HandleStreamFailure} Created new empty stream orders file")
 		return emptyFile, nil
 	}
 
+	// Read existing file
 	data, err := os.ReadFile(orderPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read stream orders file: %w", err)
+		logger.Error("{stream/stream - HandleStreamFailure} Failed to read stream orders file: %v", err)
+		return nil, err
 	}
 
+	logger.Debug("{stream/stream - HandleStreamFailure} Read %d bytes from stream orders file", len(data))
+
+	// Handle empty file
 	if len(data) == 0 {
+		logger.Debug("{stream/stream - HandleStreamFailure} File is empty, returning empty structure")
 		return &StreamOrderFile{ChannelOrders: []ChannelStreamOrder{}}, nil
 	}
 
+	// Parse JSON data
 	var orders StreamOrderFile
 	if err := json.Unmarshal(data, &orders); err != nil {
+		logger.Warn("{stream/stream - HandleStreamFailure} Failed to parse stream orders JSON, returning empty structure: %v", err)
 		return &StreamOrderFile{ChannelOrders: []ChannelStreamOrder{}}, nil
 	}
 
+	// Ensure ChannelOrders array is initialized
 	if orders.ChannelOrders == nil {
+		logger.Debug("{stream/stream - HandleStreamFailure} ChannelOrders was nil, initializing empty array")
 		orders.ChannelOrders = []ChannelStreamOrder{}
 	}
+
+	logger.Debug("{stream/stream - HandleStreamFailure} Successfully loaded %d channel orders", len(orders.ChannelOrders))
 
 	return &orders, nil
 }
 
-// SaveStreamOrders persists the provided stream ordering data to disk as formatted JSON,
-// writing atomically with consistent formatting to ensure the file remains readable and
-// maintainable across application restarts.
-//
-// Parameters:
-//   - orders: complete stream ordering data structure to persist
-//
-// Returns:
-//   - error: non-nil if the file cannot be written to disk
+/**
+ * SaveStreamOrders persists the provided stream ordering data to disk as formatted JSON,
+ * writing atomically with consistent formatting to ensure the file remains readable and
+ * maintainable across application restarts.
+ *
+ * The function uses indented JSON formatting for human readability and sets appropriate
+ * file permissions to allow owner read/write and group/world read access.
+ *
+ * @param orders Complete stream ordering data structure to persist
+ * @return error - non-nil if the file cannot be written to disk
+ */
 func SaveStreamOrders(orders *StreamOrderFile) error {
 	orderPath := "/settings/stream-orders.json"
+	logger.Debug("{stream/stream - SaveStreamOrders} Saving stream orders to: %s (%d channels)", orderPath, len(orders.ChannelOrders))
 
+	// Marshal to formatted JSON
 	data, err := json.MarshalIndent(orders, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal stream orders: %w", err)
-	}
-
-	return os.WriteFile(orderPath, data, 0644)
-}
-
-// SetChannelStreamOrder updates or creates the custom stream ordering for a specific
-// channel, atomically modifying the persistent database to reflect the new stream
-// sequence. If an order already exists for the channel, it is replaced; otherwise
-// a new entry is created.
-//
-// Parameters:
-//   - channelName: unique channel identifier for the ordering configuration
-//   - streamOrder: array of stream indices in the desired display order
-//
-// Returns:
-//   - error: non-nil if database operations fail
-func SetChannelStreamOrder(channelName string, streamOrder []int) error {
-	orderMutex.Lock()
-	defer orderMutex.Unlock()
-
-	orders, err := LoadStreamOrders()
-	if err != nil {
+		logger.Error("{stream/stream - SaveStreamOrders} Failed to marshal stream orders to JSON: %v", err)
 		return err
 	}
 
+	logger.Debug("{stream/stream - SaveStreamOrders} Marshaled %d bytes of JSON data", len(data))
+
+	// Write to file with appropriate permissions
+	if err := os.WriteFile(orderPath, data, 0644); err != nil {
+		logger.Error("{stream/stream - SaveStreamOrders} Failed to write stream orders file: %v", err)
+		return err
+	}
+
+	logger.Debug("{stream/stream - SaveStreamOrders} Successfully saved stream orders file")
+	return nil
+}
+
+/**
+ * SetChannelStreamOrder updates or creates the custom stream ordering for a specific
+ * channel, atomically modifying the persistent database to reflect the new stream
+ * sequence.
+ *
+ * The function performs atomic update operations:
+ * - Acquires exclusive write lock to prevent concurrent modifications
+ * - Loads current state from disk
+ * - Updates existing entry or creates new one
+ * - Persists changes atomically
+ *
+ * If an order already exists for the channel, it is replaced; otherwise
+ * a new entry is created.
+ *
+ * @param channelName Unique channel identifier for the ordering configuration
+ * @param streamOrder Array of stream indices in the desired display order
+ * @return error - non-nil if database operations fail
+ */
+func SetChannelStreamOrder(channelName string, streamOrder []int) error {
+	logger.Debug("{stream/stream - SetChannelStreamOrder} Setting stream order for channel: %s (%d streams)", channelName, len(streamOrder))
+
+	orderMutex.Lock()
+	defer orderMutex.Unlock()
+
+	// Load current orders
+	orders, err := LoadStreamOrders()
+	if err != nil {
+		logger.Error("{stream/stream - SetChannelStreamOrder} Failed to load stream orders for update: %v", err)
+		return err
+	}
+
+	// Check if order already exists for this channel
 	for i, order := range orders.ChannelOrders {
 		if order.Channel == channelName {
+			logger.Debug("{stream/stream - SetChannelStreamOrder} Updating existing order for channel: %s", channelName)
 			orders.ChannelOrders[i].StreamOrder = streamOrder
-			return SaveStreamOrders(orders)
+
+			if err := SaveStreamOrders(orders); err != nil {
+				logger.Error("{stream/stream - SetChannelStreamOrder} Failed to save updated stream order for channel %s: %v", channelName, err)
+				return err
+			}
+
+			logger.Debug("{stream/stream - SetChannelStreamOrder} Successfully updated stream order for channel: %s", channelName)
+			return nil
 		}
 	}
 
+	// Create new order entry
+	logger.Debug("{stream/stream - SetChannelStreamOrder} Creating new order entry for channel: %s", channelName)
 	newOrder := ChannelStreamOrder{
 		Channel:     channelName,
 		StreamOrder: streamOrder,
 	}
 	orders.ChannelOrders = append(orders.ChannelOrders, newOrder)
-	return SaveStreamOrders(orders)
+
+	if err := SaveStreamOrders(orders); err != nil {
+		logger.Error("{stream/stream - SetChannelStreamOrder} Failed to save new stream order for channel %s: %v", channelName, err)
+		return err
+	}
+
+	logger.Debug("{stream/stream - SetChannelStreamOrder} Successfully created new stream order for channel: %s", channelName)
+	return nil
 }
 
-// DeleteChannelStreamOrder removes the custom stream ordering for a specific channel
-// from the persistent database, reverting to default ordering behavior.
+/**
+ * DeleteChannelStreamOrder removes the custom stream ordering for a specific channel
+ * from the persistent database, reverting to default ordering behavior.
+ *
+ * The function performs atomic deletion:
+ * - Acquires exclusive write lock
+ * - Loads current state
+ * - Removes matching entry if found
+ * - Persists changes atomically
+ * - Returns success even if entry doesn't exist (idempotent operation)
+ *
+ * @param channelName Unique channel identifier to remove ordering for
+ * @return error - non-nil if database operations fail
+ */
 func DeleteChannelStreamOrder(channelName string) error {
+	logger.Debug("{stream/stream - DeleteChannelStreamOrder} Deleting stream order for channel: %s", channelName)
+
 	orderMutex.Lock()
 	defer orderMutex.Unlock()
 
+	// Load current orders
 	orders, err := LoadStreamOrders()
 	if err != nil {
+		logger.Error("{stream/stream - DeleteChannelStreamOrder} Failed to load stream orders for deletion: %v", err)
 		return err
 	}
 
 	// Find and remove the channel order
 	for i, order := range orders.ChannelOrders {
 		if order.Channel == channelName {
+			logger.Debug("{stream/stream - DeleteChannelStreamOrder} Found order entry for channel %s at index %d, removing", channelName, i)
+
 			// Remove this entry
 			orders.ChannelOrders = append(orders.ChannelOrders[:i], orders.ChannelOrders[i+1:]...)
-			return SaveStreamOrders(orders)
+
+			if err := SaveStreamOrders(orders); err != nil {
+				logger.Error("{stream/stream - DeleteChannelStreamOrder} Failed to save after deleting order for channel %s: %v", channelName, err)
+				return err
+			}
+
+			logger.Debug("{stream/stream - DeleteChannelStreamOrder} Successfully deleted stream order for channel: %s", channelName)
+			return nil
 		}
 	}
 
-	// If not found, that's okay - it's already not in the file
+	// If not found, that's okay - it's already not in the file (idempotent)
+	logger.Debug("{stream/stream - DeleteChannelStreamOrder} No order entry found for channel %s, nothing to delete", channelName)
 	return nil
 }
 
-// GetChannelStreamOrder retrieves the custom stream ordering for a specific channel
-// from the persistent database, returning nil if no custom order exists for the
-// requested channel (indicating default ordering should be used).
-//
-// Parameters:
-//   - channelName: unique channel identifier to retrieve ordering for
-//
-// Returns:
-//   - []int: array of stream indices in custom order, or nil if no custom order exists
-//   - error: non-nil if database operations fail
+/**
+ * GetChannelStreamOrder retrieves the custom stream ordering for a specific channel
+ * from the persistent database, returning nil if no custom order exists for the
+ * requested channel (indicating default ordering should be used).
+ *
+ * The function uses read lock for concurrent access:
+ * - Acquires shared read lock to allow concurrent readers
+ * - Loads current state from disk
+ * - Returns matching order or nil if not found
+ *
+ * @param channelName Unique channel identifier to retrieve ordering for
+ * @return ([]int, error) - array of stream indices in custom order (nil if no custom order), error on failure
+ */
 func GetChannelStreamOrder(channelName string) ([]int, error) {
+	logger.Debug("{stream/stream - GetChannelStreamOrder} Getting stream order for channel: %s", channelName)
+
 	orderMutex.RLock()
 	defer orderMutex.RUnlock()
 
+	// Load current orders
 	orders, err := LoadStreamOrders()
 	if err != nil {
+		logger.Error("{stream/stream - GetChannelStreamOrder} Failed to load stream orders for retrieval: %v", err)
 		return nil, err
 	}
 
+	// Find matching channel order
 	for _, order := range orders.ChannelOrders {
 		if order.Channel == channelName {
+			logger.Debug("{stream/stream - GetChannelStreamOrder} Found custom order for channel %s: %d streams", channelName, len(order.StreamOrder))
 			return order.StreamOrder, nil
 		}
 	}
 
+	// No custom order found - return nil to indicate default ordering
+	logger.Debug("{stream/stream - GetChannelStreamOrder} No custom order found for channel: %s, using default ordering", channelName)
 	return nil, nil
 }
