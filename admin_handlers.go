@@ -16,6 +16,7 @@ import (
 
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/deadstreams"
+	"kptv-proxy/work/logger"
 	"kptv-proxy/work/middleware"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
@@ -868,7 +869,8 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 func handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if err := json.NewEncoder(w).Encode(logEntries); err != nil {
+	logs := logger.GetLogs()
+	if err := json.NewEncoder(w).Encode(logs); err != nil {
 		http.Error(w, "Failed to encode logs", http.StatusInternalServerError)
 	}
 }
@@ -877,8 +879,8 @@ func handleGetLogs(w http.ResponseWriter, r *http.Request) {
 func handleClearLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	logEntries = logEntries[:0]
-	addLogEntry("info", "Log entries cleared via admin interface")
+	logger.ClearLogs()
+	logger.Info("Log entries cleared via admin interface")
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
