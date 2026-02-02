@@ -75,22 +75,44 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 				return
 			}
 
-			// set a couple extra headers
 			req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
 			req.Header.Set("Accept-Encoding", "identity")
 			req.Header.Set("Connection", "close")
 
-			// execute the request
-			resp, err := sp.HttpClient.Do(req)
+			var resp *http.Response
+			maxRetries := 5
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				resp, err = sp.HttpClient.Do(req)
+				if err != nil {
+					logger.Warn("{proxy/epg - FetchEPGData} Attempt %d/%d failed for %s: %v", attempt, maxRetries, source.name, err)
+					time.Sleep(time.Duration(attempt*10) * time.Second)
+					req, _ = http.NewRequest("GET", source.url, nil)
+					req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
+					req.Header.Set("Accept-Encoding", "identity")
+					req.Header.Set("Connection", "close")
+					continue
+				}
+				if resp.StatusCode == http.StatusOK {
+					break
+				}
+				logger.Warn("{proxy/epg - FetchEPGData} Attempt %d/%d HTTP %d from %s", attempt, maxRetries, resp.StatusCode, source.name)
+				resp.Body.Close()
+				if attempt < maxRetries {
+					time.Sleep(time.Duration(attempt*10) * time.Second)
+					req, _ = http.NewRequest("GET", source.url, nil)
+					req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
+					req.Header.Set("Accept-Encoding", "identity")
+					req.Header.Set("Connection", "close")
+				}
+			}
+
 			if err != nil {
-				logger.Error("{proxy/epg - FetchEPGData} Failed to fetch from %s: %v", source.name, err)
+				logger.Error("{proxy/epg - FetchEPGData} Failed to fetch from %s after %d attempts: %v", source.name, maxRetries, err)
 				return
 			}
-			defer resp.Body.Close()
-
-			// make sure we have a good response
 			if resp.StatusCode != http.StatusOK {
-				logger.Error("{proxy/epg - FetchEPGData} HTTP %d from %s", resp.StatusCode, source.name)
+				logger.Error("{proxy/epg - FetchEPGData} HTTP %d from %s after %d attempts", resp.StatusCode, source.name, maxRetries)
+				resp.Body.Close()
 				return
 			}
 
