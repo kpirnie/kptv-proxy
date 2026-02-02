@@ -173,6 +173,7 @@ func (c *Cache) WarmUpEPG(fetchFunc func() string) {
 		data := fetchFunc()
 		if data != "" {
 			c.SetEPG("merged", data)
+			logger.Info("EPG warmup complete, cached to disk")
 		}
 	}()
 }
