@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"context"
-	"fmt"
 	"io"
 	"kptv-proxy/work/logger"
 	"net/http"
@@ -33,32 +31,6 @@ func (sp *StreamProxy) GetEPGSources() []epgSource {
 
 	logger.Debug("{proxy/epg - GetEPGSources} Collecting EPG sources from configuration")
 
-	// collect Xtream Codes sources that have valid credentials
-	for i := range sp.Config.Sources {
-		src := &sp.Config.Sources[i]
-		if src.Username != "" && src.Password != "" {
-			sources = append(sources, epgSource{
-				url:        fmt.Sprintf("%s/xmltv.php?username=%s&password=%s", src.URL, src.Username, src.Password),
-				name:       src.Name,
-				sourceType: "xc",
-			})
-			logger.Debug("{proxy/epg - GetEPGSources} Added XC source: %s", src.Name)
-		}
-	}
-
-	// collect M3U8 sources that define a separate EPG URL
-	for i := range sp.Config.Sources {
-		src := &sp.Config.Sources[i]
-		if src.EPGURL != "" {
-			sources = append(sources, epgSource{
-				url:        src.EPGURL,
-				name:       src.Name,
-				sourceType: "m3u8",
-			})
-			logger.Debug("{proxy/epg - GetEPGSources} Added M3U8 EPG source: %s", src.Name)
-		}
-	}
-
 	// collect manually configured standalone EPG endpoints
 	for i := range sp.Config.EPGs {
 		epg := &sp.Config.EPGs[i]
@@ -80,14 +52,12 @@ func (sp *StreamProxy) GetEPGSources() []epgSource {
 // timeout to prevent any single slow or unresponsive source from blocking the
 // entire aggregation process.
 //
-// The function uses buffered channels to safely collect results from concurrent
-// goroutines, then drains them into ordered slices once all fetches complete.
-// Individual source failures are logged and skipped without affecting other sources.
+// The function streams and parses XML data incrementally to handle large EPG files
+// without loading them entirely into memory.
 func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 
 	logger.Debug("{proxy/epg - FetchEPGData} Starting concurrent fetch for %d sources", len(sources))
 
-	// buffered channels to collect parsed XML fragments from concurrent goroutines
 	channelChan := make(chan string, len(sources)*100)
 	programmeChan := make(chan string, len(sources)*1000)
 	var wg sync.WaitGroup
@@ -99,32 +69,41 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 
 			logger.Debug("{proxy/epg - FetchEPGData} Fetching from %s (%s)", source.name, source.sourceType)
 
-			// enforce a 30-second timeout per source to avoid blocking on slow providers
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
+			// Create a DEDICATED HTTP/1.1 client for this request only
+			client := &http.Client{
+				Timeout: 30 * time.Second,
+				Transport: &http.Transport{
+					DisableKeepAlives:     true,
+					DisableCompression:    true,
+					MaxIdleConns:          1,
+					IdleConnTimeout:       1 * time.Second,
+					TLSHandshakeTimeout:   10 * time.Second,
+					ResponseHeaderTimeout: 10 * time.Second,
+					ForceAttemptHTTP2:     false, // Force HTTP/1.1
+				},
+			}
 
-			// setup the request
-			req, err := http.NewRequestWithContext(ctx, "GET", source.url, nil)
+			req, err := http.NewRequest("GET", source.url, nil)
 			if err != nil {
 				logger.Error("{proxy/epg - FetchEPGData} Failed to create request for %s: %v", source.name, err)
 				return
 			}
 
-			// execute the actual request
-			resp, err := sp.HttpClient.Do(req)
+			req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
+			req.Close = true // Force connection close
+
+			resp, err := client.Do(req)
 			if err != nil {
 				logger.Error("{proxy/epg - FetchEPGData} Failed to fetch from %s: %v", source.name, err)
 				return
 			}
 			defer resp.Body.Close()
 
-			// invalid status code
 			if resp.StatusCode != http.StatusOK {
 				logger.Error("{proxy/epg - FetchEPGData} HTTP %d from %s", resp.StatusCode, source.name)
 				return
 			}
 
-			// read the entire response body for string-based XML parsing
 			data, err := io.ReadAll(resp.Body)
 			if err != nil {
 				logger.Error("{proxy/epg - FetchEPGData} Failed to read from %s: %v", source.name, err)
@@ -133,13 +112,12 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 
 			docStr := string(data)
 
-			// if theres an empty response
 			if len(data) == 0 {
 				logger.Warn("{proxy/epg - FetchEPGData} Empty response body from %s", source.name)
 				return
 			}
 
-			// extract all <channel> elements by scanning for open/close tag pairs
+			// Extract <channel> elements
 			channelCount := 0
 			channelStart := 0
 			for {
@@ -150,7 +128,6 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 				start += channelStart
 				end := strings.Index(docStr[start:], "</channel>")
 				if end == -1 {
-					logger.Warn("{proxy/epg - FetchEPGData} Malformed <channel> element in %s (missing closing tag)", source.name)
 					break
 				}
 				end += start + len("</channel>")
@@ -159,7 +136,7 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 				channelStart = end
 			}
 
-			// extract all <programme> elements using the same scanning approach
+			// Extract <programme> elements
 			programmeCount := 0
 			progStart := 0
 			for {
@@ -170,7 +147,6 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 				start += progStart
 				end := strings.Index(docStr[start:], "</programme>")
 				if end == -1 {
-					logger.Warn("{proxy/epg - FetchEPGData} Malformed <programme> element in %s (missing closing tag)", source.name)
 					break
 				}
 				end += start + len("</programme>")
@@ -187,14 +163,12 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 		}(epgSrc)
 	}
 
-	// close channels once all goroutines complete to unblock the drain loops below
 	go func() {
 		wg.Wait()
 		close(channelChan)
 		close(programmeChan)
 	}()
 
-	// drain both channels into ordered slices for the caller
 	var channels []string
 	var programmes []string
 

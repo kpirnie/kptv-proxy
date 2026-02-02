@@ -32,7 +32,6 @@ type gzipResponseWriter struct {
 // WriteHeader records the HTTP status code on the underlying ResponseWriter and marks
 // the header as written to prevent duplicate header writes on subsequent Write calls.
 func (w *gzipResponseWriter) WriteHeader(status int) {
-	logger.Debug("{compression - WriteHeader} write the http status header")
 	w.wroteHeader = true
 	w.ResponseWriter.WriteHeader(status)
 }
@@ -44,7 +43,6 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
-	logger.Debug("{compression - Write} compress and write the byte slice to the gzip writer")
 	return w.Writer.Write(b)
 }
 
@@ -52,7 +50,6 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 // writer are flushed to the client. This enables streaming responses where data
 // needs to be delivered incrementally rather than buffered until connection close.
 func (w *gzipResponseWriter) Flush() {
-	logger.Debug("{compression - Flush} flush the gzip and response buffers")
 	// flush the gzip writer's internal buffer first
 	if gzw, ok := w.Writer.(*gzip.Writer); ok {
 		gzw.Flush()
@@ -77,12 +74,10 @@ func GzipMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// pass through if the client doesn't accept gzip encoding
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			logger.Debug("{compression - GzipMiddleware} gzip not accepted by client: %s %s", r.Method, r.URL.Path)
+			logger.Error("{compression - GzipMiddleware} gzip not accepted by client: %s %s", r.Method, r.URL.Path)
 			next(w, r)
 			return
 		}
-
-		logger.Debug("{compression - GzipMiddleware} gzip compression enabled for: %s %s", r.Method, r.URL.Path)
 
 		// set the appropriate encoding header and remove content-length
 		// since compressed size is unknown until the response is fully written

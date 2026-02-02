@@ -9,7 +9,7 @@ import (
 )
 
 // LogLevel represents the severity level of log messages, providing a hierarchical
-// filtering mechanism where higher levels (ERROR > WARN > INFO > DEBUG) control
+// filtering mechanism where higher levels (NONE > ERROR > WARN > INFO > DEBUG) control
 // message visibility and ensure appropriate logging verbosity across application
 // components for debugging, monitoring, and production operations.
 type LogLevel int
@@ -19,6 +19,7 @@ const (
 	INFO
 	WARN
 	ERROR
+	NONE
 )
 
 // LogEntry represents a single log message with associated metadata including
@@ -72,7 +73,7 @@ type Logger struct {
 // global default logger used by package-level logging functions.
 //
 // Parameters:
-//   - level: string representation of log level (DEBUG, INFO, WARN, ERROR)
+//   - level: string representation of log level (DEBUG, INFO, WARN, ERROR, NONE)
 //
 // Returns:
 //   - *Logger: configured logger instance ready for use
@@ -115,6 +116,8 @@ func ParseLogLevel(level string) LogLevel {
 		return WARN
 	case "ERROR":
 		return ERROR
+	case "NONE":
+		return ERROR + 1
 	default:
 		return INFO
 	}
@@ -171,6 +174,8 @@ func (l *Logger) GetLevel() string {
 		return "WARN"
 	case ERROR:
 		return "ERROR"
+	case NONE:
+		return "NONE"
 	default:
 		return "INFO"
 	}
@@ -189,6 +194,12 @@ func (l *Logger) GetLevel() string {
 func (l *Logger) shouldLog(level LogLevel) bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
+
+	// NONE means no logging - either for the logger level or message level
+	if l.level == NONE || level == NONE {
+		return false
+	}
+
 	return level >= l.level
 }
 
@@ -201,6 +212,11 @@ func (l *Logger) shouldLog(level LogLevel) bool {
 //   - level: severity level string for buffer entry
 //   - message: formatted message content for buffer entry
 func addToBuffer(level, message string) {
+	// Don't add to buffer if level is NONE
+	if strings.ToUpper(level) == "NONE" {
+		return
+	}
+
 	logMutex.Lock()
 	defer logMutex.Unlock()
 

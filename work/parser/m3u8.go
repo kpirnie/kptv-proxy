@@ -531,6 +531,6 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 	})
 
 	if len(streams) > 1 {
-		logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applied default sorting", channelName)
+		//logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applied default sorting", channelName)
 	}
 }

@@ -156,7 +156,6 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 // security through appropriate header management and preflight request handling.
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		addLogEntry("info", fmt.Sprintf("Request: %s %s", r.Method, r.URL.Path))
 
 		// Configure CORS headers for cross-origin support
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -880,7 +879,7 @@ func handleClearLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	logger.ClearLogs()
-	logger.Info("Log entries cleared via admin interface")
+	logger.Info("Log entries cleared")
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})

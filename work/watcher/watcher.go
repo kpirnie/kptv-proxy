@@ -239,7 +239,6 @@ func (wm *WatcherManager) cleanupRoutine() {
 			logger.Debug("{watcher - cleanupRoutine} Cleanup routine stopping")
 			return
 		case <-ticker.C:
-			logger.Debug("{watcher - cleanupRoutine} Running periodic cleanup check")
 
 			// Evaluate all active watchers for cleanup opportunities
 			cleanedCount := 0

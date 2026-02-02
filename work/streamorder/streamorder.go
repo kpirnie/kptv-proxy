@@ -48,52 +48,52 @@ var (
  */
 func LoadStreamOrders() (*StreamOrderFile, error) {
 	orderPath := "/settings/stream-orders.json"
-	logger.Debug("{stream/stream - HandleStreamFailure} Loading stream orders from: %s", orderPath)
+	//logger.Debug("{stream/streamorder - LoadStreamOrders} Loading stream orders from: %s", orderPath)
 
 	// Check if file exists, create if missing
 	if _, err := os.Stat(orderPath); os.IsNotExist(err) {
-		logger.Debug("{stream/stream - HandleStreamFailure} File does not exist, creating new stream orders file: %s", orderPath)
+		logger.Debug("{stream/streamorder - LoadStreamOrders} File does not exist, creating new stream orders file: %s", orderPath)
 
 		// Create empty file with proper permissions
 		emptyFile := &StreamOrderFile{ChannelOrders: []ChannelStreamOrder{}}
 		data, _ := json.MarshalIndent(emptyFile, "", "  ")
 		if err := os.WriteFile(orderPath, data, 0644); err != nil {
-			logger.Error("{stream/stream - HandleStreamFailure} Failed to create stream orders file: %v", err)
+			logger.Error("{stream/streamorder - LoadStreamOrders} Failed to create stream orders file: %v", err)
 			return nil, err
 		}
-		logger.Debug("{stream/stream - HandleStreamFailure} Created new empty stream orders file")
+		logger.Debug("{stream/streamorder - LoadStreamOrders} Created new empty stream orders file")
 		return emptyFile, nil
 	}
 
 	// Read existing file
 	data, err := os.ReadFile(orderPath)
 	if err != nil {
-		logger.Error("{stream/stream - HandleStreamFailure} Failed to read stream orders file: %v", err)
+		logger.Error("{stream/streamorder - LoadStreamOrders} Failed to read stream orders file: %v", err)
 		return nil, err
 	}
 
-	logger.Debug("{stream/stream - HandleStreamFailure} Read %d bytes from stream orders file", len(data))
+	//logger.Debug("{stream/streamorder - HandleStreaLoadStreamOrdersmFailure} Read %d bytes from stream orders file", len(data))
 
 	// Handle empty file
 	if len(data) == 0 {
-		logger.Debug("{stream/stream - HandleStreamFailure} File is empty, returning empty structure")
+		logger.Debug("{stream/streamorder - LoadStreamOrders} File is empty, returning empty structure")
 		return &StreamOrderFile{ChannelOrders: []ChannelStreamOrder{}}, nil
 	}
 
 	// Parse JSON data
 	var orders StreamOrderFile
 	if err := json.Unmarshal(data, &orders); err != nil {
-		logger.Warn("{stream/stream - HandleStreamFailure} Failed to parse stream orders JSON, returning empty structure: %v", err)
+		logger.Warn("{stream/streamorder - LoadStreamOrders} Failed to parse stream orders JSON, returning empty structure: %v", err)
 		return &StreamOrderFile{ChannelOrders: []ChannelStreamOrder{}}, nil
 	}
 
 	// Ensure ChannelOrders array is initialized
 	if orders.ChannelOrders == nil {
-		logger.Debug("{stream/stream - HandleStreamFailure} ChannelOrders was nil, initializing empty array")
+		logger.Debug("{stream/streamorder - LoadStreamOrders} ChannelOrders was nil, initializing empty array")
 		orders.ChannelOrders = []ChannelStreamOrder{}
 	}
 
-	logger.Debug("{stream/stream - HandleStreamFailure} Successfully loaded %d channel orders", len(orders.ChannelOrders))
+	//logger.Debug("{stream/streamorder - LoadStreamOrders} Successfully loaded %d channel orders", len(orders.ChannelOrders))
 
 	return &orders, nil
 }
@@ -111,24 +111,24 @@ func LoadStreamOrders() (*StreamOrderFile, error) {
  */
 func SaveStreamOrders(orders *StreamOrderFile) error {
 	orderPath := "/settings/stream-orders.json"
-	logger.Debug("{stream/stream - SaveStreamOrders} Saving stream orders to: %s (%d channels)", orderPath, len(orders.ChannelOrders))
+	logger.Debug("{stream/streamorder - SaveStreamOrders} Saving stream orders to: %s (%d channels)", orderPath, len(orders.ChannelOrders))
 
 	// Marshal to formatted JSON
 	data, err := json.MarshalIndent(orders, "", "  ")
 	if err != nil {
-		logger.Error("{stream/stream - SaveStreamOrders} Failed to marshal stream orders to JSON: %v", err)
+		logger.Error("{stream/streamorder - SaveStreamOrders} Failed to marshal stream orders to JSON: %v", err)
 		return err
 	}
 
-	logger.Debug("{stream/stream - SaveStreamOrders} Marshaled %d bytes of JSON data", len(data))
+	logger.Debug("{stream/streamorder - SaveStreamOrders} Marshaled %d bytes of JSON data", len(data))
 
 	// Write to file with appropriate permissions
 	if err := os.WriteFile(orderPath, data, 0644); err != nil {
-		logger.Error("{stream/stream - SaveStreamOrders} Failed to write stream orders file: %v", err)
+		logger.Error("{stream/streamorder - SaveStreamOrders} Failed to write stream orders file: %v", err)
 		return err
 	}
 
-	logger.Debug("{stream/stream - SaveStreamOrders} Successfully saved stream orders file")
+	logger.Debug("{stream/streamorder - SaveStreamOrders} Successfully saved stream orders file")
 	return nil
 }
 
@@ -151,7 +151,7 @@ func SaveStreamOrders(orders *StreamOrderFile) error {
  * @return error - non-nil if database operations fail
  */
 func SetChannelStreamOrder(channelName string, streamOrder []int) error {
-	logger.Debug("{stream/stream - SetChannelStreamOrder} Setting stream order for channel: %s (%d streams)", channelName, len(streamOrder))
+	logger.Debug("{stream/streamorder - SetChannelStreamOrder} Setting stream order for channel: %s (%d streams)", channelName, len(streamOrder))
 
 	orderMutex.Lock()
 	defer orderMutex.Unlock()
@@ -159,28 +159,28 @@ func SetChannelStreamOrder(channelName string, streamOrder []int) error {
 	// Load current orders
 	orders, err := LoadStreamOrders()
 	if err != nil {
-		logger.Error("{stream/stream - SetChannelStreamOrder} Failed to load stream orders for update: %v", err)
+		logger.Error("{stream/streamorder - SetChannelStreamOrder} Failed to load stream orders for update: %v", err)
 		return err
 	}
 
 	// Check if order already exists for this channel
 	for i, order := range orders.ChannelOrders {
 		if order.Channel == channelName {
-			logger.Debug("{stream/stream - SetChannelStreamOrder} Updating existing order for channel: %s", channelName)
+			logger.Debug("{stream/streamorder - SetChannelStreamOrder} Updating existing order for channel: %s", channelName)
 			orders.ChannelOrders[i].StreamOrder = streamOrder
 
 			if err := SaveStreamOrders(orders); err != nil {
-				logger.Error("{stream/stream - SetChannelStreamOrder} Failed to save updated stream order for channel %s: %v", channelName, err)
+				logger.Error("{stream/streamorder - SetChannelStreamOrder} Failed to save updated stream order for channel %s: %v", channelName, err)
 				return err
 			}
 
-			logger.Debug("{stream/stream - SetChannelStreamOrder} Successfully updated stream order for channel: %s", channelName)
+			logger.Debug("{stream/streamorder - SetChannelStreamOrder} Successfully updated stream order for channel: %s", channelName)
 			return nil
 		}
 	}
 
 	// Create new order entry
-	logger.Debug("{stream/stream - SetChannelStreamOrder} Creating new order entry for channel: %s", channelName)
+	logger.Debug("{stream/streamorder - SetChannelStreamOrder} Creating new order entry for channel: %s", channelName)
 	newOrder := ChannelStreamOrder{
 		Channel:     channelName,
 		StreamOrder: streamOrder,
@@ -188,11 +188,11 @@ func SetChannelStreamOrder(channelName string, streamOrder []int) error {
 	orders.ChannelOrders = append(orders.ChannelOrders, newOrder)
 
 	if err := SaveStreamOrders(orders); err != nil {
-		logger.Error("{stream/stream - SetChannelStreamOrder} Failed to save new stream order for channel %s: %v", channelName, err)
+		logger.Error("{stream/streamorder - SetChannelStreamOrder} Failed to save new stream order for channel %s: %v", channelName, err)
 		return err
 	}
 
-	logger.Debug("{stream/stream - SetChannelStreamOrder} Successfully created new stream order for channel: %s", channelName)
+	logger.Debug("{stream/streamorder - SetChannelStreamOrder} Successfully created new stream order for channel: %s", channelName)
 	return nil
 }
 
@@ -211,7 +211,7 @@ func SetChannelStreamOrder(channelName string, streamOrder []int) error {
  * @return error - non-nil if database operations fail
  */
 func DeleteChannelStreamOrder(channelName string) error {
-	logger.Debug("{stream/stream - DeleteChannelStreamOrder} Deleting stream order for channel: %s", channelName)
+	logger.Debug("{stream/streamorder - DeleteChannelStreamOrder} Deleting stream order for channel: %s", channelName)
 
 	orderMutex.Lock()
 	defer orderMutex.Unlock()
@@ -219,30 +219,30 @@ func DeleteChannelStreamOrder(channelName string) error {
 	// Load current orders
 	orders, err := LoadStreamOrders()
 	if err != nil {
-		logger.Error("{stream/stream - DeleteChannelStreamOrder} Failed to load stream orders for deletion: %v", err)
+		logger.Error("{stream/streamorder - DeleteChannelStreamOrder} Failed to load stream orders for deletion: %v", err)
 		return err
 	}
 
 	// Find and remove the channel order
 	for i, order := range orders.ChannelOrders {
 		if order.Channel == channelName {
-			logger.Debug("{stream/stream - DeleteChannelStreamOrder} Found order entry for channel %s at index %d, removing", channelName, i)
+			logger.Debug("{stream/streamorder - DeleteChannelStreamOrder} Found order entry for channel %s at index %d, removing", channelName, i)
 
 			// Remove this entry
 			orders.ChannelOrders = append(orders.ChannelOrders[:i], orders.ChannelOrders[i+1:]...)
 
 			if err := SaveStreamOrders(orders); err != nil {
-				logger.Error("{stream/stream - DeleteChannelStreamOrder} Failed to save after deleting order for channel %s: %v", channelName, err)
+				logger.Error("{stream/streamorder - DeleteChannelStreamOrder} Failed to save after deleting order for channel %s: %v", channelName, err)
 				return err
 			}
 
-			logger.Debug("{stream/stream - DeleteChannelStreamOrder} Successfully deleted stream order for channel: %s", channelName)
+			logger.Debug("{stream/streamorder - DeleteChannelStreamOrder} Successfully deleted stream order for channel: %s", channelName)
 			return nil
 		}
 	}
 
 	// If not found, that's okay - it's already not in the file (idempotent)
-	logger.Debug("{stream/stream - DeleteChannelStreamOrder} No order entry found for channel %s, nothing to delete", channelName)
+	logger.Debug("{stream/streamorder - DeleteChannelStreamOrder} No order entry found for channel %s, nothing to delete", channelName)
 	return nil
 }
 
@@ -260,7 +260,7 @@ func DeleteChannelStreamOrder(channelName string) error {
  * @return ([]int, error) - array of stream indices in custom order (nil if no custom order), error on failure
  */
 func GetChannelStreamOrder(channelName string) ([]int, error) {
-	logger.Debug("{stream/stream - GetChannelStreamOrder} Getting stream order for channel: %s", channelName)
+	//logger.Debug("{stream/streamorder - GetChannelStreamOrder} Getting stream order for channel: %s", channelName)
 
 	orderMutex.RLock()
 	defer orderMutex.RUnlock()
@@ -268,19 +268,19 @@ func GetChannelStreamOrder(channelName string) ([]int, error) {
 	// Load current orders
 	orders, err := LoadStreamOrders()
 	if err != nil {
-		logger.Error("{stream/stream - GetChannelStreamOrder} Failed to load stream orders for retrieval: %v", err)
+		logger.Error("{stream/streamorder - GetChannelStreamOrder} Failed to load stream orders for retrieval: %v", err)
 		return nil, err
 	}
 
 	// Find matching channel order
 	for _, order := range orders.ChannelOrders {
 		if order.Channel == channelName {
-			logger.Debug("{stream/stream - GetChannelStreamOrder} Found custom order for channel %s: %d streams", channelName, len(order.StreamOrder))
+			logger.Debug("{stream/streamorder - GetChannelStreamOrder} Found custom order for channel %s: %d streams", channelName, len(order.StreamOrder))
 			return order.StreamOrder, nil
 		}
 	}
 
 	// No custom order found - return nil to indicate default ordering
-	logger.Debug("{stream/stream - GetChannelStreamOrder} No custom order found for channel: %s, using default ordering", channelName)
+	//logger.Debug("{stream/streamorder - GetChannelStreamOrder} No custom order found for channel: %s, using default ordering", channelName)
 	return nil, nil
 }

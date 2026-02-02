@@ -54,7 +54,7 @@ type StreamProxy struct {
 // into a fully operational proxy, including pre-initialization of per-source rate limiters
 // to avoid lazy creation overhead during stream imports.
 func New(cfg *config.Config, bufferPool *buffer.BufferPool, httpClient *client.HeaderSettingClient, workerPool *ants.Pool, cacheInstance *cache.Cache) *StreamProxy {
-	logger.Debug("[PROXY] Initializing new StreamProxy instance")
+	logger.Debug("{proxy/stream - New} Initializing new StreamProxy instance")
 
 	sp := &StreamProxy{
 		Config:                cfg,

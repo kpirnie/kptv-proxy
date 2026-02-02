@@ -7,6 +7,7 @@ import (
 	"kptv-proxy/work/proxy"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -58,6 +59,9 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 // HandleEPG serves combined EPG data from disk cache, streaming directly to the
 // client via http.ServeContent. Sets Cache-Control max-age to the remaining TTL
 // so downstream players (Emby/Plex/Channels) cache appropriately.
+// HandleEPG serves combined EPG data from disk cache, streaming directly to the
+// client via http.ServeContent. Sets Cache-Control max-age to the remaining TTL
+// so downstream players (Emby/Plex/Channels) cache appropriately.
 func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -71,62 +75,81 @@ func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 			}
 
 			modTime := epgModTime(f)
-			logger.Debug("{handlers - HandleEPG} from disk cache (%d bytes, ttl=%ds)", size, remainingTTL)
+			logger.Debug("{handlers - HandleEPG} Serving from disk cache (%d bytes, ttl=%ds)", size, remainingTTL)
 
 			w.Header().Set("Content-Type", "application/xml")
 			w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", remainingTTL))
 
-			// http.ServeContent handles Content-Length, Range requests, and
-			// Last-Modified/If-Modified-Since automatically.
 			http.ServeContent(w, r, "epg.xml", modTime, f)
 			return
 		}
 
-		// Cache miss — trigger background warmup
-		logger.Debug("{handlers - HandleEPG} Cache miss, triggering background warmup")
-		sp.Cache.WarmUpEPG(func() string {
-			return sp.FetchAndMergeEPG()
-		})
+		// Cache miss — fetch and stream fresh EPG data
+		logger.Debug("{handlers - HandleEPG} Cache miss, fetching and streaming fresh EPG")
 
-		// Serve fresh data inline for this request
 		sources := sp.GetEPGSources()
 		if len(sources) == 0 {
 			logger.Warn("{handlers - HandleEPG} No EPG sources available")
+			http.Error(w, "No EPG sources configured", http.StatusServiceUnavailable)
 			return
 		}
 
-		logger.Debug("{handlers - HandleEPG} Streaming fresh EPG to client")
 		w.Header().Set("Content-Type", "application/xml")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		w.Header().Set("Transfer-Encoding", "chunked")
 
 		flusher, ok := w.(http.Flusher)
 		if !ok {
-			logger.Error("{handlers - HandleEPG} streaming not supported")
+			logger.Error("{handlers - HandleEPG} Streaming not supported")
 			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 			return
 		}
 
+		// Write XML header
 		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n"))
 		w.Write([]byte(`<tv generator-info-name="KPTV-Proxy">` + "\n"))
 		flusher.Flush()
 
+		// Fetch EPG data from all sources
+		logger.Debug("{handlers - HandleEPG} Fetching EPG data from %d sources", len(sources))
 		channels, programmes := sp.FetchEPGData(sources)
 
-		// write the data and flush the output
+		logger.Debug("{handlers - HandleEPG} Fetched %d channels, %d programmes", len(channels), len(programmes))
+
+		// Stream channels
 		for _, channelData := range channels {
 			w.Write([]byte(channelData))
-			flusher.Flush()
 		}
+		flusher.Flush()
+
+		// Stream programmes
 		for _, programmeData := range programmes {
 			w.Write([]byte(programmeData))
-			flusher.Flush()
 		}
+		flusher.Flush()
 
-		// write the end of the EPG and flush the response
+		// Close XML
 		w.Write([]byte("</tv>"))
 		flusher.Flush()
-		logger.Debug("{handlers - HandleEPG} flushed the stream")
+
+		logger.Debug("{handlers - HandleEPG} Finished streaming EPG to client")
+
+		// After successfully streaming to client, save to cache in background
+		go func() {
+			var result strings.Builder
+			result.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+			result.WriteString(`<tv generator-info-name="KPTV-Proxy">` + "\n")
+			for _, ch := range channels {
+				result.WriteString(ch)
+			}
+			for _, prog := range programmes {
+				result.WriteString(prog)
+			}
+			result.WriteString("</tv>")
+
+			sp.Cache.SetEPG("merged", result.String())
+			logger.Debug("{handlers - HandleEPG} Cached EPG data in background")
+		}()
 	}
 }
 
