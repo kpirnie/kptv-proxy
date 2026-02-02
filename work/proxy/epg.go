@@ -69,41 +69,32 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 
 			logger.Debug("{proxy/epg - FetchEPGData} Fetching from %s (%s)", source.name, source.sourceType)
 
-			// Create a DEDICATED HTTP/1.1 client for this request only
-			client := &http.Client{
-				Timeout: 30 * time.Second,
-				Transport: &http.Transport{
-					DisableKeepAlives:     true,
-					DisableCompression:    true,
-					MaxIdleConns:          1,
-					IdleConnTimeout:       1 * time.Second,
-					TLSHandshakeTimeout:   10 * time.Second,
-					ResponseHeaderTimeout: 10 * time.Second,
-					ForceAttemptHTTP2:     false, // Force HTTP/1.1
-				},
-			}
-
 			req, err := http.NewRequest("GET", source.url, nil)
 			if err != nil {
 				logger.Error("{proxy/epg - FetchEPGData} Failed to create request for %s: %v", source.name, err)
 				return
 			}
 
+			// set a couple extra headers
 			req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
-			req.Close = true // Force connection close
+			req.Header.Set("Accept-Encoding", "identity")
+			req.Header.Set("Connection", "close")
 
-			resp, err := client.Do(req)
+			// execute the request
+			resp, err := sp.HttpClient.Do(req)
 			if err != nil {
 				logger.Error("{proxy/epg - FetchEPGData} Failed to fetch from %s: %v", source.name, err)
 				return
 			}
 			defer resp.Body.Close()
 
+			// make sure we have a good response
 			if resp.StatusCode != http.StatusOK {
 				logger.Error("{proxy/epg - FetchEPGData} HTTP %d from %s", resp.StatusCode, source.name)
 				return
 			}
 
+			// make sure we can read the data
 			data, err := io.ReadAll(resp.Body)
 			if err != nil {
 				logger.Error("{proxy/epg - FetchEPGData} Failed to read from %s: %v", source.name, err)
@@ -112,6 +103,7 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 
 			docStr := string(data)
 
+			// if it's empty...
 			if len(data) == 0 {
 				logger.Warn("{proxy/epg - FetchEPGData} Empty response body from %s", source.name)
 				return
@@ -172,13 +164,29 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 	var channels []string
 	var programmes []string
 
-	for channelData := range channelChan {
-		channels = append(channels, channelData)
-	}
+	// Drain both channels concurrently to prevent deadlock.
+	// If we drain sequentially (all channels then all programmes),
+	// goroutines writing to programmeChan can block when its buffer
+	// fills, which prevents wg.Wait() from completing, which prevents
+	// channelChan from closing — a classic deadlock.
+	var drainWg sync.WaitGroup
+	drainWg.Add(2)
 
-	for programmeData := range programmeChan {
-		programmes = append(programmes, programmeData)
-	}
+	go func() {
+		defer drainWg.Done()
+		for channelData := range channelChan {
+			channels = append(channels, channelData)
+		}
+	}()
+
+	go func() {
+		defer drainWg.Done()
+		for programmeData := range programmeChan {
+			programmes = append(programmes, programmeData)
+		}
+	}()
+
+	drainWg.Wait()
 
 	logger.Debug("{proxy/epg - FetchEPGData} Fetch complete: %d total channels, %d total programmes", len(channels), len(programmes))
 	return channels, programmes
