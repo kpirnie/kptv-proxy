@@ -74,7 +74,6 @@ func GzipMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// pass through if the client doesn't accept gzip encoding
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			logger.Error("{compression - GzipMiddleware} gzip not accepted by client: %s %s", r.Method, r.URL.Path)
 			next(w, r)
 			return
 		}
