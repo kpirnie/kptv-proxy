@@ -18,6 +18,11 @@ import (
 	"github.com/puzpuzpuz/xsync/v3"
 )
 
+// semaphore to limit concurrent watchers system-wide
+var (
+	watcherSemaphore = make(chan struct{}, 100) // Max 100 concurrent watchers
+)
+
 /**
  * WatcherManager coordinates multiple stream watchers across all active channels,
  * providing centralized management for stream health monitoring, automatic failover,
@@ -162,6 +167,13 @@ func (wm *WatcherManager) Stop() {
  * @param restreamer Active restreamer instance to monitor for health and quality issues
  */
 func (wm *WatcherManager) StartWatching(channelName string, restreamer *types.Restreamer) {
+	select {
+	case watcherSemaphore <- struct{}{}:
+	default:
+		logger.Debug("{watcher - StartWatching} Max watchers reached, skipping channel %s", channelName)
+		return
+	}
+
 	logger.Debug("{watcher - StartWatching} Starting watcher for channel: %s", channelName)
 
 	// Terminate existing watcher if present
@@ -214,6 +226,8 @@ func (wm *WatcherManager) StopWatching(channelName string) {
 	if watcher, exists := wm.watchers.LoadAndDelete(channelName); exists {
 		watcher.Stop()
 		logger.Debug("{watcher - StopWatching} Stopped watching channel %s", channelName)
+		// Release semaphore
+		<-watcherSemaphore
 	} else {
 		logger.Debug("{watcher - StopWatching} No watcher found for channel: %s", channelName)
 	}

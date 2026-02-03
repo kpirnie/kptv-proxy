@@ -30,6 +30,12 @@ import (
 	"go.uber.org/ratelimit"
 )
 
+// setup the proxy-wide client semaphore for limiting concurrent outbound requests
+var (
+	globalClientSemaphore chan struct{}
+	semaphoreOnce         sync.Once
+)
+
 // StreamProxy represents the core application orchestrator responsible for managing
 // the complete IPTV proxy lifecycle. It coordinates stream discovery, playlist
 // generation, client connection handling, restreaming, and background maintenance
@@ -73,6 +79,11 @@ func New(cfg *config.Config, bufferPool *buffer.BufferPool, httpClient *client.H
 
 	// initialize all rate limiters upfront to avoid lazy creation during imports
 	sp.initializeRateLimiters()
+
+	// setup the global client semaphore based on configuration
+	semaphoreOnce.Do(func() {
+		globalClientSemaphore = make(chan struct{}, cfg.MaxConnectionsToApp)
+	})
 
 	logger.Debug("{proxy/stream - New} StreamProxy initialization complete")
 	return sp
@@ -142,12 +153,15 @@ func (sp *StreamProxy) ImportStreams() {
 	var wg sync.WaitGroup
 	newChannels := xsync.NewMapOf[string, *types.Channel]()
 
+	importSemaphore := make(chan struct{}, sp.Config.WorkerThreads)
 	for i := range sp.Config.Sources {
 		wg.Add(1)
 		source := &sp.Config.Sources[i]
 
+		importSemaphore <- struct{}{}
 		go func(src *config.SourceConfig) {
 			defer wg.Done()
+			defer func() { <-importSemaphore }()
 
 			// check if the source has capacity for another connection
 			currentConns := src.ActiveConns.Load()
@@ -593,6 +607,17 @@ func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 // When the watcher system is enabled, stream quality monitoring is automatically started
 // for the active restreaming session to enable automatic failover on quality degradation.
 func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Request, channel *types.Channel) {
+
+	// Acquire global connection slot
+	select {
+	case globalClientSemaphore <- struct{}{}:
+		defer func() { <-globalClientSemaphore }()
+	default:
+		logger.Debug("{proxy/stream - HandleRestreamingClient} Max connections reached (%d), rejecting client", sp.Config.MaxConnectionsToApp)
+		http.Error(w, "Server at capacity", http.StatusServiceUnavailable)
+		return
+	}
+
 	logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: New client request from %s", channel.Name, r.RemoteAddr)
 	logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: %d available streams", channel.Name, len(channel.Streams))
 
