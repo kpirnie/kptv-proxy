@@ -8,17 +8,33 @@ import (
 	"time"
 )
 
+// ANSI color codes for terminal output
+const (
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorBlue   = "\033[34m"
+)
+
 // LogLevel represents the severity level of log messages, providing a hierarchical
-// filtering mechanism where higher levels (NONE > ERROR > WARN > INFO > DEBUG) control
-// message visibility and ensure appropriate logging verbosity across application
-// components for debugging, monitoring, and production operations.
+// filtering mechanism where higher levels control message visibility and ensure
+// appropriate logging verbosity across application components for debugging,
+// monitoring, and production operations.
+//
+// Level hierarchy (lowest to highest):
+//   - DEBUG: Verbose debugging information
+//   - WARN: Warning conditions
+//   - ERROR: Error conditions
+//   - INFO: Informational notices (always shown unless NONE)
+//   - NONE: Disable all logging
 type LogLevel int
 
 const (
 	DEBUG LogLevel = iota
-	INFO
 	WARN
 	ERROR
+	INFO // INFO sits just below NONE - always shows unless logging is completely disabled
 	NONE
 )
 
@@ -57,6 +73,14 @@ var (
 	// circular buffer before oldest entries are discarded, balancing memory usage
 	// with administrative visibility into recent application behavior and events.
 	maxLogEntries = 1000
+
+	// levelColors maps log levels to their ANSI color codes for terminal output
+	levelColors = map[string]string{
+		"DEBUG": colorGreen,
+		"WARN":  colorYellow,
+		"ERROR": colorRed,
+		"INFO":  colorBlue,
+	}
 )
 
 // Logger provides leveled logging functionality with thread-safe configuration
@@ -110,14 +134,14 @@ func ParseLogLevel(level string) LogLevel {
 	switch strings.ToUpper(level) {
 	case "DEBUG":
 		return DEBUG
-	case "INFO":
-		return INFO
 	case "WARN", "WARNING":
 		return WARN
 	case "ERROR":
 		return ERROR
+	case "INFO":
+		return INFO
 	case "NONE":
-		return ERROR + 1
+		return NONE
 	default:
 		return INFO
 	}
@@ -168,12 +192,12 @@ func (l *Logger) GetLevel() string {
 	switch l.level {
 	case DEBUG:
 		return "DEBUG"
-	case INFO:
-		return "INFO"
 	case WARN:
 		return "WARN"
 	case ERROR:
 		return "ERROR"
+	case INFO:
+		return "INFO"
 	case NONE:
 		return "NONE"
 	default:
@@ -259,6 +283,21 @@ func ClearLogs() {
 	logBuffer = logBuffer[:0]
 }
 
+// colorizeLevel wraps the log level string with appropriate ANSI color codes
+// for terminal output. Returns the colorized level string.
+//
+// Parameters:
+//   - level: log level string (DEBUG, INFO, WARN, ERROR)
+//
+// Returns:
+//   - string: colorized level string with ANSI codes
+func colorizeLevel(level string) string {
+	if color, ok := levelColors[level]; ok {
+		return fmt.Sprintf("%s[%s]%s", color, level, colorReset)
+	}
+	return fmt.Sprintf("[%s]", level)
+}
+
 // logMessage formats a log message with printf-style arguments and outputs
 // to both standard logging and the administrative log buffer simultaneously,
 // ensuring visibility through both traditional logging mechanisms and web-based
@@ -270,7 +309,7 @@ func ClearLogs() {
 //   - v: variadic arguments for format string interpolation
 func logMessage(level string, format string, v ...interface{}) {
 	message := fmt.Sprintf(format, v...)
-	log.Printf("[%s] %s", level, message)
+	log.Printf("%s %s", colorizeLevel(level), message)
 	addToBuffer(level, message)
 }
 
