@@ -1045,7 +1045,7 @@ func (r *Restream) SafeBufferWrite(data []byte) bool {
 func (r *Restream) monitorClientHealth() {
 	logger.Debug("{restream/restream - monitorClientHealth} Starting health monitor for channel %s", r.Channel.Name)
 
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -1066,7 +1066,7 @@ func (r *Restream) monitorClientHealth() {
 				client := value
 				lastSeen := client.LastSeen.Load()
 
-				if now-lastSeen > 300 {
+				if now-lastSeen > 120 {
 					staleClients = append(staleClients, key)
 				}
 				return true
