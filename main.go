@@ -140,10 +140,10 @@ func main() {
 			<-restartChan
 
 			// debug logging
-			logger.Debug("Graceful restart requested...")
+			logger.Debug("{main} Graceful restart requested...")
 
 			// Stop/Start watcher based on new config
-			logger.Debug("Managing watcher state during restart...")
+			logger.Debug("{main} Managing watcher state during restart...")
 			proxyInstance.WatcherManager.Stop()
 
 			// if its enabled
@@ -172,7 +172,7 @@ func main() {
 			go proxyInstance.StartImportRefresh()
 
 			// debug logging
-			logger.Debug("Graceful restart completed - loaded %d sources", len(newConfig.Sources))
+			logger.Debug("{main} Graceful restart completed - loaded %d sources", len(newConfig.Sources))
 
 		}
 
@@ -180,7 +180,7 @@ func main() {
 
 	// fire us up, if there's an error log it
 	if err := http.ListenAndServe(addr, router); err != nil {
-		logger.Error("Server failed to start: %v", err)
+		logger.Error("{main} Server failed to start: %v", err)
 		os.Exit(1)
 	}
 

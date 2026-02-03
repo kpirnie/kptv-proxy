@@ -101,8 +101,21 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	defer func() {
 		if cmd.Process != nil {
 			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Killing process group for channel %s (PID: %d)", r.Channel.Name, cmd.Process.Pid)
-			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			cmd.Wait()
+			// Try graceful termination first
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+			// Wait up to 3 seconds for graceful exit
+			done := make(chan error, 1)
+			go func() {
+				done <- cmd.Wait()
+			}()
+			select {
+			case <-done:
+				// Process exited gracefully
+			case <-time.After(3 * time.Second):
+				// Timeout - force kill
+				syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+				cmd.Wait()
+			}
 		}
 	}()
 
