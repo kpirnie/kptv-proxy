@@ -18,15 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/regexp"
 	"github.com/grafov/m3u8"
 	"go.uber.org/ratelimit"
-)
-
-// Content type detection regexes - should match the ones used in XC API parsing
-var (
-	seriesRegex = regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
-	vodRegex    = regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
 )
 
 // classifyStreamContent applies the same content classification logic as XC API parsing
@@ -36,10 +29,10 @@ func classifyStreamContent(streamName, streamURL string, existingGroup string) s
 	if existingGroup != "" && !strings.EqualFold(existingGroup, "uncategorized") {
 
 		// Still check if our regex patterns suggest a different classification
-		seriesNameMatch := seriesRegex.MatchString(streamName)
-		vodNameMatch := vodRegex.MatchString(streamName)
-		seriesURLMatch := seriesRegex.MatchString(streamURL)
-		vodURLMatch := vodRegex.MatchString(streamURL)
+		seriesNameMatch := utils.SeriesRegex.MatchString(streamName)
+		vodNameMatch := utils.VodRegex.MatchString(streamName)
+		seriesURLMatch := utils.SeriesRegex.MatchString(streamURL)
+		vodURLMatch := utils.VodRegex.MatchString(streamURL)
 		logger.Debug("{parser/m3u8 - classifyStreamContent} classify the stream content - group")
 		if seriesNameMatch || seriesURLMatch {
 			return "series"
@@ -53,10 +46,10 @@ func classifyStreamContent(streamName, streamURL string, existingGroup string) s
 	}
 
 	// Apply regex-based classification
-	seriesNameMatch := seriesRegex.MatchString(streamName)
-	vodNameMatch := vodRegex.MatchString(streamName)
-	seriesURLMatch := seriesRegex.MatchString(streamURL)
-	vodURLMatch := vodRegex.MatchString(streamURL)
+	seriesNameMatch := utils.SeriesRegex.MatchString(streamName)
+	vodNameMatch := utils.VodRegex.MatchString(streamName)
+	seriesURLMatch := utils.SeriesRegex.MatchString(streamURL)
+	vodURLMatch := utils.VodRegex.MatchString(streamURL)
 	logger.Debug("{parser/m3u8 - classifyStreamContent} classify the stream content")
 	if seriesNameMatch || seriesURLMatch {
 		return "series"

@@ -41,6 +41,9 @@ func main() {
 	// Set up logging
 	logger.SetLogLevel(cfg.LogLevel)
 
+	// Compile content type regexes once at startup
+	utils.InitContentRegexes()
+
 	// Initialize buffer pool
 	bufferPool := buffer.NewBufferPool(cfg.BufferSizePerStream * 1024 * 1024)
 

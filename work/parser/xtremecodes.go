@@ -81,12 +81,10 @@ type xcSeriesWork struct {
 //   - liveInclude: optional regex pattern - only streams matching this pattern are included
 //   - liveExclude: optional regex pattern - streams matching this pattern are excluded
 //   - source: source configuration containing credentials and connection parameters
-//   - seriesRegex: compiled regex for identifying series content
-//   - vodRegex: compiled regex for identifying VOD content
 //
 // Returns:
 //   - []*types.Stream: slice of processed streams ready for channel aggregation
-func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *regexp.Regexp, source *config.SourceConfig, seriesRegex, vodRegex *regexp.Regexp) []*types.Stream {
+func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *regexp.Regexp, source *config.SourceConfig) []*types.Stream {
 	results := make([]*types.Stream, 0, len(batch))
 	logger.Debug("{parser/xtremecodes - processLiveBatchWorker} process the live batch")
 
@@ -104,9 +102,9 @@ func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *rege
 
 		// setup the group
 		group := "live"
-		if seriesRegex.MatchString(stream.Name) || seriesRegex.MatchString(streamURL) {
+		if utils.SeriesRegex.MatchString(stream.Name) || utils.SeriesRegex.MatchString(streamURL) {
 			group = "series"
-		} else if vodRegex.MatchString(stream.Name) || vodRegex.MatchString(streamURL) {
+		} else if utils.VodRegex.MatchString(stream.Name) || utils.VodRegex.MatchString(streamURL) {
 			group = "vod"
 		}
 
@@ -257,10 +255,6 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 		}
 	}
 
-	// series and vod regex
-	seriesRegex := regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
-	vodRegex := regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
-
 	// hold all the streams
 	var allStreams []*types.Stream
 	var allStreamsMu sync.Mutex
@@ -291,7 +285,7 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 					default:
 					}
 					logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} process the live batch %v", i)
-					results := processLiveBatchWorker(work.streams, liveInclude, liveExclude, source, seriesRegex, vodRegex)
+					results := processLiveBatchWorker(work.streams, liveInclude, liveExclude, source)
 					resultsChan <- results
 				}
 			}()

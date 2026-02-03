@@ -4,8 +4,21 @@ import (
 	"fmt"
 	"kptv-proxy/work/config"
 	"net/url"
+	"regexp"
 	"strings"
 )
+
+// hold the series and vod regex
+var (
+	SeriesRegex *regexp.Regexp
+	VodRegex    *regexp.Regexp
+)
+
+// InitContentRegexes compiles content classification regexes once at startup
+func InitContentRegexes() {
+	SeriesRegex = regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
+	VodRegex = regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
+}
 
 // LogURL provides intelligent URL formatting for logging output based on application
 // configuration settings, enabling secure logging by obfuscating sensitive URL components

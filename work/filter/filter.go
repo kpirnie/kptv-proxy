@@ -4,16 +4,11 @@ import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
+	"kptv-proxy/work/utils"
 	"strings"
 	"sync"
 
 	"github.com/grafana/regexp"
-)
-
-// Content type detection regexes - should match the ones used during import
-var (
-	seriesRegex = regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
-	vodRegex    = regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
 )
 
 // CompiledFilter holds compiled regex patterns for a source
@@ -231,10 +226,10 @@ func getContentType(stream *types.Stream) string {
 	streamURL := stream.URL
 
 	// Check both name and URL with series regex
-	seriesNameMatch := seriesRegex.MatchString(streamName)
-	vodNameMatch := vodRegex.MatchString(streamName)
-	seriesURLMatch := seriesRegex.MatchString(streamURL)
-	vodURLMatch := vodRegex.MatchString(streamURL)
+	seriesNameMatch := utils.SeriesRegex.MatchString(streamName)
+	vodNameMatch := utils.VodRegex.MatchString(streamName)
+	seriesURLMatch := utils.SeriesRegex.MatchString(streamURL)
+	vodURLMatch := utils.VodRegex.MatchString(streamURL)
 
 	logger.Debug("{filter - getContentType} Content type detection for '%s':\n", streamName)
 	logger.Debug("{filter - getContentType}   SeriesName: %v, VODName: %v, SeriesURL: %v, VODURL: %v\n",
