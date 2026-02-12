@@ -14,7 +14,6 @@ import (
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"kptv-proxy/work/watcher"
-	"runtime"
 	"strconv"
 
 	"net/http"
@@ -551,9 +550,6 @@ func (sp *StreamProxy) RestreamCleanup() {
 			channel.Mu.Unlock()
 			return true
 		})
-
-		// trigger garbage collection and buffer pool cleanup after each sweep
-		runtime.GC()
 
 		if sp.BufferPool != nil {
 			sp.BufferPool.Cleanup()
