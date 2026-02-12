@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"kptv-proxy/work/config"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
@@ -350,22 +351,8 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 		logger.Debug("{restream/hls - getHLSSegments} Rate limit applied for channel %s", r.Channel.Name)
 	}
 
-	// Locate source configuration for authentication headers
-	source := r.Config.GetSourceByURL(playlistURL)
-	if source == nil {
-		logger.Debug("{restream/hls - getHLSSegments} No source config found for URL, checking channel streams for channel %s", r.Channel.Name)
-
-		// Attempt to find source by matching stream URLs in channel configuration
-		r.Channel.Mu.RLock()
-		for _, stream := range r.Channel.Streams {
-			if strings.Contains(playlistURL, stream.Source.URL) || strings.Contains(stream.URL, playlistURL) {
-				source = stream.Source
-				logger.Debug("{restream/hls - getHLSSegments} Found source config via channel stream match for channel %s", r.Channel.Name)
-				break
-			}
-		}
-		r.Channel.Mu.RUnlock()
-	}
+	// Locate source configuration for authentication headers (cached)
+	source := r.resolveSourceForURL(playlistURL)
 
 	// Build HTTP request with appropriate timeout for playlist fetching
 	req, err := http.NewRequest("GET", playlistURL, nil)
@@ -552,20 +539,8 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		logger.Debug("{restream/hls - streamSegment} Rate limit applied for channel %s", r.Channel.Name)
 	}
 
-	// Locate source configuration for authentication headers
-	source := r.Config.GetSourceByURL(playlistURL)
-	if source == nil {
-		logger.Debug("{restream/hls - streamSegment} No source config found, checking channel streams for channel %s", r.Channel.Name)
-		r.Channel.Mu.RLock()
-		for _, stream := range r.Channel.Streams {
-			if strings.Contains(playlistURL, stream.Source.URL) || strings.Contains(stream.URL, playlistURL) {
-				source = stream.Source
-				logger.Debug("{restream/hls - streamSegment} Found source config via stream match for channel %s", r.Channel.Name)
-				break
-			}
-		}
-		r.Channel.Mu.RUnlock()
-	}
+	// Locate source configuration for authentication headers (cached)
+	source := r.resolveSourceForURL(playlistURL)
 
 	// Resolve tracking URLs to actual segment URLs
 	originalURL := segmentURL
@@ -695,4 +670,32 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 		// Successful read with no errors - reset counter
 		consecutiveErrors = 0
 	}
+}
+
+// resolveSourceForURL returns the best matching source config and memoizes the result
+// to avoid repeated linear scans during per-segment HLS streaming.
+func (r *Restream) resolveSourceForURL(streamURL string) *config.SourceConfig {
+	if r.SourceCache != nil {
+		if cached, ok := r.SourceCache.Load(streamURL); ok && cached != nil {
+			return cached
+		}
+	}
+
+	source := r.Config.GetSourceByURL(streamURL)
+	if source == nil {
+		r.Channel.Mu.RLock()
+		for _, stream := range r.Channel.Streams {
+			if strings.Contains(streamURL, stream.Source.URL) || strings.Contains(stream.URL, streamURL) {
+				source = stream.Source
+				break
+			}
+		}
+		r.Channel.Mu.RUnlock()
+	}
+
+	if source != nil && r.SourceCache != nil {
+		r.SourceCache.Store(streamURL, source)
+	}
+
+	return source
 }
