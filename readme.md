@@ -392,7 +392,7 @@ KPTV Proxy supports two streaming modes:
 {
   "ffmpegMode": true,
   "ffmpegPreInput": ["-re", "-rtsp_transport", "tcp"],
-  "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"]
+  "ffmpegPreOutput": ["-c", "copy"]
 }
 ```
 
@@ -410,7 +410,6 @@ KPTV Proxy supports two streaming modes:
 - `"-c", "copy"` - Copy streams without re-encoding
 - `"-c:v", "libx264"` - H.264 video encoding
 - `"-c:a", "aac"` - AAC audio encoding
-- `"-f", "mpegts"` - MPEG-TS output format
 - `"-movflags", "frag_keyframe+empty_moov"` - Fragmented MP4
 
 ## Dead Stream Management
@@ -581,8 +580,7 @@ services:
   ],
   "ffmpegPreOutput": [
     "-c:v", "h264_vaapi",
-    "-c:a", "aac",
-    "-f", "mpegts"
+    "-c:a", "aac"
   ]
 }
 ```
@@ -755,7 +753,7 @@ Format: M3U8/HLS
   "workerThreads": 20,
   "maxConnectionsToApp": 500,
   "ffmpegMode": true,
-  "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"]
+  "ffmpegPreOutput": ["-c", "copy"]
 }
 ```
 
@@ -769,6 +767,20 @@ Format: M3U8/HLS
   "ffmpegMode": false
 }
 ```
+
+## Practical Limitations for Codec Settings
+
+The output format of ffmpeg streams is `mpegts` and the media format (MIME) sent to clients `video/mp2t`.
+
+ffmpeg can use a large number of encoders, and the m3u/m3u8 playlists format is flexible, but there are practical limitations:
+
+- Apple extended the m3u format as a base for their HTTP Live Streaming (HLS / [RFC 8216](https://datatracker.ietf.org/doc/html/rfc8216)), which mandats specific [video](https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices#Video) and [audio](https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices#Audio) encoding requirements using fragmented MP4 (fMP4) files or MPEG transport streams (MPEG-TS). 
+
+- IPTV may use m3u to point to different streams/channels, but encodes its content in MPEG-TS.
+
+- MPEG-TS (video/mp2t) limits the video and audio codecs. Unofficial codecs can be used, but are marked as private data. They appear as binary data to clients.
+
+Even though a client may support a codec, it may not be able to interpret the (private) MPEG-TS stream and is therefore unable to play it.
 
 ## Supporting KPTV Proxy
 

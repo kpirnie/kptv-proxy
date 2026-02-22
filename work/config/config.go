@@ -266,6 +266,17 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		return nil, err
 	}
 
+	// Check for ffmpeg output format setting
+	for i, ffmpegPreOutputArg := range config.FFmpegPreOutput {
+		if ffmpegPreOutputArg == "-f" {
+			format := ""
+			if i < len(config.FFmpegPreOutput)-1 {
+				format = config.FFmpegPreOutput[i+1]
+			}
+			logger.Warn("{config - convertFromFile} FFmpegPreOutput setting -f %q without effect", format)
+		}
+	}
+
 	// Convert sources
 	config.Sources = make([]SourceConfig, len(cf.Sources))
 	for i, srcFile := range cf.Sources {

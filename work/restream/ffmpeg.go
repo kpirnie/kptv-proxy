@@ -42,9 +42,15 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 
 	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Starting FFmpeg for channel %s with URL: %s", r.Channel.Name, streamURL)
 
+	// Set error-only logging (optionally enable warnings)
+	logLevel := "error"
+	if r.Config.Debug {
+		logLevel = "warning"
+	}
+
 	// Build FFmpeg command arguments
-	// Start with base args to suppress banner and set error-only logging
-	args := []string{"-hide_banner", "-loglevel", "error"}
+	// Start with base args to suppress banner and set loglevel
+	args := []string{"-hide_banner", "-loglevel", logLevel}
 	args = append(args, r.Config.FFmpegPreInput...)
 
 	// Add custom User-Agent if configured for this source
