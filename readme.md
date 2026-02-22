@@ -392,7 +392,7 @@ KPTV Proxy supports two streaming modes:
 {
   "ffmpegMode": true,
   "ffmpegPreInput": ["-re", "-rtsp_transport", "tcp"],
-  "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"]
+  "ffmpegPreOutput": ["-c", "copy"]
 }
 ```
 
@@ -410,7 +410,6 @@ KPTV Proxy supports two streaming modes:
 - `"-c", "copy"` - Copy streams without re-encoding
 - `"-c:v", "libx264"` - H.264 video encoding
 - `"-c:a", "aac"` - AAC audio encoding
-- `"-f", "mpegts"` - MPEG-TS output format
 - `"-movflags", "frag_keyframe+empty_moov"` - Fragmented MP4
 
 ## Dead Stream Management
@@ -520,6 +519,8 @@ All configuration is done via a JSON file mounted at `/settings/config.json` or 
 | `ffmpegMode` | `false` | Use FFmpeg instead of Go streaming |
 | `ffmpegPreInput` | `[]` | FFmpeg arguments before `-i` |
 | `ffmpegPreOutput` | `[]` | FFmpeg arguments before output |
+| `ffmpegFormat` | `mpegts` | FFmpeg output format (-f) |
+| `ffmpegMediaType` | `video/mp2t` | FFmpeg output media type (MIME) |
 
 ### Per-Source Settings
 
@@ -581,8 +582,7 @@ services:
   ],
   "ffmpegPreOutput": [
     "-c:v", "h264_vaapi",
-    "-c:a", "aac",
-    "-f", "mpegts"
+    "-c:a", "aac"
   ]
 }
 ```
@@ -611,6 +611,23 @@ services:
       "userAgent": "PREMIUM_CLIENT/1.0"
     }
   ]
+}
+```
+
+### Configure output format and media-type
+
+Create NON-MPEG-TS streams, e.g. streaming to an embedded device:
+
+```json
+{
+  "ffmpegMode": true,
+  "ffmpegPreOutput": [
+    "-vf", "scale=320:240:force_original_aspect_ratio=decrease:eval=frame,pad=320:240:-1:-1:black",
+    "-c:v", "mjpeg", "-pix_fmt", "yuvj420p",
+    "-c:a", "adpcm_ima_wav", "-ac", "2"
+  ],
+  "ffmpegFormat: "matroska",
+  "ffmpegMediaType": "video/matroska",
 }
 ```
 
@@ -755,7 +772,7 @@ Format: M3U8/HLS
   "workerThreads": 20,
   "maxConnectionsToApp": 500,
   "ffmpegMode": true,
-  "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"]
+  "ffmpegPreOutput": ["-c", "copy"]
 }
 ```
 
@@ -769,6 +786,20 @@ Format: M3U8/HLS
   "ffmpegMode": false
 }
 ```
+
+## Practical Limitations for Codec Settings
+
+The default output format of ffmpeg streams is `mpegts` and the media format (MIME) sent to clients `video/mp2t`.
+
+ffmpeg can use a large number of encoders, and the m3u/m3u8 playlists format is flexible, but there are practical limitations:
+
+- Apple extended the m3u format as a base for their HTTP Live Streaming (HLS / [RFC 8216](https://datatracker.ietf.org/doc/html/rfc8216)), which mandats specific [video](https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices#Video) and [audio](https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices#Audio) encoding requirements using fragmented MP4 (fMP4) files or MPEG transport streams (MPEG-TS). 
+
+- IPTV may use m3u to point to different streams/channels, but encodes its content in MPEG-TS.
+
+- MPEG-TS (video/mp2t) limits the video and audio codecs. Unofficial codecs can be used, but are marked as private data. They appear as binary data to clients.
+
+Even though a client may support a codec, it may not be able to interpret the (private) MPEG-TS stream and is therefore unable to play it. Another container (e.g. AVI, Matroska) solves this problem, but may not be supported by the client either.
 
 ## Supporting KPTV Proxy
 

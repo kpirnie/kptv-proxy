@@ -621,10 +621,12 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: New client request from %s", channel.Name, r.RemoteAddr)
 	logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: %d available streams", channel.Name, len(channel.Streams))
 
+	mediaType := "video/mp2t"
 	if sp.Config.FFmpegMode {
-		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Using FFMPEG mode", channel.Name)
+		mediaType = sp.Config.FFmpegMediaType
+		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Using FFMPEG mode (%s)", channel.Name, mediaType)
 	} else {
-		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Using RESTREAMING mode", channel.Name)
+		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Using RESTREAMING mode (%s)", channel.Name, mediaType)
 	}
 
 	channel.Mu.Lock()
@@ -654,7 +656,7 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	clientID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
 
 	// set streaming response headers
-	w.Header().Set("Content-Type", "video/mp2t")
+	w.Header().Set("Content-Type", mediaType)
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Accept", "*/*")

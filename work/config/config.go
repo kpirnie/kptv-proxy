@@ -41,6 +41,8 @@ type Config struct {
 	FFmpegMode            bool           `json:"ffmpegMode"`      // Use FFmpeg instead of Go proxy/restreamer
 	FFmpegPreInput        []string       `json:"ffmpegPreInput"`  // FFmpeg arguments before -i
 	FFmpegPreOutput       []string       `json:"ffmpegPreOutput"` // FFmpeg arguments before output URL
+	FFmpegFormat          string         `json:"ffmpegFormat"`    // FFmpeg output format (-f)
+	FFmpegMediaType       string         `json:"ffmpegMediaType"` // FFmpeg output media type (MIME)
 }
 
 // SourceConfig represents the configuration for a single stream source.
@@ -93,6 +95,8 @@ type ConfigFile struct {
 	FFmpegMode            bool               `json:"ffmpegMode"`
 	FFmpegPreInput        []string           `json:"ffmpegPreInput"`
 	FFmpegPreOutput       []string           `json:"ffmpegPreOutput"`
+	FFmpegFormat          string             `json:"ffmpegFormat"`
+	FFmpegMediaType       string             `json:"ffmpegMediaType"`
 }
 
 // SourceConfigFile represents the source configuration in JSON format.
@@ -249,6 +253,8 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		FFmpegMode:          cf.FFmpegMode,
 		FFmpegPreInput:      cf.FFmpegPreInput,
 		FFmpegPreOutput:     cf.FFmpegPreOutput,
+		FFmpegFormat:        cf.FFmpegFormat,
+		FFmpegMediaType:     cf.FFmpegMediaType,
 	}
 
 	// Parse duration fields
@@ -264,6 +270,17 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 	if config.StreamTimeout, err = time.ParseDuration(cf.StreamTimeout); err != nil {
 		logger.Error("{config - convertFromFile} invalid streamTimeout: %v", err)
 		return nil, err
+	}
+
+	// Check for ffmpeg output format setting
+	for i, ffmpegPreOutputArg := range config.FFmpegPreOutput {
+		if ffmpegPreOutputArg == "-f" {
+			format := ""
+			if i < len(config.FFmpegPreOutput)-1 {
+				format = config.FFmpegPreOutput[i+1]
+			}
+			logger.Warn("{config - convertFromFile} FFmpegPreOutput setting -f %q without effect", format)
+		}
 	}
 
 	// Convert sources
@@ -331,6 +348,8 @@ func getDefaultConfig() *Config {
 		Sources:               []SourceConfig{}, // No sources configured
 		EPGs:                  []EPGConfig{},    // No EPGs configured
 		WatcherEnabled:        true,
+		FFmpegFormat:          "mpegts",
+		FFmpegMediaType:       "video/mp2t",
 	}
 }
 
@@ -363,6 +382,12 @@ func validateAndSetDefaults(config *Config) {
 	}
 	if config.MaxConnectionsToApp <= 0 {
 		config.MaxConnectionsToApp = 100
+	}
+	if config.FFmpegFormat == "" {
+		config.FFmpegFormat = "mpegts"
+	}
+	if config.FFmpegMediaType == "" {
+		config.FFmpegMediaType = "video/mp2t"
 	}
 	if config.LogLevel == "" { // ADD THIS
 		config.LogLevel = "INFO"
