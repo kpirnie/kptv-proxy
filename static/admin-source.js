@@ -406,7 +406,9 @@ class KPTVAdmin {
                 sortField: "tvg-type",
                 sortDirection: "asc",
                 streamTimeout: "30s",
-                maxConnectionsToApp: 100
+                maxConnectionsToApp: 100,
+                ffmpegFormat   : "mpegts",
+                ffmpegMediaType: "video/mp2t",
             });
         }
     }

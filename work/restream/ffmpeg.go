@@ -68,7 +68,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	// Add input URL and output format args
 	args = append(args, "-i", streamURL)
 	args = append(args, r.Config.FFmpegPreOutput...)
-	args = append(args, "-f", "mpegts", "pipe:1")
+	args = append(args, "-f", r.Config.FFmpegFormat, "pipe:1")
 
 	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Command args for channel %s: %v", r.Channel.Name, args)
 
