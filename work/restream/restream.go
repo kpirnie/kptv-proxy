@@ -15,7 +15,6 @@ import (
 	"kptv-proxy/work/types"
 	"net/http"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -84,6 +83,7 @@ func NewRestreamer(channel *types.Channel, bufferSize int64, httpClient *client.
 
 	base := &types.Restreamer{
 		Channel:     channel,
+		SourceCache: xsync.NewMapOf[string, *config.SourceConfig](),
 		Buffer:      bbuffer.NewRingBuffer(bufferSize),
 		Ctx:         ctx,
 		Cancel:      cancel,
@@ -208,9 +208,6 @@ func (r *Restream) stopStream() {
 		r.Ctx, r.Cancel = context.WithCancel(context.Background())
 		atomic.StoreInt32(&r.CurrentIndex, 0)
 
-		// Force garbage collection to release memory
-		logger.Debug("{restream/restream - stopStream} GC triggered for channel %s", r.Channel.Name)
-		runtime.GC()
 	}
 }
 
