@@ -7,6 +7,10 @@ services:
       - 9500:8080
     volumes:
       - /home/kpirnie/Development/Go/kptv-proxy/settings/:/settings/
+      # to utilize ffmpeg, you must have it installed on your machine and add these 2 volumes
+      #- /usr/local/bin/ffmpeg:/usr/local/bin/ffmpeg:ro
+      #- /usr/local/bin/ffprobe:/usr/local/bin/ffprobe:ro
+
     # for hardware accelleration with ffpmeg
     #devices:
     #  - /dev/dri:/dev/dri

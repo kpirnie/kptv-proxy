@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-
-
 # get the user that owns our app here
 APP_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_USER=$(stat -c '%U' "$APP_PATH")
@@ -21,5 +19,3 @@ chown -R $APP_USER:$APP_USER $APP_PATH*;
 find $APP_PATH -type d -exec chmod 755 {} \;
 find $APP_PATH -type f -exec chmod 644 {} \;
 chmod +x $APP_PATH/build.sh
-
-

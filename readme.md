@@ -168,13 +168,6 @@ KPTV Proxy leverages several high-quality open-source libraries:
 - **[prometheus/common](https://github.com/prometheus/common)** (v0.65.0) - Common libraries for Prometheus components
 - **[prometheus/procfs](https://github.com/prometheus/procfs)** (v0.16.1) - Process filesystem parsing for system metrics
 
-### External Tools
-
-- **[FFmpeg/FFprobe](https://ffmpeg.org)** - Stream validation, transcoding, and format analysis (LGPL v2.1)
-  - Used as external binaries for stream processing
-  - Source code available at: <https://ffmpeg.org/download.html>
-  - See LICENSE file for complete legal information
-
 ### Web Interface
 
 - **[UIKit 3](https://getuikit.com)** (v3.17.11) - Frontend framework for admin interface (MIT License)
@@ -372,6 +365,10 @@ You can customize the admin interface appearance by creating a custom CSS file a
 
 KPTV Proxy supports two streaming modes:
 
+In order to utilize FFmpeg, you must have it installed on your host machine, and pass the binaries in to your container.  Please see the docker-compose example.
+
+The hardware acceleration still exists.
+
 ### Go Restreaming Mode (Default)
 
 - Pure Go implementation
@@ -554,6 +551,9 @@ services:
       - 9500:8080
     volumes:
       - ./settings:/settings  # Mount configuration directory
+      # to utilize ffmpeg, you must have it installed on your machine and add these 2 volumes
+      #- /usr/local/bin/ffmpeg:/usr/local/bin/ffmpeg:ro
+      #- /usr/local/bin/ffprobe:/usr/local/bin/ffprobe:ro
     # if utilizing hardware accelleration for ffmpeg
     #devices:
       #- /dev/dri:/dev/dri
@@ -695,7 +695,8 @@ docker-compose logs kptv-proxy | grep WATCHER
 
 **Problem**: FFmpeg not working
 
-- ✅ Verify FFmpeg is installed in container: `docker/podman exec -it kptv_proxy ffmpeg -version`
+- ✅ Verify FFmpeg is installed on your host machine: `$(which ffmpeg) -version`
+- ✅ Verify you have added both the ffmpeg and ffprobe binaries as bind mounts to your container
 - ✅ Check FFmpeg arguments in debug logs
 - ✅ Test with simple arguments first: `["-c", "copy"]`
 - ✅ Verify hardware acceleration support if using GPU
@@ -788,13 +789,9 @@ Donations help fund server costs, testing equipment, and most importantly, the t
 
 ## Third-Party Software
 
-### FFmpeg/FFprobe
-
-This software uses code of [FFmpeg](http://ffmpeg.org) licensed under the [LGPLv2.1](http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html).
-
 **FFmpeg License Information:**
 
-- KPTV Proxy uses FFmpeg and FFprobe for stream processing and validation
+- KPTV Proxy uses FFmpeg and FFprobe for stream processing and validation, however the are not included in the end container of this product
 - FFmpeg is used as an external binary and for stream proxying
 - FFmpeg source code can be downloaded from: [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
 - FFmpeg is licensed under LGPL v2.1 or later
@@ -817,4 +814,4 @@ This project incorporates or uses the following third-party software:
 
 **Need Help?** Use the web admin interface at `http://your-server:port/` for easy configuration management, customize the appearance with `/settings/custom.css`, or enable debug mode and check the logs for detailed information about stream processing, connection attempts, and error details. The automatic Stream Watcher will help maintain stream reliability in the background, and FFmpeg integration provides advanced streaming capabilities for complex media formats.
 
-**Still Need Help?**
+**Still Need Help?** Hit me up on Discord: [https://discord.gg/bd4Qan3PaN](https://discord.gg/bd4Qan3PaN)
