@@ -197,7 +197,8 @@ wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.
   "importRefreshInterval": "12h",
   "workerThreads": 4,
   "debug": false,
-  "obfuscateUrls": true,
+  "obfuscateUrls": false,
+  "obfuscatePlaylistUrls": false,
   "sortField": "tvg-name",
   "sortDirection": "asc",
   "streamTimeout": "10s",
@@ -508,7 +509,8 @@ All configuration is done via a JSON file mounted at `/settings/config.json` or 
 | `importRefreshInterval` | `"12h"` | How often to refresh source playlists |
 | `workerThreads` | `4` | Parallel workers for import processing |
 | `debug` | `false` | Enable verbose logging |
-| `obfuscateUrls` | `true` | Hide source URLs in logs for privacy |
+| `obfuscateUrls` | `false` | Hide source URLs in logs for privacy |
+| `obfuscatePlaylistUrls` | `false` | Replace channel names in generated `/pl` stream URLs with stable obfuscated tokens |
 | `sortField` | `"tvg-name"` | Sort streams by: `tvg-name`, `tvg-id`, `group-title`, etc. |
 | `sortDirection` | `"asc"` | Sort direction: `asc` or `desc` |
 | `streamTimeout` | `"10s"` | Global timeout for stream validation |
@@ -743,6 +745,7 @@ Format: M3U8/HLS
 - **Admin Interface Security**: Consider adding authentication for admin interface in production
 - **Access Control**: Restrict admin interface access to trusted networks
 - **Source Privacy**: Enable `obfuscateUrls` to hide provider URLs in logs
+- **Playlist Privacy**: Enable `obfuscatePlaylistUrls` to hide channel names in generated stream URLs
 - **Container Security**: Runs as non-root user (UID 1000)
 - **Custom CSS**: Validate custom CSS to prevent XSS attacks
 - **File Permissions**: Protect configuration files with appropriate permissions

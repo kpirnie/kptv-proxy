@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"kptv-proxy/work/config"
 	"net/url"
@@ -127,6 +129,13 @@ func SanitizeChannelName(name string) string {
 	// Remove leading and trailing underscores for clean, professional appearance
 	// in URLs and user interfaces while maintaining internal structure
 	return strings.Trim(sanitized, "_")
+}
+
+// ObfuscateChannelToken returns a deterministic, URL-safe token for a channel name.
+// The token is stable across restarts and does not expose the original name in the path.
+func ObfuscateChannelToken(name string) string {
+	sum := sha256.Sum256([]byte(name))
+	return "ch-" + hex.EncodeToString(sum[:16])
 }
 
 // ObfuscateURL implements privacy protection for sensitive URLs by masking path components,
