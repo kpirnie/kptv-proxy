@@ -30,13 +30,14 @@ type Config struct {
 	WorkerThreads         int            `json:"workerThreads"`         // Number of worker threads for background tasks
 	Debug                 bool           `json:"debug"`                 // Enable debug logging
 	LogLevel              string         `json:"logLevel"`
-	ObfuscateUrls         bool           `json:"obfuscateUrls"`       // Obfuscate URLs in logs for security
-	SortField             string         `json:"sortField"`           // Field to sort channels by (e.g., tvg-name)
-	SortDirection         string         `json:"sortDirection"`       // Sort direction: "asc" or "desc"
-	StreamTimeout         time.Duration  `json:"streamTimeout"`       // Timeout for stream operations
-	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"` // Maximum concurrent connections allowed to the app
-	Sources               []SourceConfig `json:"sources"`             // List of configured stream sources
-	EPGs                  []EPGConfig    `json:"epgs"`                // List of configured epg sources
+	ObfuscateUrls         bool           `json:"obfuscateUrls"`         // Obfuscate source URLs in logs for security
+	ObfuscatePlaylistUrls bool           `json:"obfuscatePlaylistUrls"` // Obfuscate generated playlist stream paths
+	SortField             string         `json:"sortField"`             // Field to sort channels by (e.g., tvg-name)
+	SortDirection         string         `json:"sortDirection"`         // Sort direction: "asc" or "desc"
+	StreamTimeout         time.Duration  `json:"streamTimeout"`         // Timeout for stream operations
+	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"`   // Maximum concurrent connections allowed to the app
+	Sources               []SourceConfig `json:"sources"`               // List of configured stream sources
+	EPGs                  []EPGConfig    `json:"epgs"`                  // List of configured epg sources
 	WatcherEnabled        bool           `json:"watcherEnabled"`
 	FFmpegMode            bool           `json:"ffmpegMode"`      // Use FFmpeg instead of Go proxy/restreamer
 	FFmpegPreInput        []string       `json:"ffmpegPreInput"`  // FFmpeg arguments before -i
@@ -83,6 +84,7 @@ type ConfigFile struct {
 	Debug                 bool               `json:"debug"`
 	LogLevel              string             `json:"logLevel"`
 	ObfuscateUrls         bool               `json:"obfuscateUrls"`
+	ObfuscatePlaylistUrls bool               `json:"obfuscatePlaylistUrls"`
 	SortField             string             `json:"sortField"`
 	SortDirection         string             `json:"sortDirection"`
 	StreamTimeout         string             `json:"streamTimeout"` // Duration as string (e.g., "10s")
@@ -235,20 +237,21 @@ func loadFromFile(path string) (*Config, error) {
 // parsing duration strings into time.Duration.
 func convertFromFile(cf *ConfigFile) (*Config, error) {
 	config := &Config{
-		BaseURL:             cf.BaseURL,
-		BufferSizePerStream: cf.BufferSizePerStream,
-		CacheEnabled:        true,
-		WorkerThreads:       cf.WorkerThreads,
-		Debug:               cf.Debug,
-		LogLevel:            cf.LogLevel,
-		ObfuscateUrls:       cf.ObfuscateUrls,
-		SortField:           cf.SortField,
-		SortDirection:       cf.SortDirection,
-		MaxConnectionsToApp: cf.MaxConnectionsToApp,
-		WatcherEnabled:      cf.WatcherEnabled,
-		FFmpegMode:          cf.FFmpegMode,
-		FFmpegPreInput:      cf.FFmpegPreInput,
-		FFmpegPreOutput:     cf.FFmpegPreOutput,
+		BaseURL:               cf.BaseURL,
+		BufferSizePerStream:   cf.BufferSizePerStream,
+		CacheEnabled:          true,
+		WorkerThreads:         cf.WorkerThreads,
+		Debug:                 cf.Debug,
+		LogLevel:              cf.LogLevel,
+		ObfuscateUrls:         cf.ObfuscateUrls,
+		ObfuscatePlaylistUrls: cf.ObfuscatePlaylistUrls,
+		SortField:             cf.SortField,
+		SortDirection:         cf.SortDirection,
+		MaxConnectionsToApp:   cf.MaxConnectionsToApp,
+		WatcherEnabled:        cf.WatcherEnabled,
+		FFmpegMode:            cf.FFmpegMode,
+		FFmpegPreInput:        cf.FFmpegPreInput,
+		FFmpegPreOutput:       cf.FFmpegPreOutput,
 	}
 
 	// Parse duration fields
@@ -324,6 +327,7 @@ func getDefaultConfig() *Config {
 		Debug:                 true,             // Debug disabled
 		LogLevel:              "INFO",
 		ObfuscateUrls:         false,            // Do not obfuscate by default
+		ObfuscatePlaylistUrls: false,            // Keep stream URLs readable by default
 		SortField:             "tvg-name",       // Default sort field
 		SortDirection:         "asc",            // Default ascending order
 		StreamTimeout:         10 * time.Second, // Default stream timeout
@@ -453,7 +457,8 @@ func CreateExampleConfig(path string) error {
 		WorkerThreads:         4,
 		Debug:                 true,
 		LogLevel:              "INFO",
-		ObfuscateUrls:         true,
+		ObfuscateUrls:         false,
+		ObfuscatePlaylistUrls: false,
 		SortField:             "tvg-name",
 		SortDirection:         "asc",
 		StreamTimeout:         "10s",

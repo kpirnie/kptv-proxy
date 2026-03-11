@@ -382,7 +382,7 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 			// write the channel name and proxy URL
 			cleanName := strings.Trim(ch.name, "\"")
 			playlist.WriteString(fmt.Sprintf(",%s\n", cleanName))
-			safeName := utils.SanitizeChannelName(ch.name)
+			safeName := sp.playlistChannelPath(ch.name)
 			proxyURL := fmt.Sprintf("%s/s/%s", sp.Config.BaseURL, safeName)
 			playlist.WriteString(proxyURL + "\n")
 		}
@@ -406,6 +406,13 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	} else {
 		logger.Debug("{proxy/stream - GeneratePlaylist} Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, len(channels))
 	}
+}
+
+func (sp *StreamProxy) playlistChannelPath(channelName string) string {
+	if sp.Config.ObfuscatePlaylistUrls {
+		return utils.ObfuscateChannelToken(channelName)
+	}
+	return utils.SanitizeChannelName(channelName)
 }
 
 // GetChannelGroup extracts the group classification from channel attributes by checking
@@ -567,6 +574,21 @@ func (sp *StreamProxy) RestreamCleanup() {
 func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 	if decoded, err := url.QueryUnescape(safeName); err == nil {
 		safeName = decoded
+	}
+
+	if sp.Config.ObfuscatePlaylistUrls {
+		var foundName string
+		sp.Channels.Range(func(name string, _ *types.Channel) bool {
+			if utils.ObfuscateChannelToken(name) == safeName {
+				foundName = name
+				return false
+			}
+			return true
+		})
+		if foundName != "" {
+			logger.Debug("{proxy/stream - FindChannelBySafeName} Resolved channel by obfuscated token: %s -> %s", safeName, foundName)
+			return foundName
+		}
 	}
 
 	// try the simple underscore-to-space replacement first
