@@ -503,64 +503,62 @@ func ParseEXTINF(line string) map[string]string {
 //   - cfg: application configuration containing sort field and direction preferences
 //   - channelName: channel name for debug logging context
 func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string) {
-	if len(streams) > 1 {
-		logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Sorting %d streams", channelName, len(streams))
+	if len(streams) <= 1 {
+		return
 	}
 
-	// Check if there's a custom order for this channel
-	customOrder, err := streamorder.GetChannelStreamOrder(channelName)
-	if err == nil && customOrder != nil && len(customOrder) == len(streams) {
-		// Validate that all indices in customOrder are valid
-		valid := true
-		usedIndices := make(map[int]bool)
-		for _, idx := range customOrder {
-			if idx < 0 || idx >= len(streams) || usedIndices[idx] {
-				valid = false
-				break
-			}
-			usedIndices[idx] = true
-		}
-
-		if valid {
-			logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applying custom order %v", channelName, customOrder)
-
-			// Create a new slice with the custom order
-			orderedStreams := make([]*types.Stream, len(streams))
-			for newPosition, originalIndex := range customOrder {
-				orderedStreams[newPosition] = streams[originalIndex]
-			}
-
-			// Copy back to original slice
-			copy(streams, orderedStreams)
-
-			logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applied custom ordering", channelName)
-
-			return
-		} else {
-			logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Invalid custom order, falling back to default", channelName)
-
-		}
-	}
-
-	// ORIGINAL DEFAULT SORTING LOGIC
+	// Global sort always runs first
 	sort.SliceStable(streams, func(i, j int) bool {
-		stream1 := streams[i]
-		stream2 := streams[j]
-
-		if stream1.Source.Order != stream2.Source.Order {
-			return stream1.Source.Order < stream2.Source.Order
+		s1, s2 := streams[i], streams[j]
+		if s1.Source.Order != s2.Source.Order {
+			return s1.Source.Order < s2.Source.Order
 		}
-
-		val1 := stream1.Attributes[cfg.SortField]
-		val2 := stream2.Attributes[cfg.SortField]
-
+		v1 := s1.Attributes[cfg.SortField]
+		v2 := s2.Attributes[cfg.SortField]
 		if cfg.SortDirection == "desc" {
-			return val1 > val2
+			return v1 > v2
 		}
-		return val1 < val2
+		return v1 < v2
 	})
 
-	if len(streams) > 1 {
-		//logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applied default sorting", channelName)
+	// Apply custom order if one exists
+	customOrder, err := streamorder.GetChannelStreamOrder(channelName)
+	if err != nil || len(customOrder) == 0 {
+		return
 	}
+
+	// Build hash -> stream map from globally sorted slice
+	hashMap := make(map[string]*types.Stream, len(streams))
+	for _, s := range streams {
+		hashMap[s.URLHash] = s
+	}
+
+	// Sort entries by their stored index
+	entries := make([]streamorder.StreamOrderEntry, len(customOrder))
+	copy(entries, customOrder)
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].Index < entries[j].Index
+	})
+
+	result := make([]*types.Stream, 0, len(streams))
+	usedHashes := make(map[string]bool, len(entries))
+
+	// Place manually ordered streams first
+	for _, entry := range entries {
+		if s, ok := hashMap[entry.Hash]; ok {
+			result = append(result, s)
+			usedHashes[entry.Hash] = true
+		}
+	}
+
+	// Append remaining streams in global sort order
+	for _, s := range streams {
+		if !usedHashes[s.URLHash] {
+			result = append(result, s)
+		}
+	}
+
+	copy(streams, result)
+	logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applied custom ordering (%d manual, %d appended)",
+		channelName, len(usedHashes), len(result)-len(usedHashes))
 }

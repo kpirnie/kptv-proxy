@@ -13,8 +13,8 @@ import (
  * define the user's preferred sequence for stream selection and display.
  */
 type ChannelStreamOrder struct {
-	Channel     string `json:"channel"`
-	StreamOrder []int  `json:"streamOrder"` // Array of stream indexes in custom order
+	Channel     string             `json:"channel"`
+	StreamOrder []StreamOrderEntry `json:"streamOrder"`
 }
 
 /**
@@ -32,6 +32,11 @@ var (
 	// goroutines handling admin interface requests.
 	orderMutex sync.RWMutex
 )
+
+type StreamOrderEntry struct {
+	Index int    `json:"index"`
+	Hash  string `json:"hash"`
+}
 
 /**
  * LoadStreamOrders reads and parses the stream ordering database from disk, creating
@@ -150,7 +155,7 @@ func SaveStreamOrders(orders *StreamOrderFile) error {
  * @param streamOrder Array of stream indices in the desired display order
  * @return error - non-nil if database operations fail
  */
-func SetChannelStreamOrder(channelName string, streamOrder []int) error {
+func SetChannelStreamOrder(channelName string, streamOrder []StreamOrderEntry) error {
 	logger.Debug("{stream/streamorder - SetChannelStreamOrder} Setting stream order for channel: %s (%d streams)", channelName, len(streamOrder))
 
 	orderMutex.Lock()
@@ -259,7 +264,8 @@ func DeleteChannelStreamOrder(channelName string) error {
  * @param channelName Unique channel identifier to retrieve ordering for
  * @return ([]int, error) - array of stream indices in custom order (nil if no custom order), error on failure
  */
-func GetChannelStreamOrder(channelName string) ([]int, error) {
+func GetChannelStreamOrder(channelName string) ([]StreamOrderEntry, error) {
+
 	//logger.Debug("{stream/streamorder - GetChannelStreamOrder} Getting stream order for channel: %s", channelName)
 
 	orderMutex.RLock()

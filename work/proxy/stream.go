@@ -10,7 +10,6 @@ import (
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/restream"
-	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"kptv-proxy/work/watcher"
@@ -162,7 +161,6 @@ func (sp *StreamProxy) ImportStreams() {
 			defer wg.Done()
 			defer func() { <-importSemaphore }()
 
-			// check if the source has capacity for another connection
 			currentConns := src.ActiveConns.Load()
 			if currentConns >= int32(src.MaxConnections) {
 				logger.Warn("{proxy/stream - ImportStreams} Cannot import from source (connection limit %d/%d): %s",
@@ -170,7 +168,6 @@ func (sp *StreamProxy) ImportStreams() {
 				return
 			}
 
-			// acquire a connection slot for parsing
 			newConns := src.ActiveConns.Add(1)
 			logger.Debug("{proxy/stream - ImportStreams} Acquired connection %d/%d for parsing: %s",
 				newConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
@@ -183,7 +180,6 @@ func (sp *StreamProxy) ImportStreams() {
 
 			rateLimiter := sp.getRateLimiterForSource(src)
 
-			// parse streams based on source type
 			var streams []*types.Stream
 			if src.Username != "" && src.Password != "" {
 				logger.Debug("{proxy/stream - ImportStreams} Parsing Xtreme Codes API source: %s", src.Name)
@@ -193,7 +189,6 @@ func (sp *StreamProxy) ImportStreams() {
 				streams = parser.ParseM3U8(sp.HttpClient, sp.Config, src, rateLimiter, sp.Cache)
 			}
 
-			// apply stream filters if the filter manager is available
 			if sp != nil && sp.FilterManager != nil {
 				beforeFilter := len(streams)
 				streams = filter.FilterStreams(streams, src, sp.FilterManager)
@@ -208,7 +203,6 @@ func (sp *StreamProxy) ImportStreams() {
 				logger.Debug("{proxy/stream - ImportStreams} Parsed %d streams from M3U8 source: %s", len(streams), utils.LogURL(sp.Config, src.URL))
 			}
 
-			// aggregate streams into channels, merging duplicates by name
 			for _, stream := range streams {
 				channelName := stream.Name
 
@@ -225,7 +219,6 @@ func (sp *StreamProxy) ImportStreams() {
 		}(source)
 	}
 
-	// wait for all goroutines with a global timeout
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -239,47 +232,23 @@ func (sp *StreamProxy) ImportStreams() {
 		logger.Warn("{proxy/stream - ImportStreams} Global timeout reached (2 minutes), some sources may not have completed")
 	}
 
-	// sort streams within each channel and apply custom ordering if configured
 	count := 0
 	newChannels.Range(func(key string, value *types.Channel) bool {
 		channelName := key
 		channel := value
 
+		// Hash URLs before sorting so SortStreams can use them for custom ordering
+		for _, s := range channel.Streams {
+			s.URLHash = utils.HashURL(s.URL)
+		}
+
+		// SortStreams handles both global sort and custom ordering internally
 		parser.SortStreams(channel.Streams, sp.Config, channelName)
 
-		// apply persisted custom stream order if one exists for this channel
-		customOrder, _ := streamorder.GetChannelStreamOrder(channelName)
-		if len(customOrder) > 0 {
-			reorderedStreams := make([]*types.Stream, 0, len(channel.Streams))
-
-			// place streams in the custom order first
-			for _, idx := range customOrder {
-				if idx >= 0 && idx < len(channel.Streams) {
-					reorderedStreams = append(reorderedStreams, channel.Streams[idx])
-				}
-			}
-
-			// append any remaining streams not covered by the custom order
-			usedIndices := make(map[int]bool)
-			for _, idx := range customOrder {
-				usedIndices[idx] = true
-			}
-
-			for i, stream := range channel.Streams {
-				if !usedIndices[i] {
-					reorderedStreams = append(reorderedStreams, stream)
-				}
-			}
-
-			channel.Streams = reorderedStreams
-			atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
-			logger.Debug("{proxy/stream - ImportStreams} Applied custom stream order for channel: %s (%d ordered, %d total)", channelName, len(customOrder), len(channel.Streams))
-		} else {
-			// preserve the existing preferred stream index across import cycles
-			if existingChannel, exists := sp.Channels.Load(channelName); exists {
-				existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
-				atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
-			}
+		// Preserve the existing preferred stream index across import cycles
+		if existingChannel, exists := sp.Channels.Load(channelName); exists {
+			existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
+			atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
 		}
 
 		sp.Channels.Store(key, channel)
@@ -287,7 +256,6 @@ func (sp *StreamProxy) ImportStreams() {
 		return true
 	})
 
-	// clear stale cache entries after a full import cycle
 	if sp.Config.CacheEnabled {
 		sp.Cache.ClearIfNeeded()
 		logger.Debug("{proxy/stream - ImportStreams} Cache cleanup triggered after import")

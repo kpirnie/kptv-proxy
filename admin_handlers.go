@@ -228,19 +228,30 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		if isDefault {
-			if sp.Config.Debug {
-				addLogEntry("info", fmt.Sprintf("Removing custom order for channel %s (back to default)", channelName))
-			}
-			// Delete the custom order if it exists
 			streamorder.DeleteChannelStreamOrder(channelName)
 		} else {
-			err = streamorder.SetChannelStreamOrder(channelName, request.StreamOrder)
+			// Resolve positional indices to hash-based entries
+			channel.Mu.RLock()
+			entries := make([]streamorder.StreamOrderEntry, len(request.StreamOrder))
+			for newPos, origIdx := range request.StreamOrder {
+				hash := ""
+				if origIdx >= 0 && origIdx < len(channel.Streams) {
+					hash = channel.Streams[origIdx].URLHash
+				}
+				entries[newPos] = streamorder.StreamOrderEntry{
+					Index: newPos,
+					Hash:  hash,
+				}
+			}
+			channel.Mu.RUnlock()
+
+			err = streamorder.SetChannelStreamOrder(channelName, entries)
 			if err != nil {
 				addLogEntry("error", fmt.Sprintf("Failed to save stream order: %v", err))
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			addLogEntry("info", fmt.Sprintf("Stream order updated for channel %s: %v", channelName, request.StreamOrder))
+			addLogEntry("info", fmt.Sprintf("Stream order updated for channel %s", channelName))
 		}
 
 		// Apply the new order immediately without restart

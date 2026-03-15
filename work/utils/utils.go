@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"hash/fnv"
 	"kptv-proxy/work/config"
 	"net/url"
 	"regexp"
@@ -249,4 +250,10 @@ func FormatBytes(bytes int64) string {
 		// Small values: two decimal places for maximum precision
 		return fmt.Sprintf("%.2f %s", value, units[unitIndex])
 	}
+}
+
+func HashURL(url string) string {
+	h := fnv.New64a()
+	h.Write([]byte(url))
+	return fmt.Sprintf("%x", h.Sum64())
 }
