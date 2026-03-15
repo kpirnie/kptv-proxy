@@ -96,6 +96,7 @@ type ChannelStreamsResponse struct {
 	ChannelName          string       `json:"channelName"`          // Channel identifier for API operations
 	CurrentStreamIndex   int          `json:"currentStreamIndex"`   // Index of currently active stream
 	PreferredStreamIndex int          `json:"preferredStreamIndex"` // User/admin configured preferred stream
+	Obfuscated           bool         `json:"obfuscated"`           // Indicates if stream URLs are obfuscated for security
 	Streams              []StreamInfo `json:"streams"`              // Complete list of available streams
 }
 
@@ -322,6 +323,7 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 			ChannelName:          channelName,
 			CurrentStreamIndex:   currentIndex,
 			PreferredStreamIndex: preferredIndex,
+			Obfuscated:           sp.Config.ObfuscateUrls,
 			Streams:              streams,
 		}
 

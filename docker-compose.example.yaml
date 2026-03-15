@@ -1,15 +1,16 @@
 services:
   kptv-proxy:
     image: ghcr.io/kpirnie/kptv-proxy:latest
-    container_name: kptv_test
+    container_name: kptv_proxy
     restart: unless-stopped
     ports:
       - WHATEVER_PORT_YOU_WANT_TO_USE:8080
     volumes:
       - ./settings/:/settings/
       # to utilize ffmpeg, you must have it installed on your machine and add these 2 volumes
-      #- /usr/local/bin/ffmpeg:/usr/local/bin/ffmpeg:ro
-      #- /usr/local/bin/ffprobe:/usr/local/bin/ffprobe:ro
+      # make sure to change the path to where ffmpeg and ffprobe are located on your machine
+      #- /usr/local/bin/ffmpeg:/YOUR/PATH/TO/ffmpeg:ro
+      #- /usr/local/bin/ffprobe:/YOUR/PATH/TO/ffprobe:ro
 
     # for hardware accelleration with ffpmeg
     #devices:

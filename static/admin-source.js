@@ -1495,12 +1495,6 @@ class KPTVAdmin {
                                     ${originalIndex === data.currentStreamIndex ? '<span class="px-2 py-0.5 bg-kptv-blue text-white text-xs rounded">Current</span>' : ''}
                                     ${isDead ? `<span class="px-2 py-0.5 bg-red-700 text-white text-xs rounded" title="${reasonText}">DEAD</span>` : ''}
                                 </div>
-                                <div class="text-sm text-gray-400">
-                                    Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
-                                </div>
-                                <div class="text-sm text-gray-400 text-truncate">
-                                    ${stream.url}
-                                </div>
                                 ${stream.attributes['tvg-name'] ? `
                                     <div class="text-sm">
                                         Name: ${this.escapeHtml(stream.attributes['tvg-name'])}
@@ -1511,32 +1505,65 @@ class KPTVAdmin {
                                         Group: ${this.escapeHtml(stream.attributes['group-title'])}
                                     </div>
                                 ` : ''}
+                                <div class="text-sm text-gray-400">
+                                    Source: ${stream.sourceName} (Order: ${stream.sourceOrder})
+                                </div>
                             </div>
                         </div>
                         <div class="flex items-center gap-2 ml-4">
                             ${isDead ?
-                    `<a href="#" class="text-green-500 hover:text-green-400" title="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                        </svg>
-                                    </a>` :
-                    `<a href="#" class="text-kptv-blue hover:text-kptv-blue-light" title="Activate Stream" onclick="kptvAdmin.selectStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                    </a>
-                                    <a href="#" class="text-red-500 hover:text-red-400" title="Mark as Dead" onclick="kptvAdmin.killStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
-                                        </svg>
-                                    </a>`
-                }
+                                `<a href="#" class="text-green-500 hover:text-green-400" title="Make Live (${reasonText})" onclick="kptvAdmin.reviveStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                </a>` :
+                                `<a href="#" class="text-kptv-blue hover:text-kptv-blue-light" title="Activate Stream" onclick="kptvAdmin.selectStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </a>
+                                <a href="#" class="text-red-500 hover:text-red-400" title="Mark as Dead" onclick="kptvAdmin.killStream('${this.escapeHtml(data.channelName)}', ${originalIndex}); return false;">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+                                    </svg>
+                                </a>`
+                            }
+                            <a href="#"
+                            class="${data.obfuscated ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white'}"
+                            title="${data.obfuscated ? 'URL obfuscated - cannot copy' : 'Copy stream URL'}"
+                            onclick="${data.obfuscated ? 'return false;' : `kptvAdmin.copyStreamURL('${stream.url}'); return false;`}">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                </svg>
+                            </a>
                         </div>
                     </div>
                 </div>
             `;
         }).join('');
+    }
+    
+    async copyStreamURL(url) {
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(url);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = url;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                const success = document.execCommand('copy');
+                document.body.removeChild(textarea);
+                if (!success) throw new Error('execCommand failed');
+            }
+            this.showNotification('Stream URL copied to clipboard', 'success');
+        } catch (error) {
+            this.showNotification('Failed to copy URL: ' + error.message, 'danger');
+        }
     }
 
     async saveStreamOrder() {
