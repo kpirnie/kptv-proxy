@@ -206,6 +206,7 @@ wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.
   "ffmpegMode": false,
   "ffmpegPreInput": [],
   "ffmpegPreOutput": ["-c", "copy"],
+  "responseHeaderTimeout": "10s",
   "sources": [
     {
       "name": "Primary IPTV Source",
@@ -517,6 +518,7 @@ All configuration is done via a JSON file mounted at `/settings/config.json` or 
 | `ffmpegMode` | `false` | Use FFmpeg instead of Go streaming |
 | `ffmpegPreInput` | `[]` | FFmpeg arguments before `-i` |
 | `ffmpegPreOutput` | `[]` | FFmpeg arguments before output |
+| `responseHeaderTimeout` | `10s` | Timeout for waiting for response headers from source |
 
 ### Per-Source Settings
 

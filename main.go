@@ -48,7 +48,7 @@ func main() {
 	bufferPool := buffer.NewBufferPool(cfg.BufferSizePerStream * 1024 * 1024)
 
 	// Initialize HTTP client
-	httpClient := client.NewHeaderSettingClient()
+	httpClient := client.NewHeaderSettingClient(cfg.ResponseHeaderTimeout)
 
 	// Initialize worker pool, then make sure it gets released
 	workerPool, err := ants.NewPool(cfg.WorkerThreads, ants.WithPreAlloc(true))

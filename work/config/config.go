@@ -38,9 +38,10 @@ type Config struct {
 	Sources               []SourceConfig `json:"sources"`             // List of configured stream sources
 	EPGs                  []EPGConfig    `json:"epgs"`                // List of configured epg sources
 	WatcherEnabled        bool           `json:"watcherEnabled"`
-	FFmpegMode            bool           `json:"ffmpegMode"`      // Use FFmpeg instead of Go proxy/restreamer
-	FFmpegPreInput        []string       `json:"ffmpegPreInput"`  // FFmpeg arguments before -i
-	FFmpegPreOutput       []string       `json:"ffmpegPreOutput"` // FFmpeg arguments before output URL
+	FFmpegMode            bool           `json:"ffmpegMode"`            // Use FFmpeg instead of Go proxy/restreamer
+	FFmpegPreInput        []string       `json:"ffmpegPreInput"`        // FFmpeg arguments before -i
+	FFmpegPreOutput       []string       `json:"ffmpegPreOutput"`       // FFmpeg arguments before output URL
+	ResponseHeaderTimeout time.Duration  `json:"responseHeaderTimeout"` // Timeout for waiting for response headers from source
 }
 
 // SourceConfig represents the configuration for a single stream source.
@@ -93,6 +94,7 @@ type ConfigFile struct {
 	FFmpegMode            bool               `json:"ffmpegMode"`
 	FFmpegPreInput        []string           `json:"ffmpegPreInput"`
 	FFmpegPreOutput       []string           `json:"ffmpegPreOutput"`
+	ResponseHeaderTimeout string             `json:"responseHeaderTimeout"` // Duration as string (e.g., "10s")
 }
 
 // SourceConfigFile represents the source configuration in JSON format.
@@ -266,6 +268,13 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		return nil, err
 	}
 
+	if cf.ResponseHeaderTimeout == "" {
+		config.ResponseHeaderTimeout = 10 * time.Second
+	} else if config.ResponseHeaderTimeout, err = time.ParseDuration(cf.ResponseHeaderTimeout); err != nil {
+		logger.Error("{config - convertFromFile} invalid responseHeaderTimeout: %v", err)
+		return nil, err
+	}
+
 	// Convert sources
 	config.Sources = make([]SourceConfig, len(cf.Sources))
 	for i, srcFile := range cf.Sources {
@@ -331,6 +340,7 @@ func getDefaultConfig() *Config {
 		Sources:               []SourceConfig{}, // No sources configured
 		EPGs:                  []EPGConfig{},    // No EPGs configured
 		WatcherEnabled:        true,
+		ResponseHeaderTimeout: 10 * time.Second,
 	}
 }
 
@@ -348,6 +358,9 @@ func validateAndSetDefaults(config *Config) {
 	}
 	if config.ImportRefreshInterval <= 0 {
 		config.ImportRefreshInterval = 12 * time.Hour
+	}
+	if config.ResponseHeaderTimeout <= 0 {
+		config.ResponseHeaderTimeout = 10 * time.Second
 	}
 	if config.WorkerThreads <= 0 {
 		config.WorkerThreads = 8
@@ -458,6 +471,7 @@ func CreateExampleConfig(path string) error {
 		SortDirection:         "asc",
 		StreamTimeout:         "10s",
 		MaxConnectionsToApp:   100,
+		ResponseHeaderTimeout: "10s",
 		Sources: []SourceConfigFile{
 			{
 				Name:                   "Primary IPTV Source",

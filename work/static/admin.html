@@ -213,10 +213,10 @@
                                         type="url" name="baseURL" placeholder="http://localhost:8080">
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium mb-1">Global Stream Timeout</label>
+                                    <label class="block text-sm font-medium mb-1">Import Refresh Interval</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
-                                        type="text" name="streamTimeout" placeholder="30s">
+                                        type="text" name="importRefreshInterval" placeholder="12h">
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Buffer Size Per Stream (MB)</label>
@@ -266,12 +266,17 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium mb-1">Import Refresh Interval</label>
+                                    <label class="block text-sm font-medium mb-1">Global Stream Timeout</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
-                                        type="text" name="importRefreshInterval" placeholder="12h">
+                                        type="text" name="streamTimeout" placeholder="30s">
                                 </div>
-                                <div></div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Response Header Timeout</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" name="responseHeaderTimeout" placeholder="10s">
+                                </div>
                                 <div>
                                     <h4 class="text-base font-semibold mb-3 pb-2 border-b border-kptv-border">FFMPEG
                                         Settings</h4>
