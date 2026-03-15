@@ -424,18 +424,55 @@ func ParseEXTINF(line string) map[string]string {
 	attrPart := strings.TrimSpace(line[:lastComma])
 	channelName := strings.TrimSpace(line[lastComma+1:])
 
-	// Parse duration and space-separated attributes
-	parts := strings.Fields(attrPart)
-	if len(parts) > 0 {
-		attrs["duration"] = parts[0]
+	// Parse duration (first token before any key=value pairs)
+	firstSpace := strings.IndexByte(attrPart, ' ')
+	if firstSpace == -1 {
+		attrs["duration"] = attrPart
+		return attrs
 	}
+	attrs["duration"] = attrPart[:firstSpace]
+	remaining := attrPart[firstSpace+1:]
 
-	// Extract key-value pairs from remaining attribute fields
-	for i := 1; i < len(parts); i++ {
-		part := parts[i]
-		if eqIdx := strings.Index(part, "="); eqIdx != -1 {
-			key := part[:eqIdx]
-			value := strings.Trim(part[eqIdx+1:], "\"")
+	// Extract key-value pairs, respecting quoted values that may contain spaces
+	for len(remaining) > 0 {
+		remaining = strings.TrimLeft(remaining, " \t")
+		if remaining == "" {
+			break
+		}
+
+		eqIdx := strings.IndexByte(remaining, '=')
+		if eqIdx == -1 {
+			break
+		}
+
+		key := strings.TrimSpace(remaining[:eqIdx])
+		remaining = remaining[eqIdx+1:]
+
+		var value string
+		if strings.HasPrefix(remaining, "\"") {
+			// Quoted value — find the closing quote
+			closeIdx := strings.IndexByte(remaining[1:], '"')
+			if closeIdx == -1 {
+				// Malformed: no closing quote, take the rest
+				value = remaining[1:]
+				remaining = ""
+			} else {
+				value = remaining[1 : closeIdx+1]
+				remaining = remaining[closeIdx+2:]
+			}
+		} else {
+			// Unquoted value — ends at next space
+			spaceIdx := strings.IndexByte(remaining, ' ')
+			if spaceIdx == -1 {
+				value = remaining
+				remaining = ""
+			} else {
+				value = remaining[:spaceIdx]
+				remaining = remaining[spaceIdx+1:]
+			}
+		}
+
+		if key != "" {
 			attrs[key] = value
 		}
 	}
