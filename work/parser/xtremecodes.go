@@ -53,6 +53,16 @@ type XCVODStream struct {
 	ContainerExtension string `json:"container_extension"` // File format extension (mp4, mkv, etc.) for container type identification
 }
 
+// xcCategory represents a single category entry from the Xtream Codes API.
+// Used to build a categoryID -> categoryName lookup map, which is applied
+// during stream processing to populate group-title attributes in the generated
+// M3U playlist with real category names instead of generic type labels.
+type xcCategory struct {
+    CategoryID   string `json:"category_id"`
+    CategoryName string `json:"category_name"`
+    ParentID     int    `json:"parent_id"`
+}
+
 // xcWork represents a batch of live streams to be processed by a worker.
 // The worker pool pattern distributes XC API live stream processing across
 // multiple goroutines for improved CPU utilization and reduced processing time.
@@ -81,10 +91,13 @@ type xcSeriesWork struct {
 //   - liveInclude: optional regex pattern - only streams matching this pattern are included
 //   - liveExclude: optional regex pattern - streams matching this pattern are excluded
 //   - source: source configuration containing credentials and connection parameters
+//   - categoryMap: map of category_id -> category_name from the XC API, used to resolve
+//     group-title attributes to real category names (e.g. "US| SPORTS") instead of
+//     generic type labels. Falls back to regex-based type detection if lookup fails.
 //
 // Returns:
 //   - []*types.Stream: slice of processed streams ready for channel aggregation
-func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *regexp.Regexp, source *config.SourceConfig) []*types.Stream {
+func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *regexp.Regexp, source *config.SourceConfig, categoryMap map[string]string) []*types.Stream {
 	results := make([]*types.Stream, 0, len(batch))
 	logger.Debug("{parser/xtremecodes - processLiveBatchWorker} process the live batch")
 
@@ -101,12 +114,14 @@ func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *rege
 		streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
 
 		// setup the group
-		group := "live"
-		if utils.SeriesRegex.MatchString(stream.Name) || utils.SeriesRegex.MatchString(streamURL) {
-			group = "series"
-		} else if utils.VodRegex.MatchString(stream.Name) || utils.VodRegex.MatchString(streamURL) {
-			group = "vod"
-		}
+        group := "live"
+        if categoryName, ok := categoryMap[stream.CategoryID]; ok {
+            group = categoryName
+        } else if utils.SeriesRegex.MatchString(stream.Name) || utils.SeriesRegex.MatchString(streamURL) {
+            group = "series"
+        } else if utils.VodRegex.MatchString(stream.Name) || utils.VodRegex.MatchString(streamURL) {
+            group = "vod"
+        }
 
 		// create the stream group
 		s := &types.Stream{
@@ -147,10 +162,13 @@ func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *rege
 //   - seriesInclude: optional regex pattern - only series matching this pattern are included
 //   - seriesExclude: optional regex pattern - series matching this pattern are excluded
 //   - source: source configuration containing credentials and connection parameters
+//   - categoryMap: map of category_id -> category_name from the XC API, used to resolve
+//     group-title attributes to real category names (e.g. "US| SPORTS") instead of
+//     generic type labels. Falls back to regex-based type detection if lookup fails.
 //
 // Returns:
 //   - []*types.Stream: slice of processed series streams ready for channel aggregation
-func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *regexp.Regexp, source *config.SourceConfig) []*types.Stream {
+func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *regexp.Regexp, source *config.SourceConfig, categoryMap map[string]string) []*types.Stream {
 	results := make([]*types.Stream, 0, len(batch))
 	logger.Debug("{parser/xtremecodes - processSeriesBatchWorker} process the series batch")
 
@@ -166,6 +184,11 @@ func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *re
 		// setup the stream url
 		streamURL := fmt.Sprintf("%s/series/%s/%s/%d.ts", source.URL, source.Username, source.Password, serie.SeriesID)
 
+        group := "series"
+        if categoryName, ok := categoryMap[serie.CategoryID]; ok {
+            group = categoryName
+        }
+
 		// setup the stream
 		s := &types.Stream{
 			URL:    streamURL,
@@ -173,7 +196,7 @@ func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *re
 			Source: source,
 			Attributes: map[string]string{
 				"tvg-name":    serie.Name,
-				"group-title": "series",
+				"group-title": group,
 				"tvg-id":      fmt.Sprintf("%d", serie.SeriesID),
 				"category-id": serie.CategoryID,
 			},
@@ -197,15 +220,16 @@ func processSeriesBatchWorker(batch []XCSeries, seriesInclude, seriesExclude *re
 //
 // The parsing process implements comprehensive error handling, rate limiting, and debug
 // logging while constructing appropriate stream URLs for each content type using the
-// Xtreme Codes URL format specifications. All streams are properly categorized with
-// group-title attributes matching their content type for playlist organization.
+// Xtreme Codes URL format specifications. Category names are resolved from the XC API
+// and applied as group-title attributes in the generated playlist, falling back to
+// regex-based type detection if category resolution fails.
 //
 // Parameters:
 //   - httpClient: configured HTTP client for API requests with header support
-//   - logger: application logger for debugging and progress reporting
 //   - cfg: application configuration containing debug settings and URL obfuscation preferences
 //   - source: source configuration with URL, credentials, and connection parameters
 //   - rateLimiter: rate limiter for controlling API request frequency to prevent server overload
+//   - cache: cache instance for storing and retrieving parsed stream data
 //
 // Returns:
 //   - []*types.Stream: aggregated collection of streams from all three API endpoints
@@ -259,6 +283,11 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 	var allStreams []*types.Stream
 	var allStreamsMu sync.Mutex
 
+	// fetch the category map
+	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Fetching categoryMap")
+	categoryMap := fetchXCCategories(httpClient, cfg, source, rateLimiter)
+	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Fetched %d categories", len(categoryMap))
+
 	// try to get the streams
 	liveStreams := fetchXCLiveStreams(httpClient, cfg, source, rateLimiter)
 	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Fetched %d live streams", len(liveStreams))
@@ -285,7 +314,7 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 					default:
 					}
 					logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} process the live batch %v", i)
-					results := processLiveBatchWorker(work.streams, liveInclude, liveExclude, source)
+					results := processLiveBatchWorker(work.streams, liveInclude, liveExclude, source, categoryMap)
 					resultsChan <- results
 				}
 			}()
@@ -352,7 +381,7 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 					default:
 					}
 					logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} process the series batch %v", i)
-					results := processSeriesBatchWorker(work.series, seriesInclude, seriesExclude, source)
+					results := processSeriesBatchWorker(work.series, seriesInclude, seriesExclude, source, categoryMap)
 					resultsChan <- results
 				}
 			}()
@@ -660,4 +689,43 @@ func fetchXCData[T any](httpClient *client.HeaderSettingClient, cfg *config.Conf
 
 	logger.Debug("{parser/xtremecodes - fetchXCData} Successfully parsed %d items from XC API response", len(data))
 	return data, nil
+}
+
+// fetchXCCategories retrieves all category definitions from the Xtream Codes API across
+// all three content types (live, VOD, and series) and aggregates them into a single
+// categoryID -> categoryName lookup map. This map is passed to stream batch workers
+// to resolve group-title attributes to real provider category names during playlist generation.
+//
+// If a category endpoint fails, it is skipped and processing continues with the remaining
+// endpoints, ensuring a partial category map is returned rather than failing entirely.
+//
+// Parameters:
+//   - httpClient: configured HTTP client for API requests with header support
+//   - cfg: application configuration containing debug settings and URL obfuscation preferences
+//   - source: source configuration with URL, credentials, and connection parameters
+//   - rateLimiter: rate limiter for controlling API request frequency to prevent server overload
+//
+// Returns:
+//   - map[string]string: map of category_id -> category_name aggregated across all content types
+func fetchXCCategories(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) map[string]string {
+    if rateLimiter != nil {
+        rateLimiter.Take()
+    }
+
+    categoryMap := make(map[string]string)
+
+    for _, action := range []string{"get_live_categories", "get_vod_categories", "get_series_categories"} {
+        url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=%s", source.URL, source.Username, source.Password, action)
+        cats, err := fetchXCData[xcCategory](httpClient, cfg, source, url)
+        if err != nil {
+            logger.Error("{parser/xtremecodes - fetchXCCategories} Failed to fetch %s: %v", action, err)
+            continue
+        }
+        for _, cat := range cats {
+            categoryMap[cat.CategoryID] = cat.CategoryName
+        }
+    }
+
+    logger.Debug("{parser/xtremecodes - fetchXCCategories} Built category map with %d entries", len(categoryMap))
+    return categoryMap
 }
