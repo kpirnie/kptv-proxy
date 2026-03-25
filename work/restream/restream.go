@@ -975,7 +975,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 // Returns:
 //   - int: number of active clients remaining after distribution
 func (r *Restream) DistributeToClients(data []byte) int {
-	logger.Debug("{restream/restream - DistributeToClients} Distributing %d bytes to clients for channel %s", len(data), r.Channel.Name)
+	// logger.Debug("{restream/restream - DistributeToClients} Distributing %d bytes to clients for channel %s", len(data), r.Channel.Name)
 
 	activeClients := 0
 	var failedClients []string
@@ -1001,7 +1001,7 @@ func (r *Restream) DistributeToClients(data []byte) int {
 		r.RemoveClient(clientID)
 	}
 
-	logger.Debug("{restream/restream - DistributeToClients} Successfully distributed to %d clients for channel %s", activeClients, r.Channel.Name)
+	// logger.Debug("{restream/restream - DistributeToClients} Successfully distributed to %d clients for channel %s", activeClients, r.Channel.Name)
 
 	return activeClients
 }
