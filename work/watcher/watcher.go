@@ -114,8 +114,10 @@ func (wm *WatcherManager) Start() {
 		return
 	}
 
-	logger.Debug("{watcher - Start} Watcher manager started successfully")
+	// recreate so prior Stop() close doesn't kill new routine
+	wm.stopChan = make(chan struct{})
 
+	logger.Debug("{watcher - Start} Watcher manager started successfully")
 	// Launch background cleanup routine for resource management
 	go wm.cleanupRoutine()
 }
