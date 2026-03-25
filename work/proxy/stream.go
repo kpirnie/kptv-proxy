@@ -301,15 +301,9 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	channels := sp.getChannelBatch()
 	logger.Debug("{proxy/stream - GeneratePlaylist} Building playlist from %d channels", len(channels))
 
-	// sort channels according to configured field and direction
+	// sort channels alphabetically by channel name
 	sort.SliceStable(channels, func(i, j int) bool {
-		iVal := sp.getChannelSortValue(channels[i])
-		jVal := sp.getChannelSortValue(channels[j])
-
-		if sp.Config.SortDirection == "desc" {
-			return iVal > jVal
-		}
-		return iVal < jVal
+		return strings.ToLower(channels[i].name) < strings.ToLower(channels[j].name)
 	})
 
 	// pre-allocate the builder with a reasonable estimate
