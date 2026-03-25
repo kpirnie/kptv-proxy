@@ -825,9 +825,16 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium mb-1">Password</label>
-                            <input
-                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
-                                type="text" id="xc-account-password" placeholder="password" required>
+                            <div class="flex gap-2">
+                                <input
+                                    class="flex-1 bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="xc-account-password" placeholder="password" required>
+                                <button type="button"
+                                    class="px-3 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-sm"
+                                    onclick="document.getElementById('xc-account-password').value = kptvAdmin.generatePassword()">
+                                    Gen
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="mb-4">

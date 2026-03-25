@@ -936,6 +936,13 @@ class KPTVAdmin {
         `).join('');
     }
 
+    generatePassword(length = 24) {
+        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+        return Array.from(crypto.getRandomValues(new Uint8Array(length)))
+            .map(b => chars[b % chars.length])
+            .join('');
+    }
+
     showSourceModal(sourceIndex = null) {
         const title = document.getElementById('source-modal-title');
 

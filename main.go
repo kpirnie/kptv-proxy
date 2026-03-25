@@ -107,6 +107,7 @@ func main() {
 	// Xtream Codes compatible API and stream routes
 	router.HandleFunc("/player_api.php", handlers.HandleXCPlayerAPI(proxyInstance)).Methods("GET", "POST")
 	router.HandleFunc("/get.php", handlers.HandleXCGetPHP(proxyInstance)).Methods("GET")
+	router.HandleFunc("/xmltv.php", handlers.HandleXCXMLTV(proxyInstance)).Methods("GET")
 	router.HandleFunc("/live/{username}/{password}/{id}", handlers.HandleXCStream(proxyInstance)).Methods("GET")
 	router.HandleFunc("/movie/{username}/{password}/{id}", handlers.HandleXCStream(proxyInstance)).Methods("GET")
 	router.HandleFunc("/series/{username}/{password}/{id}", handlers.HandleXCStream(proxyInstance)).Methods("GET")

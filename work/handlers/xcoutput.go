@@ -482,3 +482,21 @@ func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *c
 		return true
 	})
 }
+
+// HandleXCXMLTV handles /xmltv.php requests from XC clients, delegating to the
+// existing EPG handler after validating XC account credentials.
+func HandleXCXMLTV(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		username := r.URL.Query().Get("username")
+		password := r.URL.Query().Get("password")
+
+		account := findXCAccount(sp.Config, username, password)
+		if account == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		logger.Debug("{handlers/xcoutput - HandleXCXMLTV} EPG request for account: %s", account.Name)
+		HandleEPG(sp)(w, r)
+	}
+}
