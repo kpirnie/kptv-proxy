@@ -307,6 +307,16 @@ func (sw *StreamWatcher) Watch() {
 		logger.Debug("{watcher - Watch} Debug mode enabled, using %v interval for channel: %s", interval, sw.channelName)
 	}
 
+	// wait until the restreamer is actually running before starting the grace period clock
+	for !sw.restreamer.Running.Load() {
+		select {
+		case <-sw.ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	sw.lastStreamStart = time.Now()
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
