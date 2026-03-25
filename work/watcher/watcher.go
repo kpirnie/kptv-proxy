@@ -743,6 +743,7 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 	if sw.restreamer.Running.Load() {
 		logger.Debug("{watcher - forceStreamRestart} Channel %s: Stopping current stream", sw.channelName)
 		sw.restreamer.Running.Store(false)
+	    sw.restreamer.ManualSwitch.Store(true) // tell Stream() loop this is intentional
 		sw.restreamer.Cancel()
 
 		// Provide brief pause for cleanup completion

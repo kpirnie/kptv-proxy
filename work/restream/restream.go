@@ -997,7 +997,7 @@ func (r *Restream) DistributeToClients(data []byte) int {
 	})
 
 	for _, clientID := range failedClients {
-		logger.Error("{restream/restream - DistributeToClients} Channel %s: Removing failed client %s", r.Channel.Name, clientID)
+		logger.Debug("{restream/restream - DistributeToClients} Channel %s: Removing failed client %s", r.Channel.Name, clientID)
 		r.RemoveClient(clientID)
 	}
 
