@@ -430,7 +430,8 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	lastActivity := sw.restreamer.LastActivity.Load()
 	timeSinceActivity := time.Now().Unix() - lastActivity
 
-	if timeSinceActivity > 30 {
+	// threshold must be greater than the check interval (30s) to avoid false positives
+	if timeSinceActivity > 60 {
 		logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: No activity for %d seconds (threshold: 30s)",
 			sw.channelName, timeSinceActivity)
 		hasIssues = true
