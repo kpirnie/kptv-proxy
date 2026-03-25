@@ -263,6 +263,8 @@ func (wm *WatcherManager) cleanupRoutine() {
 					logger.Debug("{watcher - cleanupRoutine} Removing watcher for stopped channel: %s", key)
 					watcher.Stop()
 					wm.watchers.Delete(key)
+					// release the slot so new watchers can be created
+					<-watcherSemaphore
 					cleanedCount++
 				}
 				return true
@@ -349,29 +351,9 @@ func (sw *StreamWatcher) Stop() {
  * quality, and streaming reliability.
  */
 func (sw *StreamWatcher) checkStreamHealth() {
-	logger.Debug("{watcher - checkStreamHealth} Starting health check for channel: %s", sw.channelName)
 
-	startTime := time.Now()
+	// see if the stream has issues
 	hasIssues := sw.evaluateStreamHealthFromState()
-	checkDuration := time.Since(startTime)
-
-	if sw.restreamer.Config.Debug {
-		lastActivity := sw.restreamer.LastActivity.Load()
-		timeSinceActivity := time.Now().Unix() - lastActivity
-
-		clientCount := 0
-		sw.restreamer.Clients.Range(func(key string, value *types.RestreamClient) bool {
-			clientCount++
-			return true
-		})
-
-		totalFails := atomic.LoadInt32(&sw.totalFailures)
-		consecFails := atomic.LoadInt32(&sw.consecutiveFailures)
-
-		logger.Debug("{watcher - checkStreamHealth} Channel %s: Health=%v, Activity=%ds ago, Clients=%d, TotalFails=%d, ConsecFails=%d, Check=%v",
-			sw.channelName, !hasIssues, timeSinceActivity, clientCount, totalFails, consecFails, checkDuration)
-	}
-
 	if hasIssues {
 		consecutiveFailures := atomic.AddInt32(&sw.consecutiveFailures, 1)
 		totalFailures := atomic.AddInt32(&sw.totalFailures, 1)
@@ -743,7 +725,7 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 	if sw.restreamer.Running.Load() {
 		logger.Debug("{watcher - forceStreamRestart} Channel %s: Stopping current stream", sw.channelName)
 		sw.restreamer.Running.Store(false)
-	    sw.restreamer.ManualSwitch.Store(true) // tell Stream() loop this is intentional
+		sw.restreamer.ManualSwitch.Store(true) // tell Stream() loop this is intentional
 		sw.restreamer.Cancel()
 
 		// Provide brief pause for cleanup completion
