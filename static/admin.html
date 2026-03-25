@@ -48,16 +48,19 @@
                     data-tab="1">Global Settings</button>
                 <button
                     class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
-                    data-tab="2">Sources</button>
+                    data-tab="2">Xtreme Accounts</button>
                 <button
                     class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
-                    data-tab="3">EPGs</button>
+                    data-tab="3">Sources</button>
                 <button
                     class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
-                    data-tab="4">Channels</button>
+                    data-tab="4">EPGs</button>
                 <button
                     class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
-                    data-tab="5">Logs</button>
+                    data-tab="5">Channels</button>
+                <button
+                    class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                    data-tab="6">Logs</button>
             </nav>
         </div>
 
@@ -198,6 +201,7 @@
                 </div>
             </div>
 
+            <!-- global settings -->
             <div>
                 <form id="global-settings-form">
                     <div class="bg-kptv-gray rounded border border-kptv-border">
@@ -368,6 +372,22 @@
                 </form>
             </div>
 
+            <!-- xc accounts -->
+            <div>
+                <div class="mb-4">
+                    <button
+                        class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"
+                        id="add-xc-account-btn">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        <span>Add XC Account</span>
+                    </button>
+                </div>
+                <div id="xc-accounts-container"></div>
+            </div>
+
+            <!-- source -->
             <div>
                 <div class="mb-4">
                     <button
@@ -383,6 +403,7 @@
                 <div id="sources-container"></div>
             </div>
 
+            <!-- epg -->
             <div>
                 <div class="mb-4">
                     <button
@@ -398,6 +419,7 @@
                 <div id="epgs-container"></div>
             </div>
 
+            <!-- channels -->
             <div>
                 <div class="bg-kptv-gray rounded border border-kptv-border">
                     <div
@@ -468,6 +490,7 @@
                 </div>
             </div>
 
+            <!-- logs -->
             <div>
                 <div class="bg-kptv-gray rounded border border-kptv-border">
                     <div
@@ -517,6 +540,7 @@
     </div>
 
     <!-- MODALS -->
+    <!-- source modal -->
     <div id="source-modal" class="modal">
         <div
             class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
@@ -692,6 +716,7 @@
         </div>
     </div>
 
+    <!-- channel modal -->
     <div id="stream-selector-modal" class="modal">
         <div
             class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
@@ -721,6 +746,7 @@
         </div>
     </div>
 
+    <!-- epg modal -->
     <div id="epg-modal" class="modal">
         <div
             class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-lg max-h-[90vh] overflow-y-auto m-4">
@@ -763,6 +789,78 @@
                     id="cancel-epg-btn" type="button">Cancel</button>
                 <button class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
                     id="save-epg-btn" type="button">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- xc modal -->
+    <div id="xc-account-modal" class="modal">
+        <div
+            class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-lg max-h-[90vh] overflow-y-auto m-4">
+            <div
+                class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="xc-account-modal-title">Add XC Account</h2>
+                <button class="text-gray-400 hover:text-white" id="close-xc-account-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <form id="xc-account-form">
+                    <input type="hidden" id="xc-account-index" value="">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Account Name</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="xc-account-name" placeholder="My XC Account" required>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Username</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="xc-account-username" placeholder="username" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Password</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="xc-account-password" placeholder="password" required>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Max Connections</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="number" id="xc-account-max-connections" min="1" value="10">
+                    </div>
+                    <div class="mb-4">
+                        <h4 class="text-sm font-medium mb-2">Content Types</h4>
+                        <div class="space-y-2">
+                            <label class="flex items-center">
+                                <input class="mr-2" type="checkbox" id="xc-account-enable-live" checked>
+                                <span>Enable Live Streams</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input class="mr-2" type="checkbox" id="xc-account-enable-series">
+                                <span>Enable Series</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input class="mr-2" type="checkbox" id="xc-account-enable-vod">
+                                <span>Enable VOD</span>
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-end gap-2">
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-xc-account-btn" type="button">Cancel</button>
+                <button class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
+                    id="save-xc-account-btn" type="button">Save</button>
             </div>
         </div>
     </div>

@@ -22,26 +22,27 @@ type EPGConfig struct {
 // Config holds all application configuration values for the IPTV proxy server.
 // It includes settings for buffering, caching, streaming, and multiple source configurations.
 type Config struct {
-	BaseURL               string         `json:"baseURL"`               // Base URL for the application (used for API and links)
-	BufferSizePerStream   int64          `json:"bufferSizePerStream"`   // Buffer size per individual stream in MB
-	CacheEnabled          bool           `json:"cacheEnabled"`          // Whether caching is enabled globally
-	CacheDuration         time.Duration  `json:"cacheDuration"`         // Duration before cache entries expire
-	ImportRefreshInterval time.Duration  `json:"importRefreshInterval"` // Interval for refreshing imported content
-	WorkerThreads         int            `json:"workerThreads"`         // Number of worker threads for background tasks
-	Debug                 bool           `json:"debug"`                 // Enable debug logging
-	LogLevel              string         `json:"logLevel"`
-	ObfuscateUrls         bool           `json:"obfuscateUrls"`       // Obfuscate URLs in logs for security
-	SortField             string         `json:"sortField"`           // Field to sort channels by (e.g., tvg-name)
-	SortDirection         string         `json:"sortDirection"`       // Sort direction: "asc" or "desc"
-	StreamTimeout         time.Duration  `json:"streamTimeout"`       // Timeout for stream operations
-	MaxConnectionsToApp   int            `json:"maxConnectionsToApp"` // Maximum concurrent connections allowed to the app
-	Sources               []SourceConfig `json:"sources"`             // List of configured stream sources
-	EPGs                  []EPGConfig    `json:"epgs"`                // List of configured epg sources
-	WatcherEnabled        bool           `json:"watcherEnabled"`
-	FFmpegMode            bool           `json:"ffmpegMode"`            // Use FFmpeg instead of Go proxy/restreamer
-	FFmpegPreInput        []string       `json:"ffmpegPreInput"`        // FFmpeg arguments before -i
-	FFmpegPreOutput       []string       `json:"ffmpegPreOutput"`       // FFmpeg arguments before output URL
-	ResponseHeaderTimeout time.Duration  `json:"responseHeaderTimeout"` // Timeout for waiting for response headers from source
+	BaseURL               string            `json:"baseURL"`               // Base URL for the application (used for API and links)
+	BufferSizePerStream   int64             `json:"bufferSizePerStream"`   // Buffer size per individual stream in MB
+	CacheEnabled          bool              `json:"cacheEnabled"`          // Whether caching is enabled globally
+	CacheDuration         time.Duration     `json:"cacheDuration"`         // Duration before cache entries expire
+	ImportRefreshInterval time.Duration     `json:"importRefreshInterval"` // Interval for refreshing imported content
+	WorkerThreads         int               `json:"workerThreads"`         // Number of worker threads for background tasks
+	Debug                 bool              `json:"debug"`                 // Enable debug logging
+	LogLevel              string            `json:"logLevel"`
+	ObfuscateUrls         bool              `json:"obfuscateUrls"`       // Obfuscate URLs in logs for security
+	SortField             string            `json:"sortField"`           // Field to sort channels by (e.g., tvg-name)
+	SortDirection         string            `json:"sortDirection"`       // Sort direction: "asc" or "desc"
+	StreamTimeout         time.Duration     `json:"streamTimeout"`       // Timeout for stream operations
+	MaxConnectionsToApp   int               `json:"maxConnectionsToApp"` // Maximum concurrent connections allowed to the app
+	Sources               []SourceConfig    `json:"sources"`             // List of configured stream sources
+	EPGs                  []EPGConfig       `json:"epgs"`                // List of configured epg sources
+	XCOutputAccounts      []XCOutputAccount `json:"xcOutputAccounts"`
+	WatcherEnabled        bool              `json:"watcherEnabled"`
+	FFmpegMode            bool              `json:"ffmpegMode"`            // Use FFmpeg instead of Go proxy/restreamer
+	FFmpegPreInput        []string          `json:"ffmpegPreInput"`        // FFmpeg arguments before -i
+	FFmpegPreOutput       []string          `json:"ffmpegPreOutput"`       // FFmpeg arguments before output URL
+	ResponseHeaderTimeout time.Duration     `json:"responseHeaderTimeout"` // Timeout for waiting for response headers from source
 }
 
 // SourceConfig represents the configuration for a single stream source.
@@ -90,6 +91,7 @@ type ConfigFile struct {
 	MaxConnectionsToApp   int                `json:"maxConnectionsToApp"`
 	Sources               []SourceConfigFile `json:"sources"`
 	EPGs                  []EPGConfig        `json:"epgs"`
+	XCOutputAccounts      []XCOutputAccount  `json:"xcOutputAccounts"`
 	WatcherEnabled        bool               `json:"watcherEnabled"`
 	FFmpegMode            bool               `json:"ffmpegMode"`
 	FFmpegPreInput        []string           `json:"ffmpegPreInput"`
@@ -120,6 +122,19 @@ type SourceConfigFile struct {
 	SeriesExcludeRegex     string `json:"seriesExcludeRegex,omitempty"`
 	VODIncludeRegex        string `json:"vodIncludeRegex,omitempty"`
 	VODExcludeRegex        string `json:"vodExcludeRegex,omitempty"`
+}
+
+// XCOutputAccount represents an Xtream Codes compatible output account
+// for exposing proxy streams to XC-compatible IPTV clients.
+type XCOutputAccount struct {
+	Name           string       `json:"name"`
+	Username       string       `json:"username"`
+	Password       string       `json:"password"`
+	MaxConnections int          `json:"maxConnections"`
+	EnableLive     bool         `json:"enableLive"`
+	EnableSeries   bool         `json:"enableSeries"`
+	EnableVOD      bool         `json:"enableVOD"`
+	ActiveConns    atomic.Int32 `json:"-"` // Runtime connection tracking, not serialized
 }
 
 // hold the config cache
@@ -309,8 +324,9 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 		}
 	}
 
-	// Simple copy since EPGConfig has no duration fields
+	// Simple copy since EPGConfig & XC Accounts has no duration fields
 	config.EPGs = cf.EPGs
+	config.XCOutputAccounts = cf.XCOutputAccounts
 	logger.Debug("{config - convertFromFile} convert from the json settings")
 
 	// return the config
@@ -377,8 +393,14 @@ func validateAndSetDefaults(config *Config) {
 	if config.MaxConnectionsToApp <= 0 {
 		config.MaxConnectionsToApp = 100
 	}
-	if config.LogLevel == "" { // ADD THIS
+	if config.LogLevel == "" {
 		config.LogLevel = "INFO"
+	}
+	// Validate XC output accounts
+	for i := range config.XCOutputAccounts {
+		if config.XCOutputAccounts[i].MaxConnections <= 0 {
+			config.XCOutputAccounts[i].MaxConnections = 10
+		}
 	}
 	// Validate each source
 	for i := range config.Sources {

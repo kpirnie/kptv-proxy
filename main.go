@@ -104,6 +104,13 @@ func main() {
 	// Channel stream handler
 	router.HandleFunc("/s/{channel}", handlers.HandleStream(proxyInstance)).Methods("GET")
 
+	// Xtream Codes compatible API and stream routes
+	router.HandleFunc("/player_api.php", handlers.HandleXCPlayerAPI(proxyInstance)).Methods("GET", "POST")
+	router.HandleFunc("/get.php", handlers.HandleXCGetPHP(proxyInstance)).Methods("GET")
+	router.HandleFunc("/live/{username}/{password}/{id}", handlers.HandleXCStream(proxyInstance)).Methods("GET")
+	router.HandleFunc("/movie/{username}/{password}/{id}", handlers.HandleXCStream(proxyInstance)).Methods("GET")
+	router.HandleFunc("/series/{username}/{password}/{id}", handlers.HandleXCStream(proxyInstance)).Methods("GET")
+
 	// EPG handler for XC sources
 	router.HandleFunc("/epg", handlers.HandleEPG(proxyInstance)).Methods("GET")
 	router.HandleFunc("/epg.xml", handlers.HandleEPG(proxyInstance)).Methods("GET")

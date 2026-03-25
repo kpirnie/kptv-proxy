@@ -19,6 +19,7 @@ class KPTVAdmin {
         this.loadActiveChannels();
         this.loadAllChannels();
         this.loadLogs();
+        this.loadXCAccounts();
         this.initScrollToTop();
         this.initTabs();
         this.initModals();
@@ -89,7 +90,8 @@ class KPTVAdmin {
         const modals = [
             { id: 'source-modal', closeId: 'close-source-modal', cancelId: 'cancel-source-btn' },
             { id: 'epg-modal', closeId: 'close-epg-modal', cancelId: 'cancel-epg-btn' },
-            { id: 'stream-selector-modal', closeId: 'close-stream-selector-modal', cancelId: 'cancel-stream-selector-btn' }
+            { id: 'stream-selector-modal', closeId: 'close-stream-selector-modal', cancelId: 'cancel-stream-selector-btn' },
+            { id: 'xc-account-modal', closeId: 'close-xc-account-modal', cancelId: 'cancel-xc-account-btn' }
         ];
 
         modals.forEach(({ id, closeId, cancelId }) => {
@@ -211,6 +213,12 @@ class KPTVAdmin {
             if (!isNaN(page)) {
                 this.goToPage(page);
             }
+        });
+        document.getElementById('add-xc-account-btn').addEventListener('click', () => {
+            this.showXCAccountModal();
+        });
+        document.getElementById('save-xc-account-btn').addEventListener('click', () => {
+            this.saveXCAccount();
         });
     }
 
@@ -694,6 +702,163 @@ class KPTVAdmin {
 
         } catch (error) {
             this.showNotification('Failed to delete EPG', 'danger');
+        }
+    }
+
+    async loadXCAccounts() {
+        try {
+            const config = await this.apiCall('/api/config');
+            this.config = config;
+            this.renderXCAccounts(config.xcOutputAccounts || []);
+        } catch (error) {
+            document.getElementById('xc-accounts-container').innerHTML =
+                '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">Failed to load XC accounts</div>';
+        }
+    }
+
+    renderXCAccounts(accounts) {
+        const container = document.getElementById('xc-accounts-container');
+        if (accounts.length === 0) {
+            container.innerHTML = '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">No XC output accounts configured</div>';
+            return;
+        }
+        container.innerHTML = accounts.map((account, index) => `
+            <div class="source-item">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex-1">
+                        <h4 class="text-lg font-semibold mb-1">${this.escapeHtml(account.name)}</h4>
+                        <div class="text-gray-400 text-sm">
+                            User: ${this.escapeHtml(account.username)} &nbsp;|&nbsp; Max Connections: ${account.maxConnections}
+                        </div>
+                        <div class="mt-1 flex gap-1">
+                            ${account.enableLive ? '<span class="px-2 py-0.5 bg-green-700 text-white text-xs rounded">Live</span>' : ''}
+                            ${account.enableSeries ? '<span class="px-2 py-0.5 bg-kptv-blue text-white text-xs rounded">Series</span>' : ''}
+                            ${account.enableVOD ? '<span class="px-2 py-0.5 bg-orange-700 text-white text-xs rounded">VOD</span>' : ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-kptv-border flex gap-2">
+                    <button class="px-3 py-1 bg-kptv-blue hover:bg-kptv-blue-light rounded text-sm transition-colors flex items-center space-x-1" onclick="kptvAdmin.editXCAccount(${index})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                        <span>Edit</span>
+                    </button>
+                    <button class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm transition-colors flex items-center space-x-1" onclick="kptvAdmin.deleteXCAccount(${index})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                        <span>Delete</span>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    showXCAccountModal(accountIndex = null) {
+        const title = document.getElementById('xc-account-modal-title');
+        if (accountIndex !== null) {
+            title.textContent = 'Edit XC Account';
+            if (this.config && this.config.xcOutputAccounts && this.config.xcOutputAccounts[accountIndex]) {
+                this.populateXCAccountForm(this.config.xcOutputAccounts[accountIndex], accountIndex);
+            } else {
+                this.showNotification('Config not loaded yet', 'warning');
+                this.loadGlobalSettings();
+            }
+        } else {
+            title.textContent = 'Add XC Account';
+            this.clearXCAccountForm();
+        }
+        this.showModal('xc-account-modal');
+    }
+
+    populateXCAccountForm(account, index) {
+        document.getElementById('xc-account-index').value = index;
+        document.getElementById('xc-account-name').value = account.name || '';
+        document.getElementById('xc-account-username').value = account.username || '';
+        document.getElementById('xc-account-password').value = account.password || '';
+        document.getElementById('xc-account-max-connections').value = account.maxConnections || 10;
+        document.getElementById('xc-account-enable-live').checked = account.enableLive !== false;
+        document.getElementById('xc-account-enable-series').checked = !!account.enableSeries;
+        document.getElementById('xc-account-enable-vod').checked = !!account.enableVOD;
+    }
+
+    clearXCAccountForm() {
+        document.getElementById('xc-account-index').value = '';
+        document.getElementById('xc-account-form').reset();
+        document.getElementById('xc-account-max-connections').value = 10;
+        document.getElementById('xc-account-enable-live').checked = true;
+        document.getElementById('xc-account-enable-series').checked = false;
+        document.getElementById('xc-account-enable-vod').checked = false;
+    }
+
+    async saveXCAccount() {
+        try {
+            const index = document.getElementById('xc-account-index').value;
+            const account = {
+                name: document.getElementById('xc-account-name').value,
+                username: document.getElementById('xc-account-username').value,
+                password: document.getElementById('xc-account-password').value,
+                maxConnections: parseInt(document.getElementById('xc-account-max-connections').value) || 10,
+                enableLive: document.getElementById('xc-account-enable-live').checked,
+                enableSeries: document.getElementById('xc-account-enable-series').checked,
+                enableVOD: document.getElementById('xc-account-enable-vod').checked
+            };
+
+            if (!account.name || !account.username || !account.password) {
+                this.showNotification('Name, username, and password are required', 'danger');
+                return;
+            }
+
+            const config = await this.apiCall('/api/config');
+            if (!config.xcOutputAccounts) {
+                config.xcOutputAccounts = [];
+            }
+
+            if (index === '') {
+                config.xcOutputAccounts.push(account);
+            } else {
+                config.xcOutputAccounts[parseInt(index)] = account;
+            }
+
+            await this.apiCall('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+
+            this.hideModal('xc-account-modal');
+            this.showNotification('XC account saved successfully!', 'success');
+            this.loadXCAccounts();
+            setTimeout(() => {
+                this.restartService();
+            }, 500);
+        } catch (error) {
+            this.showNotification('Failed to save XC account: ' + error.message, 'danger');
+        }
+    }
+
+    editXCAccount(index) {
+        this.showXCAccountModal(index);
+    }
+
+    async deleteXCAccount(index) {
+        if (!confirm('Are you sure you want to delete this XC account?')) {
+            return;
+        }
+        try {
+            const config = await this.apiCall('/api/config');
+            config.xcOutputAccounts.splice(index, 1);
+            await this.apiCall('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+            this.showNotification('XC account deleted successfully!', 'success');
+            this.loadXCAccounts();
+            setTimeout(() => {
+                this.restartService();
+            }, 500);
+        } catch (error) {
+            this.showNotification('Failed to delete XC account', 'danger');
         }
     }
 
