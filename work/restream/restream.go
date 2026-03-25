@@ -279,14 +279,15 @@ func (r *Restream) Stream() {
 		case <-r.Ctx.Done():
 			isManualSwitch := r.ManualSwitch.Load()
 
+			if isManualSwitch {
+				// watcher owns this restart - exit cleanly and let restartWithExistingLogic handle it
+				logger.Debug("{restream/restream - Stream} Channel %s: Exiting for watcher-controlled switch", r.Channel.Name)
+				r.ManualSwitch.Store(false)
+				return
+			}
+
 			logger.Debug("{restream/restream - Stream} Channel %s: Context done, manual=%v, attempts=%d/%d",
 				r.Channel.Name, isManualSwitch, totalAttempts, maxTotalAttempts)
-
-			if isManualSwitch {
-				logger.Debug("{restream/restream - Stream} Channel %s: Manual switch initiated", r.Channel.Name)
-			} else {
-				logger.Debug("{restream/restream - Stream} Channel %s: Context cancelled", r.Channel.Name)
-			}
 
 			// Count clients still connected
 			clientCount := 0

@@ -92,10 +92,10 @@ type Restreamer struct {
 	LastActivity            atomic.Int64                               // Atomic Unix timestamp of most recent streaming activity for cleanup logic
 	HttpClient              *client.HeaderSettingClient                // HTTP client with custom header support for source authentication
 	Config                  *config.Config                             // Application configuration reference for URL obfuscation and operational parameters
-	RateLimiter             ratelimit.Limiter
-	ManualSwitch            atomic.Bool
-	ManualSwitchPreventStop atomic.Bool
-	Stats                   *StreamStats
+	RateLimiter             ratelimit.Limiter                          // Hold the rate limitter
+	ManualSwitch            atomic.Bool                                // did we manually switch?
+	ManualSwitchPreventStop atomic.Bool                                // try to prevent stopping playback during a manual switch
+	Stats                   *StreamStats                               // setup the stats
 }
 
 // RestreamClient represents an individual client connection receiving streamed content
