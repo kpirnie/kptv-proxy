@@ -542,6 +542,19 @@ func (sw *StreamWatcher) triggerStreamSwitch(reason string) {
 		return
 	}
 
+	// validate the chosen stream is still usable at switch time, not just at find time
+	sw.restreamer.Channel.Mu.RLock()
+	streamStillValid := nextIndex < len(sw.restreamer.Channel.Streams) &&
+		atomic.LoadInt32(&sw.restreamer.Channel.Streams[nextIndex].Blocked) == 0 &&
+		sw.restreamer.Channel.Streams[nextIndex].Source.ActiveConns.Load() < int32(sw.restreamer.Channel.Streams[nextIndex].Source.MaxConnections)
+	sw.restreamer.Channel.Mu.RUnlock()
+
+	if !streamStillValid {
+		logger.Warn("{watcher - triggerStreamSwitch} Channel %s: Stream %d became unavailable before switch could execute, aborting",
+			sw.channelName, nextIndex)
+		return
+	}
+
 	logger.Debug("{watcher - triggerStreamSwitch} Channel %s: Found alternative stream at index %d",
 		sw.channelName, nextIndex)
 
