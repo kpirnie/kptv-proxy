@@ -65,6 +65,7 @@ type StreamWatcher struct {
 	lastFailureReset    time.Time          // Timestamp of most recent failure counter reset
 	running             atomic.Bool        // Atomic flag indicating watcher operational state
 	ffprobeCheckCount   int32              // Atomic counter for FFprobe check frequency management
+	lastWritePos        int64              // tracks buffer write position between checks for throughput calculation
 }
 
 /**
@@ -423,25 +424,22 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 
 	hasIssues := false
 
-	// Check buffer state
+	// measure throughput over the full check interval rather than a 2-second window
+	// this correctly handles bursty streams that legitimately pause between bursts
 	if sw.restreamer.Buffer != nil && !sw.restreamer.Buffer.IsDestroyed() {
 		currentWritePos := sw.restreamer.Buffer.GetWritePosition()
-		time.Sleep(2 * time.Second)
-		newWritePos := sw.restreamer.Buffer.GetWritePosition()
 
-		// if write position decreased, a buffer reset occurred mid-measurement - skip this check
-		if newWritePos >= currentWritePos {
-			bytesPerSec := (newWritePos - currentWritePos) / 2
-
-			if bytesPerSec < 50*1024 {
-				logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Throughput too low (%d KB/s), stream likely stalled",
-					sw.channelName, bytesPerSec/1024)
+		if sw.lastWritePos > 0 && currentWritePos >= sw.lastWritePos {
+			bytesSinceLastCheck := currentWritePos - sw.lastWritePos
+			// expect at least 20KB over the entire check interval
+			if bytesSinceLastCheck < 200*1024 {
+				logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Throughput too low (%d KB since last check), stream likely stalled",
+					sw.channelName, bytesSinceLastCheck/1024)
 				hasIssues = true
 			}
-		} else {
-			logger.Debug("{watcher - evaluateStreamHealthFromState} Channel %s: Buffer reset detected during throughput check, skipping",
-				sw.channelName)
 		}
+
+		sw.lastWritePos = currentWritePos
 	}
 
 	// Check stream activity
