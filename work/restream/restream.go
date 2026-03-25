@@ -373,7 +373,7 @@ func (r *Restream) Stream() {
 		if success {
 
 			// Check if this was a very brief success (likely a failure)
-			if bytesTransferred < 1024*1024 { // Less than 1MB suggests very brief connection
+			if bytesTransferred < 64*1024 { // Less than 64K suggests very brief connection
 				consecutiveFailures[currentIdx]++
 				logger.Debug("{restream/restream - Stream} Channel %s: Stream %d succeeded briefly (%d bytes), treating as failure", r.Channel.Name, currentIdx, bytesTransferred)
 
@@ -654,12 +654,6 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 //   - error: any encountered error
 func (r *Restream) getStreamVariants(url string, source *config.SourceConfig) ([]parser.StreamVariant, bool, error) {
 	logger.Debug("{restream/restream - getStreamVariants} Fetching variants for channel %s from URL: %s", r.Channel.Name, url)
-
-	// Get rate limiter from StreamProxy (need to add this to Restreamer)
-	if r.RateLimiter != nil {
-		r.RateLimiter.Take()
-		logger.Debug("{restream/restream - getStreamVariants} Applied rate limit for stream request: %s", source.Name)
-	}
 
 	// Initialize a master playlist handler
 	masterHandler := parser.NewMasterPlaylistHandler(r.Config)
@@ -1123,23 +1117,31 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 	// Mark this as a manual switch so context cancellation won't be treated as failure
 	r.ManualSwitch.Store(true)
 
-	// Destroy buffer before cancelling context to prevent memory leak
+	// Cancel context first to stop the streaming loop before touching the buffer
+	r.Cancel()
+
+	// Now safe to destroy the buffer since the streaming loop is stopping
 	if r.Buffer != nil && !r.Buffer.IsDestroyed() {
 		r.Buffer.Destroy()
-		logger.Debug("{restream/restream - ForceStreamSwitch} Channel %s: Buffer destroyed before switch", r.Channel.Name)
-
+		logger.Debug("{restream/restream - ForceStreamSwitch} Channel %s: Buffer destroyed after context cancel", r.Channel.Name)
 	}
-
-	// Cancel current context to trigger restart with new stream index
-	r.Cancel()
 }
 
 // resetBufferSafely resets the buffer while preserving client connections
 func (r *Restream) resetBufferSafely() {
 	if r.Buffer != nil && !r.Buffer.IsDestroyed() {
 		r.Buffer.Reset()
-		logger.Debug("{restream/restream - resetBufferSafely} Channel %s: Buffer reset", r.Channel.Name)
-
+		// Zero out all client read positions so they don't stall waiting
+		// for a write position that no longer exists after the reset
+		r.Clients.Range(func(clientID string, _ *types.RestreamClient) bool {
+			r.Buffer.UpdateClientPosition(clientID, 0)
+			return true
+		})
+		logger.Debug("{restream/restream - resetBufferSafely} Channel %s: Buffer reset, zeroed %d client positions", r.Channel.Name, func() int {
+			count := 0
+			r.Clients.Range(func(_ string, _ *types.RestreamClient) bool { count++; return true })
+			return count
+		}())
 	} else if r.Buffer == nil {
 		// Only create new buffer if none exists
 		bufferSize := r.Config.BufferSizePerStream * 1024 * 1024
