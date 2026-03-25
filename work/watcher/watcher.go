@@ -471,12 +471,15 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 		}
 	}
 
-	// Check context state
+	// only flag context cancellation as an issue if the restreamer has been stuck
+	// in a cancelled state for an extended period - transient cancellations during
+	// normal switching are expected and should not trigger failover
 	if sw.restreamer.Running.Load() {
 		select {
 		case <-sw.restreamer.Ctx.Done():
-			if time.Since(sw.lastCheck) > 300*time.Second {
-				logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Context cancelled and running for >300s", sw.channelName)
+			if time.Since(sw.lastStreamStart) > 300*time.Second {
+				logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Context cancelled and stream has been running for >300s",
+					sw.channelName)
 				hasIssues = true
 			}
 		default:
