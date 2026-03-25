@@ -465,7 +465,13 @@ func (sp *StreamProxy) RestreamCleanup() {
 								channel.Restreamer = nil
 							}
 						default:
-							// gracefully destroy the buffer and cancel the context
+							// only clean up if ManualSwitch is not in progress
+							// during a switch Running briefly goes false but the restreamer is still needed
+							if channel.Restreamer.ManualSwitch.Load() {
+								logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Skipping cleanup, manual switch in progress", channel.Name)
+								break
+							}
+
 							if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
 								logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Safely destroying buffer", channel.Name)
 								channel.Restreamer.Buffer.Destroy()
