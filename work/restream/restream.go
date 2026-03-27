@@ -1314,3 +1314,10 @@ func (r *Restream) streamLocalFallback(filePath string) {
 		}
 	}
 }
+
+// RestartMonitors restarts the background monitoring goroutines that are normally
+// started by AddClient but do not survive a watcher-triggered stream switch.
+func (r *Restream) RestartMonitors() {
+	go r.monitorClientHealth()
+	go r.StartStatsCollection()
+}

@@ -587,8 +587,6 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 
 	if sp.Config.FFmpegMode {
 		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Using FFMPEG mode", channel.Name)
-	} else {
-		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Using RESTREAMING mode", channel.Name)
 	}
 
 	channel.Mu.Lock()

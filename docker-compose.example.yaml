@@ -7,10 +7,13 @@ services:
       - WHATEVER_PORT_YOU_WANT_TO_USE:8080
     volumes:
       - ./settings/:/settings/
+      
       # to utilize ffmpeg, you must have it installed on your machine and add these 2 volumes
       # make sure to change the path to where ffmpeg and ffprobe are located on your machine
       #- /usr/local/bin/ffmpeg:/YOUR/PATH/TO/ffmpeg:ro
       #- /usr/local/bin/ffprobe:/YOUR/PATH/TO/ffprobe:ro
+      # you'll also need to add your machines drivers
+      #- /usr/lib/x86_64-linux-gnu/dri:/usr/lib/x86_64-linux-gnu/dri:ro
 
     # for hardware accelleration with ffpmeg
     #devices:

@@ -825,14 +825,19 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium mb-1">Password</label>
-                            <div class="flex gap-2">
+                            <div class="relative">
                                 <input
-                                    class="flex-1 bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 pr-10 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                     type="text" id="xc-account-password" placeholder="password" required>
                                 <button type="button"
-                                    class="px-3 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-sm"
+                                    class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                                    title="Generate password"
                                     onclick="document.getElementById('xc-account-password').value = kptvAdmin.generatePassword()">
-                                    Gen
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                        </path>
+                                    </svg>
                                 </button>
                             </div>
                         </div>

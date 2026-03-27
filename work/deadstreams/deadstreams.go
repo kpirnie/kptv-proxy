@@ -44,7 +44,6 @@ func LoadDeadStreams() (*DeadStreamsFile, error) {
 
 	// Check if file exists on disk
 	if _, err := os.Stat(deadStreamsPath); os.IsNotExist(err) {
-		logger.Debug("{deadstreams - LoadDeadStreams} no deadstream file")
 		// File doesn't exist - return empty structure for first-time initialization
 		return &DeadStreamsFile{DeadStreams: []DeadStreamEntry{}}, nil
 	}

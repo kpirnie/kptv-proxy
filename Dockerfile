@@ -6,21 +6,14 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v03252026.39" -trimpath -o kptv-proxy .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v03272026.19" -trimpath -o kptv-proxy .
 
 # Final stage - keep all GPU drivers
 FROM docker.io/debian:trixie-slim
 
-# Install all GPU drivers + curl in one layer
+# Install curl and necessities curl in one layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    mesa-va-drivers \
-    mesa-vulkan-drivers \
-    intel-media-va-driver \
-    libva-drm2 \
-    libva-x11-2 \
-    vulkan-tools \
-    va-driver-all \
     curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \

@@ -424,14 +424,15 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 
 	hasIssues := false
 
-	// measure throughput over the full check interval rather than a 2-second window
-	// this correctly handles bursty streams that legitimately pause between bursts
-	if sw.restreamer.Buffer != nil && !sw.restreamer.Buffer.IsDestroyed() {
-		currentWritePos := sw.restreamer.Buffer.GetWritePosition()
+	// Capture buffer reference locally to prevent nil pointer race
+	// between the nil check and subsequent calls if another goroutine
+	// sets Buffer = nil during cleanup
+	buf := sw.restreamer.Buffer
+	if buf != nil && !buf.IsDestroyed() {
+		currentWritePos := buf.GetWritePosition()
 
 		if sw.lastWritePos > 0 && currentWritePos >= sw.lastWritePos {
 			bytesSinceLastCheck := currentWritePos - sw.lastWritePos
-			// expect at least 20KB over the entire check interval
 			if bytesSinceLastCheck < 200*1024 {
 				logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Throughput too low (%d KB since last check), stream likely stalled",
 					sw.channelName, bytesSinceLastCheck/1024)
@@ -446,30 +447,13 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	lastActivity := sw.restreamer.LastActivity.Load()
 	timeSinceActivity := time.Now().Unix() - lastActivity
 
-	// threshold must be greater than the check interval (30s) to avoid false positives
-	if timeSinceActivity > 60 {
-		logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: No activity for %d seconds (threshold: 60s)",
+	if timeSinceActivity > 120 {
+		logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: No activity for %d seconds (threshold: 120s)",
 			sw.channelName, timeSinceActivity)
 		hasIssues = true
 	}
 
-	// only check throughput if buffer is healthy
-	if sw.restreamer.Buffer != nil && !sw.restreamer.Buffer.IsDestroyed() {
-		// check throughput rate - a live stream sending less than 50KB/s is effectively dead
-		// this catches providers that keep connections open but stop sending real data
-		currentWritePos := sw.restreamer.Buffer.GetWritePosition()
-		time.Sleep(2 * time.Second)
-		newWritePos := sw.restreamer.Buffer.GetWritePosition()
-		bytesPerSec := (newWritePos - currentWritePos) / 2
-
-		if bytesPerSec < 50*1024 {
-			logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Throughput too low (%d KB/s), stream likely stalled",
-				sw.channelName, bytesPerSec/1024)
-			hasIssues = true
-		}
-	}
-
-	// only flag context cancellation as an issue if the restreamer has been stuck
+	// Only flag context cancellation as an issue if the restreamer has been stuck
 	// in a cancelled state for an extended period - transient cancellations during
 	// normal switching are expected and should not trigger failover
 	if sw.restreamer.Running.Load() {
@@ -484,13 +468,13 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 		}
 	}
 
-	// reuse stats already collected by restream/stats instead of racing with a second FFprobe
+	// Reuse stats already collected by restream/stats instead of racing with a second FFprobe
 	sw.restreamer.Stats.Mu.RLock()
 	statsValid := sw.restreamer.Stats.Valid
 	statsUpdated := sw.restreamer.Stats.LastUpdated
 	sw.restreamer.Stats.Mu.RUnlock()
 
-	// if stats exist but haven't been updated in 10 minutes, treat as stale
+	// If stats exist but haven't been updated in 10 minutes, treat as stale
 	if statsValid && time.Now().Unix()-statsUpdated > 600 {
 		logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Stream stats stale for >10 minutes", sw.channelName)
 		hasIssues = true
@@ -602,14 +586,12 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 	logger.Debug("{watcher - forceStreamRestart} Channel %s: Updated stream indices to %d", sw.channelName, newIndex)
 
 	// Gracefully terminate current streaming operations
-	if sw.restreamer.Running.Load() {
-		logger.Debug("{watcher - forceStreamRestart} Channel %s: Stopping current stream", sw.channelName)
-		sw.restreamer.Running.Store(false)
-		sw.restreamer.ManualSwitch.Store(true)
-		sw.restreamer.Cancel()
-
-		// Provide brief pause for cleanup completion
-		time.Sleep(200 * time.Millisecond)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if !sw.restreamer.Running.Load() {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Create fresh context for new streaming session
@@ -660,14 +642,11 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 func (sw *StreamWatcher) restartWithExistingLogic() {
 	logger.Debug("{watcher - restartWithExistingLogic} Channel %s: Entering restart logic", sw.channelName)
 
-	// Implement panic recovery
 	defer func() {
 		if rec := recover(); rec != nil {
 			logger.Error("{watcher - restartWithExistingLogic} Channel %s: Recovered from panic: %v",
 				sw.channelName, rec)
 		}
-
-		// Ensure running state is properly managed
 		sw.restreamer.Running.Store(false)
 		logger.Debug("{watcher - restartWithExistingLogic} Channel %s: Restart completed, running=false", sw.channelName)
 	}()
@@ -676,9 +655,12 @@ func (sw *StreamWatcher) restartWithExistingLogic() {
 	logger.Debug("{watcher - restartWithExistingLogic} Channel %s: Starting stream restart at index %d",
 		sw.channelName, currentIdx)
 
-	// Leverage existing streaming logic
-	r := NewRestreamWrapper(sw.restreamer)
-	r.Stream()
+	r := &restream.Restream{Restreamer: sw.restreamer}
+
+	// These are normally started by AddClient but are not running after a watcher-triggered switch
+	r.RestartMonitors()
+
+	r.WatcherStream()
 
 	logger.Debug("{watcher - restartWithExistingLogic} Channel %s: Stream restart logic completed", sw.channelName)
 }
