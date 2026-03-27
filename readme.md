@@ -1,5 +1,5 @@
-[![Build Main](https://github.com/kpirnie/kptv-proxy/actions/workflows/docker-build.yml/badge.svg?branch=main)](https://github.com/kpirnie/kptv-proxy/actions?query=workflow%3A%22Build+and+Push+Docker+Image%22+branch%3Amain)
-[![Build Develop](https://github.com/kpirnie/kptv-proxy/actions/workflows/docker-build.yml/badge.svg?branch=develop)](https://github.com/kpirnie/kptv-proxy/actions?query=workflow%3A%22Build+and+Push+Docker+Image%22+branch%3Adevelop)
+[![Build Main](https://img.shields.io/github/actions/workflow/status/kpirnie/kptv-proxy/docker-build.yml?branch=main&label=Main&logo=github)](https://github.com/kpirnie/kptv-proxy/actions?query=workflow%3A%22Build+and+Push+Docker+Image%22+branch%3Amain)
+[![Build Develop](https://img.shields.io/github/actions/workflow/status/kpirnie/kptv-proxy/docker-build.yml?branch=develop&label=Develop&logo=github)](https://github.com/kpirnie/kptv-proxy/actions?query=workflow%3A%22Build+and+Push+Docker+Image%22+branch%3Adevelop)
 [![Go Version](https://img.shields.io/badge/Go-1.26.1-00ADD8?logo=go&logoColor=white)](https://golang.org/)
 [![Debian](https://img.shields.io/badge/Base-Debian%20Trixie%20Slim-A81D33?logo=debian&logoColor=white)](https://www.debian.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
