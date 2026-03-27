@@ -3,7 +3,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.26.1-00ADD8?logo=go&logoColor=white)](https://golang.org/)
 [![Debian](https://img.shields.io/badge/Base-Debian%20Trixie%20Slim-A81D33?logo=debian&logoColor=white)](https://www.debian.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Website](https://img.shields.io/badge/Website-kevinpirnie.com-blue?logo=google-chrome&logoColor=white)](https://kevinpirnie.com)
+[![www](https://img.shields.io/badge/www-kevinpirnie.com-blue?logo=google-chrome&logoColor=white)](https://kevinpirnie.com)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/bd4Qan3PaN)
 
 # KPTV Proxy - IPTV Stream Aggregator & Proxy
