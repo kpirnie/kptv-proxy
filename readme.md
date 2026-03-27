@@ -1,3 +1,11 @@
+[![Build Main](https://github.com/kpirnie/kptv-proxy/actions/workflows/docker-build.yml/badge.svg?branch=main)](https://github.com/kpirnie/kptv-proxy/actions?query=workflow%3A%22Build+and+Push+Docker+Image%22+branch%3Amain)
+[![Build Develop](https://github.com/kpirnie/kptv-proxy/actions/workflows/docker-build.yml/badge.svg?branch=develop)](https://github.com/kpirnie/kptv-proxy/actions?query=workflow%3A%22Build+and+Push+Docker+Image%22+branch%3Adevelop)
+[![Go Version](https://img.shields.io/badge/Go-1.26.1-00ADD8?logo=go&logoColor=white)](https://golang.org/)
+[![Debian](https://img.shields.io/badge/Base-Debian%20Trixie%20Slim-A81D33?logo=debian&logoColor=white)](https://www.debian.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Website](https://img.shields.io/badge/Website-kevinpirnie.com-blue?logo=google-chrome&logoColor=white)](https://kevinpirnie.com)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/bd4Qan3PaN)
+
 # KPTV Proxy - IPTV Stream Aggregator & Proxy
 
 A high-performance Go-based IPTV proxy server that intelligently aggregates streams from multiple sources, provides automatic channel deduplication, failover capabilities, and serves them through a unified M3U8 playlist with advanced streaming options including FFmpeg integration.
@@ -11,7 +19,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - Automatic source prioritization and failover
 - Per-source connection limits to prevent provider overload
 
-### 📺 **Advanced Stream Management**  
+### 📺 **Advanced Stream Management**
 
 - **Master Playlist Detection**: Automatically detects and processes HLS master playlists
 - **Variant Selection**: Intelligently selects optimal stream variants (highest quality with fallback)
@@ -25,7 +33,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - **Go Restreaming Mode**: Single upstream connection shared among multiple clients
 - **FFmpeg Proxy Mode**: Hardware-accelerated streaming with advanced codec support
 - **Provider-Friendly**: Reduces load on upstream providers and prevents rate limiting
-- **Automatic Management**: Intelligent connection pooling and cleanup of inactive streams  
+- **Automatic Management**: Intelligent connection pooling and cleanup of inactive streams
 - **Scalable**: Supports unlimited clients per channel with minimal resource overhead
 
 ### 🎯 **Enhanced HLS Support**
@@ -98,12 +106,23 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 
 ### 🎬 **FFmpeg Integration**
 
-- **Hardware Acceleration**: Support for GPU-accelerated encoding/decoding
+- **Hardware Acceleration**: Support for GPU-accelerated encoding/decoding via host device passthrough
 - **Advanced Codec Support**: Handle complex video formats and containers
 - **Custom Arguments**: Configurable pre-input and pre-output FFmpeg arguments
 - **Automatic Detection**: Intelligent stream format detection and processing
 - **Resource Optimization**: Efficient memory usage and CPU optimization
 - **Format Conversion**: Real-time transcoding and format adaptation
+- **Ad-Break Handling**: Properly manages MPEG-TS discontinuities from ad-insertion systems
+
+### 📡 **Xtream Codes Output**
+
+- **XC-Compatible API**: Expose your aggregated streams via a full Xtream Codes compatible API
+- **Multi-Account Support**: Create multiple XC output accounts with independent credentials
+- **Per-Account Content Control**: Enable or disable Live, VOD, and Series per account
+- **Connection Limits**: Configurable maximum connections per account
+- **M3U Playlist Export**: `/get.php` endpoint for M3U playlist generation
+- **XMLTV EPG**: Full EPG passthrough via `/xmltv.php`
+- **Quick Copy**: Copy base URL, username, and password directly from the admin interface
 
 ## Architecture Overview
 
@@ -130,11 +149,12 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                     │  • Dead Stream Mgmt     │
                     │  • Stream Watcher       │
                     │  • FFmpeg Integration   │
+                    │  • XC Output API        │
                     └────────────┬────────────┘
                                  │
                     ┌────────────▼────────────┐
-                    │   Unified M3U8          │
-                    │   /pl                   │
+                    │   Unified M3U8 + XC     │
+                    │   /pl  /player_api.php  │
                     └─────────────────────────┘
                                  │
           ┌──────────────────────┼──────────────────────┐
@@ -146,47 +166,17 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
-## Third-Party Libraries
-
-KPTV Proxy leverages several high-quality open-source libraries:
-
-### Core Dependencies
-
-- **[gorilla/mux](https://github.com/gorilla/mux)** (v1.8.1) - HTTP router and URL matcher for building REST APIs
-- **[panjf2000/ants](https://github.com/panjf2000/ants)** (v2.11.3) - High-performance goroutine pool for worker thread management
-- **[uber-go/ratelimit](https://github.com/uber-go/ratelimit)** (v0.3.1) - Per-source rate limiting to prevent provider overload
-
-### Streaming & Parsing
-
-- **[grafov/m3u8](https://github.com/grafov/m3u8)** (v0.12.1) - M3U8 playlist parser for HLS stream handling
-- **[grafana/regexp](https://github.com/grafana/regexp)** (v0.0.0-20240518133315) - High-performance regular expression engine for content filtering
-
-### Monitoring
-
-- **[prometheus/client_golang](https://github.com/prometheus/client_golang)** (v1.23.0) - Metrics collection and exposition for Prometheus integration
-- **[prometheus/client_model](https://github.com/prometheus/client_model)** (v0.6.2) - Data model for Prometheus metrics
-- **[prometheus/common](https://github.com/prometheus/common)** (v0.65.0) - Common libraries for Prometheus components
-- **[prometheus/procfs](https://github.com/prometheus/procfs)** (v0.16.1) - Process filesystem parsing for system metrics
-
-### Web Interface
-
-- **[UIKit 3](https://getuikit.com)** (v3.17.11) - Frontend framework for admin interface (MIT License)
-- **[Sortable.js](https://sortablejs.github.io/Sortable/)** (v1.15.0) - Drag-and-drop functionality for stream ordering
-
-All dependencies are vendored and their licenses are compatible with the MIT License used by KPTV Proxy.
-
 ## Quick Start
 
 **Prerequisites**: Docker or Podman installed
 
-1. **Create settings directory and get configuration:**
+1. **Create settings directory:**
 
 ```bash
 mkdir settings
-wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.example.yaml -O docker-compose.yaml
 ```
 
-1. **Create your configuration file** - Create `settings/config.json`:
+2. **Create your configuration file** at `settings/config.json`:
 
 ```json
 {
@@ -226,101 +216,137 @@ wget https://raw.githubusercontent.com/your-repo/kptv-proxy/main/docker-compose.
 }
 ```
 
-1. **Start the proxy:**
+3. **Start the proxy:**
 
 ```bash
 # Docker
 docker compose up -d
 
-# Or Podman  
+# Or Podman
 podman-compose up -d
 ```
 
-1. **Access your services:**
+4. **Access your services:**
 
 ```
-Unified Playlist: http://your-server-ip:9500/pl
+Unified Playlist:        http://your-server-ip:9500/pl
 Group Filtered Playlist: http://your-server-ip:9500/pl/{group}
-Admin Interface:  http://your-server-ip:9500/
-Stream Management: Use admin interface to activate/kill streams per channel
+Admin Interface:         http://your-server-ip:9500/
+XC API:                  http://your-server-ip:9500/player_api.php
 ```
 
-**That's it!** Your IPTV sources are now unified into a single playlist with automatic failover, per-source configuration, intelligent stream monitoring, FFmpeg integration, and a powerful web-based admin interface.
+## Docker Compose Examples
+
+### Standard Setup (default)
+
+```yaml
+services:
+  kptv-proxy:
+    image: ghcr.io/kpirnie/kptv-proxy:latest
+    container_name: kptv_proxy
+    restart: unless-stopped
+    ports:
+      - WHATEVER_PORT_YOU_WANT_TO_USE:8080
+    volumes:
+      - ./settings/:/settings/
+      # To utilize FFmpeg, install it on your host and mount the binaries:
+      #- /usr/local/bin/ffmpeg:/usr/local/bin/ffmpeg:ro
+      #- /usr/local/bin/ffprobe:/usr/local/bin/ffprobe:ro
+    healthcheck:
+      test: [ "CMD", "curl", "-v", "http://127.0.0.1:8080/api/stats" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+```
+
+### Hardware Accelerated FFmpeg Setup
+
+For hardware-accelerated transcoding, FFmpeg reads and decodes using your GPU via VAAPI. This requires:
+
+- FFmpeg and FFprobe installed on the **host machine**
+- The host's DRI render node passed through to the container (`/dev/dri`)
+- The host's VA-API driver libraries mounted into the container
+- The container user added to the `video` and `render` groups
+
+```yaml
+services:
+  kptv-proxy:
+    image: ghcr.io/kpirnie/kptv-proxy:latest
+    container_name: kptv_proxy
+    restart: unless-stopped
+    ports:
+      - WHATEVER_PORT_YOU_WANT_TO_USE:8080
+    volumes:
+      - ./settings/:/settings/
+      # FFmpeg and FFprobe binaries from host
+      - /usr/local/bin/ffmpeg:/usr/local/bin/ffmpeg:ro
+      - /usr/local/bin/ffprobe:/usr/local/bin/ffprobe:ro
+      # VA-API driver libraries from host
+      # Debian/Ubuntu: /usr/lib/x86_64-linux-gnu/dri
+      # RHEL/Fedora:   /usr/lib64/dri
+      - /usr/lib/x86_64-linux-gnu/dri:/usr/lib/x86_64-linux-gnu/dri:ro
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    healthcheck:
+      test: [ "CMD", "curl", "-v", "http://127.0.0.1:8080/api/stats" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+```
+
+> **Note**: The render node is typically `/dev/dri/renderD128`. If you have multiple GPUs it may be `renderD129` or higher. Verify with `ls /dev/dri/` on the host.
+
+The corresponding `config.json` FFmpeg section for hardware acceleration:
+
+```json
+{
+  "ffmpegMode": true,
+  "ffmpegPreInput": [
+    "-hide_banner",
+    "-loglevel", "panic",
+    "-hwaccel", "vaapi",
+    "-hwaccel_output_format", "vaapi",
+    "-hwaccel_device", "/dev/dri/renderD128",
+    "-fflags", "+genpts+discardcorrupt+igndts",
+    "-analyzeduration", "250000",
+    "-probesize", "4194304",
+    "-max_delay", "250000",
+    "-copytb", "1"
+  ],
+  "ffmpegPreOutput": [
+    "-f", "mpegts",
+    "-c", "copy",
+    "-copyts",
+    "-max_muxing_queue_size", "2048",
+    "-flush_packets", "0",
+    "-mpegts_flags", "initial_discontinuity",
+    "-mpegts_copyts", "1"
+  ]
+}
+```
 
 ## Web Admin Interface
 
-Access the admin interface at `http://your-server:port/` for comprehensive management:
+Access the admin interface at `http://your-server:port/` for comprehensive management.
 
 ### Custom Styling
 
-You can customize the admin interface appearance by creating a custom CSS file at `/settings/custom.css`. This file will be automatically loaded by the admin interface.
+Create `/settings/custom.css` to customize the admin interface appearance. This file is automatically loaded.
 
-**Base Framework**: The admin interface uses TailWindCSS. For comprehensive styling documentation, visit: <https://tailwindcss.com/docs/styling-with-utility-classes#overview>
-
-**Available Custom CSS Classes**:
-
-### Stat Cards
-
-- `.stat-card` - Primary blue gradient
-- `.stat-card-success` - Green gradient
-- `.stat-card-warning` - Orange gradient
-- `.stat-card-danger` - Red gradient
-- `.stat-card-yellow` - Yellow gradient
-
-### Status Indicators
-
-- `.status-indicator` - Base indicator dot
-- `.status-active` - Green with glow
-- `.status-warning` - Orange with glow
-- `.status-error` - Red with glow
-
-### Channel/Source Items
-
-- `.channel-item` - Channel list item with left border
-- `.channel-inactive` - Inactive channel styling
-- `.source-item` - Source configuration card
-
-### Stream Cards
-
-- `.stream-card` - Stream selector card
-- `.dead-stream` - Dead stream styling with diagonal overlay
-- `.stream-order-btn` - Stream reorder buttons
-
-### Log Entries
-
-- `.log-entry` - Base log entry
-- `.log-error` - Error level
-- `.log-warning` - Warning level
-- `.log-info` - Info level
-- `.log-debug` - Debug level
-
-### UI Components
-
-- `.stat-badge` - Stream statistics badge
-- `.metric-row` - Dashboard metric row
-- `.connection-dot` - Animated connection indicator
-- `.in-totop` - Scroll to top button
-
-### Modals & Tabs
-
-- `.modal` - Modal overlay (use `.active` to show)
-- `.modal-content` - Modal dialog content
-- `.tab-content > div` - Tab panel (use `.active` to show)
-- `.source-tab-content > div` - Source modal tab panel
-
-### Utilities
-
-- `.text-truncate` - Truncate text with ellipsis
-- `.spinner` - Loading spinner animation
-- `.notification` - Toast notification container
+**Base Framework**: TailWindCSS. See: <https://tailwindcss.com/docs/styling-with-utility-classes>
 
 ### Dashboard
 
 - **Real-Time Statistics**: Total channels, active streams, connected clients, memory usage
 - **System Status**: Server uptime, cache status, worker thread count, FFmpeg mode
 - **Traffic Metrics**: Connection counts, bytes transferred, stream errors
-- **Active Channels**: Live view of currently streaming channels with client counts
-- **Auto-Refresh**: Updates every 5 seconds for real-time monitoring
+- **Active Channels**: Live view of currently streaming channels with client counts, codec info, resolution, and bitrate badges
+- **Auto-Refresh**: Updates every 5 seconds
 
 ### Global Settings
 
@@ -328,15 +354,47 @@ You can customize the admin interface appearance by creating a custom CSS file a
 - FFmpeg mode toggle and argument configuration
 - Validation and error handling for all settings
 - Save changes and trigger graceful restart to apply new configuration
-- Support for duration formats (30m, 1h, etc.) and all data types
+
+### Xtream Codes Output Accounts
+
+Create XC-compatible output accounts to expose your aggregated streams to any Xtream Codes compatible player (Tivimate, IPTV Smarters, etc.).
+
+**Per-account configuration:**
+
+| Setting | Description |
+|---------|-------------|
+| Name | Friendly name for the account |
+| Username | XC login username |
+| Password | XC login password (auto-generate available) |
+| Max Connections | Maximum simultaneous streams for this account |
+| Enable Live | Include live TV streams |
+| Enable Series | Include series content |
+| Enable VOD | Include video on demand |
+
+**Quick copy buttons** on each account card allow you to instantly copy:
+- Base URL (for configuring players)
+- Username
+- Password
+
+**XC API Endpoints:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /player_api.php` | Main XC API endpoint |
+| `GET /get.php` | M3U playlist export |
+| `GET /xmltv.php` | EPG data |
+| `GET /live/{user}/{pass}/{id}` | Live stream |
+| `GET /movie/{user}/{pass}/{id}` | VOD stream |
+| `GET /series/{user}/{pass}/{id}` | Series stream |
 
 ### Source Management
 
 - **Add/Edit Sources**: Full configuration interface for IPTV sources
 - **Per-Source Settings**: Custom timeouts, retry logic, connection limits
 - **Custom Headers**: Configure User-Agent, Origin, Referrer per source
+- **Content Filtering**: Per-source regex filters for Live, VOD, and Series content
 - **Priority Management**: Reorder sources by priority for failover
-- **Real-Time Status**: Live indicators showing source health
+- **XC API Sources**: Set username and password for Xtream Codes API sources
 
 ### Channel Monitoring
 
@@ -345,7 +403,6 @@ You can customize the admin interface appearance by creating a custom CSS file a
 - **Dead Stream Management**: Mark streams as dead or revive them with visual indicators
 - **Real-Time Status**: Active/inactive indicators with client counts
 - **Search & Filter**: Find channels by name or group
-- **Group Organization**: Channels organized by group/category
 - **Auto-Refresh**: Live updates of channel status
 
 ### Live Logs
@@ -355,20 +412,9 @@ You can customize the admin interface appearance by creating a custom CSS file a
 - **Search Functionality**: Find specific log entries
 - **Clear Logs**: Remove old entries to maintain performance
 
-### Mobile-Friendly Design
-
-- **Responsive Layout**: Optimized for phones, tablets, and desktop
-- **Dark Theme**: Professional dark interface optimized for IPTV environments
-- **Touch Controls**: Finger-friendly buttons and controls
-- **Collapsible Navigation**: Adaptive interface for small screens
-
 ## FFmpeg Integration
 
-KPTV Proxy supports two streaming modes:
-
-In order to utilize FFmpeg, you must have it installed on your host machine, and pass the binaries in to your container.  Please see the docker-compose example.
-
-The hardware acceleration still exists.
+KPTV Proxy supports two streaming modes. In order to utilize FFmpeg, you must have it installed on your host machine and mount the binaries into the container.
 
 ### Go Restreaming Mode (Default)
 
@@ -379,90 +425,76 @@ The hardware acceleration still exists.
 
 ### FFmpeg Mode
 
-- Hardware acceleration support
+- Hardware acceleration support via host GPU passthrough
 - Advanced codec handling
-- GPU utilization for encoding/decoding
+- Handles MPEG-TS discontinuities (ad breaks, stream transitions)
 - Comprehensive format support
 
-**Configuration:**
+**Simple copy mode (no GPU):**
 
 ```json
 {
   "ffmpegMode": true,
-  "ffmpegPreInput": ["-re", "-rtsp_transport", "tcp"],
+  "ffmpegPreInput": [],
   "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"]
 }
 ```
 
 **Common FFmpeg Arguments:**
 
-*Pre-Input Arguments*:
+*Pre-Input:*
 
 - `"-re"` - Read input at native frame rate
 - `"-rtsp_transport", "tcp"` - Use TCP for RTSP
 - `"-fflags", "nobuffer"` - Disable input buffering
-- `"-thread_queue_size", "1024"` - Set thread queue size
+- `"-hwaccel", "vaapi"` - Enable VAAPI hardware acceleration
+- `"-hwaccel_device", "/dev/dri/renderD128"` - Specify render device
 
-*Pre-Output Arguments*:
+*Pre-Output:*
 
 - `"-c", "copy"` - Copy streams without re-encoding
-- `"-c:v", "libx264"` - H.264 video encoding
+- `"-c:v", "h264_vaapi"` - H.264 encoding via VAAPI
 - `"-c:a", "aac"` - AAC audio encoding
 - `"-f", "mpegts"` - MPEG-TS output format
-- `"-movflags", "frag_keyframe+empty_moov"` - Fragmented MP4
+- `"-mpegts_flags", "initial_discontinuity"` - Handle ad-break discontinuities
 
 ## Dead Stream Management
 
-The KPTV Proxy includes a sophisticated dead stream management system that allows you to mark problematic streams as "dead" and manage them through the web interface.
-
 ### Features
 
-- **Manual Stream Control**: Use the admin interface to activate specific streams or mark them as dead
-- **Persistent Storage**: Dead stream information is stored in `/settings/dead-streams.json`
-- **Automatic Skipping**: The proxy automatically skips dead streams during failover
-- **Stream Revival**: Dead streams can be restored when they become functional again
+- **Manual Stream Control**: Mark streams as dead or revive them from the admin interface
+- **Automatic Blocking**: Streams exceeding failure thresholds are auto-blocked
+- **Persistent Storage**: Dead stream data stored in `/settings/dead-streams.json`
+- **Automatic Skipping**: Proxy skips dead streams during failover
+- **Stream Revival**: Dead streams can be restored when functional again
 
 ### How It Works
 
-1. **Marking Streams as Dead**: In the admin interface, navigate to any channel and click the stream selection button. Each stream shows:
-   - **Activate Button** (▶️): Switch to this specific stream
-   - **Kill Button** (🚫): Mark this stream as dead
-
-2. **Dead Stream Storage**: When a stream is marked as dead, its information is stored in `/settings/dead-streams.json`
-
-3. **Automatic Stream Selection**: During playback, the proxy will:
-   - Skip dead streams during automatic failover
-   - Try the next available live stream
-   - Continue to show dead streams in the admin interface for potential revival
-
-4. **Stream Revival**: Dead streams can be restored by:
-   - Navigating to the channel in the admin interface
-   - Clicking the **Live Button** (🔄) next to the dead stream
-   - The stream is removed from the dead streams list and becomes available again
+1. In the admin interface, navigate to any channel and click **Streams**
+2. Each stream shows:
+   - **▶️ Activate**: Switch to this specific stream
+   - **🚫 Kill**: Mark this stream as dead
+   - **🔄 Revive**: Restore a dead stream
+3. Dead streams are persisted to `/settings/dead-streams.json`
+4. During automatic failover, dead streams are skipped
 
 ## Stream Watcher - Automatic Monitoring
 
-The KPTV Proxy includes an intelligent stream monitoring system that automatically detects playback issues and switches to backup streams without interrupting client connections.
-
-### How It Works
-
-The Stream Watcher runs as a background service that monitors active streams every 15 seconds (debug mode) or 30 seconds (normal mode) without making additional network requests.
+The Stream Watcher runs as a background service monitoring active streams every 30 seconds (15 seconds in debug mode).
 
 **Monitored Conditions:**
 
-- **Buffer Health**: Detects destroyed or stale buffers
-- **Stream Activity**: Monitors data flow and timestamps  
-- **Context Status**: Detects cancelled or problematic connections
-- **Client Connections**: Tracks active client count
-- **FFprobe Analysis**: Deep content validation (when enabled)
+- **Buffer Throughput**: Detects streams delivering less than 200KB per check interval
+- **Stream Activity**: Monitors data flow timestamps (120 second inactivity threshold)
+- **Context Status**: Detects stuck or cancelled stream contexts
+- **FFprobe Stats**: Monitors stream stats staleness (10 minute threshold)
 
 **Automatic Actions:**
 
-- **Health Assessment**: Evaluates stream conditions using existing state
-- **Consecutive Failure Tracking**: Requires 5 consecutive failures before switching
+- **Consecutive Failure Tracking**: Requires 3 total failures before switching
 - **Intelligent Failover**: Automatically switches to next available healthy stream
 - **Seamless Transition**: Maintains client connections during stream changes
-- **Resource Respect**: Uses existing connection limits and stream management
+- **Self-Recovery**: Clears failure counters when stream recovers without intervention
 
 ## APP Endpoints
 
@@ -498,19 +530,17 @@ The Stream Watcher runs as a background service that monitors active streams eve
 
 ### Global Settings
 
-All configuration is done via a JSON file mounted at `/settings/config.json` or through the web admin interface.
-
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `baseURL` | `"http://localhost:8080"` | Base URL for generated stream links |
 | `bufferSizePerStream` | `16` | Per-stream buffer size in MB |
 | `cacheEnabled` | `true` | Enable playlist caching |
-| `cacheDuration` | `"30m"` | Cache lifetime (e.g., "30m", "1h") |
+| `cacheDuration` | `"30m"` | Cache lifetime |
 | `importRefreshInterval` | `"12h"` | How often to refresh source playlists |
 | `workerThreads` | `4` | Parallel workers for import processing |
 | `debug` | `false` | Enable verbose logging |
-| `obfuscateUrls` | `true` | Hide source URLs in logs for privacy |
-| `sortField` | `"tvg-name"` | Sort streams by: `tvg-name`, `tvg-id`, `group-title`, etc. |
+| `obfuscateUrls` | `true` | Hide source URLs in logs |
+| `sortField` | `"tvg-name"` | Sort streams by attribute |
 | `sortDirection` | `"asc"` | Sort direction: `asc` or `desc` |
 | `streamTimeout` | `"10s"` | Global timeout for stream validation |
 | `maxConnectionsToApp` | `100` | Maximum total connections to the application |
@@ -518,145 +548,60 @@ All configuration is done via a JSON file mounted at `/settings/config.json` or 
 | `ffmpegMode` | `false` | Use FFmpeg instead of Go streaming |
 | `ffmpegPreInput` | `[]` | FFmpeg arguments before `-i` |
 | `ffmpegPreOutput` | `[]` | FFmpeg arguments before output |
-| `responseHeaderTimeout` | `10s` | Timeout for waiting for response headers from source |
+| `responseHeaderTimeout` | `"10s"` | Timeout for response headers from source |
 
 ### Per-Source Settings
 
-Each source in the `sources` array supports these individual settings:
-
 | Setting | Required | Description | Example |
 |---------|----------|-------------|---------|
-| `name` | Yes | Friendly name for the source | `"Primary IPTV"` |
-| `url` | Yes | M3U8 playlist URL | `"http://provider.com/list.m3u8"` |
-| `order` | No | Priority order (lower = higher priority) | `1` |
-| `maxConnections` | No | Max concurrent connections to this source | `5` |
-| `maxStreamTimeout` | No | Timeout for streams from this source | `"30s"` |
-| `retryDelay` | No | Delay between retry attempts | `"5s"` |
-| `maxRetries` | No | Retry attempts per stream failure | `3` |
-| `maxFailuresBeforeBlock` | No | Failures before blocking a stream | `5` |
-| `minDataSize` | No | Minimum data size in KB to consider success | `2` |
-| `userAgent` | No | Custom User-Agent header | `"VLC/3.0.18 LibVLC/3.0.18"` |
-| `reqOrigin` | No | Custom Origin header | `"https://provider.com"` |
-| `reqReferrer` | No | Custom Referrer header | `"https://provider.com/player"` |
+| `name` | Yes | Friendly name | `"Primary IPTV"` |
+| `url` | Yes | M3U8 playlist URL or XC base URL | `"http://provider.com/list.m3u8"` |
 | `username` | No | XC API username | `"user123"` |
 | `password` | No | XC API password | `"pass456"` |
+| `order` | No | Priority order (lower = higher priority) | `1` |
+| `maxConnections` | No | Max concurrent connections | `5` |
+| `maxStreamTimeout` | No | Timeout for streams | `"30s"` |
+| `retryDelay` | No | Delay between retries | `"5s"` |
+| `maxRetries` | No | Retry attempts per failure | `3` |
+| `maxFailuresBeforeBlock` | No | Failures before blocking | `5` |
+| `minDataSize` | No | Minimum data size in KB | `2` |
+| `userAgent` | No | Custom User-Agent header | `"VLC/3.0.18"` |
+| `reqOrigin` | No | Custom Origin header | `"https://provider.com"` |
+| `reqReferrer` | No | Custom Referrer header | `"https://provider.com/player"` |
+| `liveIncludeRegex` | No | Only include live streams matching pattern | `".*USA.*"` |
+| `liveExcludeRegex` | No | Exclude live streams matching pattern | `".*adult.*"` |
+| `seriesIncludeRegex` | No | Only include series matching pattern | `""` |
+| `seriesExcludeRegex` | No | Exclude series matching pattern | `""` |
+| `vodIncludeRegex` | No | Only include VOD matching pattern | `""` |
+| `vodExcludeRegex` | No | Exclude VOD matching pattern | `""` |
 
-### Example Docker Compose
+### XC Output Account Settings
 
-```yaml
-services:
-  kptv-proxy:
-    image: ghcr.io/kpirnie/kptv-proxy:latest
-    container_name: kptv_proxy
-    restart: unless-stopped
-    ports:
-      - 9500:8080
-    volumes:
-      - ./settings:/settings  # Mount configuration directory
-      # to utilize ffmpeg, you must have it installed on your machine and add these 2 volumes
-      #- /usr/local/bin/ffmpeg:/usr/local/bin/ffmpeg:ro
-      #- /usr/local/bin/ffprobe:/usr/local/bin/ffprobe:ro
-    # if utilizing hardware accelleration for ffmpeg
-    #devices:
-      #- /dev/dri:/dev/dri
-    
-    # Health check
-    healthcheck:
-      test: [ "CMD", "curl", "-v", "http://127.0.0.1:8080/api/stats" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-```
+| Setting | Required | Description |
+|---------|----------|-------------|
+| `name` | Yes | Friendly account name |
+| `username` | Yes | XC login username |
+| `password` | Yes | XC login password |
+| `maxConnections` | No | Max simultaneous streams (default: 10) |
+| `enableLive` | No | Include live streams (default: true) |
+| `enableSeries` | No | Include series (default: false) |
+| `enableVOD` | No | Include VOD (default: false) |
 
-## Advanced Configuration Examples
-
-### FFmpeg Hardware Acceleration
+Example `xcOutputAccounts` config:
 
 ```json
 {
-  "ffmpegMode": true,
-  "ffmpegPreInput": [
-    "-hwaccel", "vaapi",
-    "-hwaccel_device", "/dev/dri/renderD128",
-    "-re"
-  ],
-  "ffmpegPreOutput": [
-    "-c:v", "h264_vaapi",
-    "-c:a", "aac",
-    "-f", "mpegts"
-  ]
-}
-```
-
-### High-Performance Multi-Provider Setup
-
-```json
-{
-  "baseURL": "http://your-server:9500",
-  "bufferSizePerStream": 32,
-  "workerThreads": 20,
-  "maxConnectionsToApp": 500,
-  "ffmpegMode": true,
-  "ffmpegPreOutput": ["-c", "copy", "-f", "mpegts"],
-  "sources": [
+  "xcOutputAccounts": [
     {
-      "name": "Premium Provider",
-      "url": "http://premium.iptv.com/playlist.m3u8",
-      "order": 1,
-      "maxConnections": 3,
-      "maxStreamTimeout": "20s",
-      "retryDelay": "3s",
-      "maxRetries": 2,
-      "maxFailuresBeforeBlock": 3,
-      "minDataSize": 5,
-      "userAgent": "PREMIUM_CLIENT/1.0"
+      "name": "My Tivimate Account",
+      "username": "myuser",
+      "password": "mypassword",
+      "maxConnections": 4,
+      "enableLive": true,
+      "enableSeries": false,
+      "enableVOD": false
     }
   ]
-}
-```
-
-### Xtreme Codes API Configuration
-
-```json
-{
-  "sources": [
-    {
-      "name": "XC Provider",
-      "url": "http://panel.provider.com",
-      "username": "your_username",
-      "password": "your_password",
-      "order": 1,
-      "maxConnections": 5
-    }
-  ]
-}
-```
-
-### Custom CSS Example
-
-Create `/settings/custom.css`:
-
-```css
-/* Custom dark purple theme */
-.stat-card {
-    background: linear-gradient(135deg, #6a1b9a, #4a148c) !important;
-}
-
-.channel-item {
-    border-left-color: #9c27b0 !important;
-    background: #1a1a2e !important;
-}
-
-.status-active {
-    background: #00e676 !important;
-    box-shadow: 0 0 10px rgba(0, 230, 118, 0.6) !important;
-}
-
-/* Custom brand colors */
-:root {
-    --uk-primary: #9c27b0 !important;
-    --uk-success: #00e676 !important;
 }
 ```
 
@@ -668,7 +613,7 @@ Create `/settings/custom.css`:
 # Check container health
 docker-compose ps
 
-# View real-time logs  
+# View real-time logs
 docker-compose logs -f kptv-proxy
 
 # Check FFmpeg mode status
@@ -697,13 +642,21 @@ docker-compose logs kptv-proxy | grep WATCHER
 
 **Problem**: FFmpeg not working
 
-- ✅ Verify FFmpeg is installed on your host machine: `$(which ffmpeg) -version`
-- ✅ Verify you have added both the ffmpeg and ffprobe binaries as bind mounts to your container
+- ✅ Verify FFmpeg is installed on your host: `$(which ffmpeg) -version`
+- ✅ Verify both `ffmpeg` and `ffprobe` binaries are mounted into the container
 - ✅ Check FFmpeg arguments in debug logs
 - ✅ Test with simple arguments first: `["-c", "copy"]`
-- ✅ Verify hardware acceleration support if using GPU
+- ✅ For hardware acceleration, verify `/dev/dri` device passthrough and driver library mount
 
-**Problem**: Streams failing to play  
+**Problem**: Hardware acceleration not working
+
+- ✅ Verify render node exists: `ls /dev/dri/` on host
+- ✅ Confirm correct render node in config (usually `renderD128`)
+- ✅ Verify VA-API driver library path for your distro is correctly mounted
+- ✅ Confirm `group_add: [video, render]` is set in compose file
+- ✅ Test with `vainfo` on the host to confirm VAAPI is functional
+
+**Problem**: Streams failing to play
 
 - ✅ Monitor channel status in admin interface
 - ✅ Toggle between Go and FFmpeg modes in global settings
@@ -716,6 +669,12 @@ docker-compose logs kptv-proxy | grep WATCHER
 - ✅ Use `-c copy` instead of transcoding in FFmpeg arguments
 - ✅ Reduce `maxConnections` per source in admin interface
 - ✅ Monitor active connections in dashboard
+
+**Problem**: Ad-break freezes on channels like Pluto TV
+
+- ✅ Enable FFmpeg mode with `-mpegts_flags initial_discontinuity` in pre-output args
+- ✅ Add `-fflags +genpts+discardcorrupt+igndts` to pre-input args
+- ✅ The stream watcher will detect and recover from prolonged stalls automatically
 
 ## Client Configuration Examples
 
@@ -730,6 +689,14 @@ Network → Open Network Stream → http://your-server:9500/pl
 ```
 Add-ons → PVR IPTV Simple Client
 M3U Play List URL: http://your-server:9500/pl
+```
+
+### Tivimate / IPTV Smarters (Xtream Codes)
+
+```
+Server URL:  http://your-server:9500
+Username:    your-xc-account-username
+Password:    your-xc-account-password
 ```
 
 ### Android/iOS IPTV Apps
@@ -748,6 +715,7 @@ Format: M3U8/HLS
 - **Container Security**: Runs as non-root user (UID 1000)
 - **Custom CSS**: Validate custom CSS to prevent XSS attacks
 - **File Permissions**: Protect configuration files with appropriate permissions
+- **XC Passwords**: Use the built-in password generator for strong account credentials
 
 ## Performance Optimization
 
@@ -775,9 +743,9 @@ Format: M3U8/HLS
 
 ## Supporting KPTV Proxy
 
-KPTV Proxy will always remain free and open-source for everyone to use and modify. However, if this project has enhanced your IPTV experience or saved you time, consider supporting its continued development.
+KPTV Proxy will always remain free and open-source. If this project has enhanced your IPTV experience, consider supporting its continued development:
 
-Donations help fund server costs, testing equipment, and most importantly, the time needed to add new features, maintain compatibility, and provide community support: <https://www.paypal.com/paypalme/kevinpirnie>
+<https://www.paypal.com/paypalme/kevinpirnie>
 
 ## Contributing
 
@@ -793,9 +761,9 @@ Donations help fund server costs, testing equipment, and most importantly, the t
 
 **FFmpeg License Information:**
 
-- KPTV Proxy uses FFmpeg and FFprobe for stream processing and validation, however the are not included in the end container of this product
-- FFmpeg is used as an external binary and for stream proxying
-- FFmpeg source code can be downloaded from: [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
+- KPTV Proxy uses FFmpeg and FFprobe for stream processing and validation; they are not included in the container image
+- FFmpeg is used as an external binary mounted from the host
+- FFmpeg source code: [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
 - FFmpeg is licensed under LGPL v2.1 or later
 
 **Patent Considerations:**
@@ -807,13 +775,11 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ### Third-Party Licenses
 
-This project incorporates or uses the following third-party software:
-
 - **FFmpeg/FFprobe**: Licensed under LGPL v2.1 or later - [https://ffmpeg.org/legal.html](https://ffmpeg.org/legal.html)
 - **TailwindCSS**: MIT License - [https://tailwindcss.com/](https://tailwindcss.com/)
 
 ---
 
-**Need Help?** Use the web admin interface at `http://your-server:port/` for easy configuration management, customize the appearance with `/settings/custom.css`, or enable debug mode and check the logs for detailed information about stream processing, connection attempts, and error details. The automatic Stream Watcher will help maintain stream reliability in the background, and FFmpeg integration provides advanced streaming capabilities for complex media formats.
+**Need Help?** Use the web admin interface at `http://your-server:port/` for easy configuration management, customize the appearance with `/settings/custom.css`, or enable debug mode and check the logs for detailed information. The automatic Stream Watcher will help maintain stream reliability in the background, and FFmpeg integration provides advanced streaming capabilities for complex media formats.
 
 **Still Need Help?** Hit me up on Discord: [https://discord.gg/bd4Qan3PaN](https://discord.gg/bd4Qan3PaN)
