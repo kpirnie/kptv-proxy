@@ -9,6 +9,7 @@ import (
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/types"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -57,7 +58,7 @@ type xcStream struct {
 	TVArchive          int    `json:"tv_archive"`
 	DirectSource       string `json:"direct_source"`
 	TVArchiveDuration  int    `json:"tv_archive_duration"`
-	ContainerExtension string `json:"container_extension,omitempty"` // VOD/series only
+	ContainerExtension string `json:"container_extension,omitempty"`
 }
 
 // xcCategory represents a category in XC API output.
@@ -67,12 +68,33 @@ type xcCategory struct {
 	ParentID     int    `json:"parent_id"`
 }
 
+// xcChannelBatch is a lightweight name+channel pair for sorted iteration.
+type xcChannelBatch struct {
+	name    string
+	channel *types.Channel
+}
+
+// getSortedChannels snapshots the channel map and returns it sorted alphabetically
+// by channel name. All XC output functions must use this instead of ranging the
+// map directly to guarantee consistent ordering across every response.
+func getSortedChannels(sp *proxy.StreamProxy) []xcChannelBatch {
+	batch := make([]xcChannelBatch, 0, 1000)
+	sp.Channels.Range(func(name string, ch *types.Channel) bool {
+		batch = append(batch, xcChannelBatch{name, ch})
+		return true
+	})
+	sort.Slice(batch, func(i, j int) bool {
+		return strings.ToLower(batch[i].name) < strings.ToLower(batch[j].name)
+	})
+	return batch
+}
+
 // streamIDFromName generates a stable positive integer stream ID from a channel name
 // using FNV32a hashing to produce consistent IDs across restarts.
 func streamIDFromName(name string) int {
 	h := fnv.New32a()
 	h.Write([]byte(name))
-	id := int(h.Sum32() & 0x7FFFFFFF) // ensure positive
+	id := int(h.Sum32() & 0x7FFFFFFF)
 	if id == 0 {
 		id = 1
 	}
@@ -102,7 +124,6 @@ func findXCAccount(cfg *config.Config, username, password string) *config.XCOutp
 }
 
 // findChannelByStreamID locates a channel name by its hashed stream ID.
-// Returns empty string if no matching channel is found.
 func findChannelByStreamID(sp *proxy.StreamProxy, id int) string {
 	var found string
 	sp.Channels.Range(func(name string, _ *types.Channel) bool {
@@ -115,8 +136,8 @@ func findChannelByStreamID(sp *proxy.StreamProxy, id int) string {
 	return found
 }
 
-// getChannelContentType returns the content type ("live", "vod", or "series")
-// for a channel based on its group-title attribute. The caller must hold the channel read lock.
+// getChannelContentType returns the content type for a channel.
+// Caller must hold the channel read lock.
 func getChannelContentType(ch *types.Channel) string {
 	if len(ch.Streams) == 0 {
 		return "live"
@@ -145,7 +166,6 @@ func buildXCServerInfo(baseURL string) xcServerInfo {
 		host = strings.TrimPrefix(host, "http://")
 	}
 
-	// Split host:port if port is included in the base URL
 	if idx := strings.LastIndex(host, ":"); idx != -1 {
 		port = host[idx+1:]
 		host = host[:idx]
@@ -180,34 +200,34 @@ func buildXCUserInfo(account *config.XCOutputAccount) xcUserInfo {
 	}
 }
 
-// buildStreamList iterates channels and builds the XC stream list for a given content type.
+// buildStreamList iterates sorted channels and builds the XC stream list for a
+// given content type. Channels are always ordered alphabetically by name.
 func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, password string) []xcStream {
 	var streams []xcStream
 	num := 1
 
-	sp.Channels.Range(func(name string, ch *types.Channel) bool {
-		ch.Mu.RLock()
+	for _, item := range getSortedChannels(sp) {
+		item.channel.Mu.RLock()
 
-		if len(ch.Streams) == 0 {
-			ch.Mu.RUnlock()
-			return true
+		if len(item.channel.Streams) == 0 {
+			item.channel.Mu.RUnlock()
+			continue
 		}
 
-		chType := getChannelContentType(ch)
+		chType := getChannelContentType(item.channel)
 		if chType != contentType {
-			ch.Mu.RUnlock()
-			return true
+			item.channel.Mu.RUnlock()
+			continue
 		}
 
-		attrs := ch.Streams[0].Attributes
-		ch.Mu.RUnlock()
+		attrs := item.channel.Streams[0].Attributes
+		item.channel.Mu.RUnlock()
 
-		streamID := streamIDFromName(name)
+		streamID := streamIDFromName(item.name)
 		group := attrs["group-title"]
 		logo := attrs["tvg-logo"]
 		tvgID := attrs["tvg-id"]
 
-		// Construct direct stream URL pointing back to our XC stream endpoint
 		var directURL string
 		switch contentType {
 		case "vod":
@@ -220,7 +240,7 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 
 		s := xcStream{
 			Num:               num,
-			Name:              name,
+			Name:              item.name,
 			StreamType:        contentType,
 			StreamID:          streamID,
 			StreamIcon:        logo,
@@ -238,31 +258,31 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 
 		streams = append(streams, s)
 		num++
-		return true
-	})
+	}
 
 	return streams
 }
 
-// buildCategoryList iterates channels and returns unique categories for a given content type.
+// buildCategoryList iterates sorted channels and returns unique categories for a
+// given content type. Category order follows first-seen in alphabetical channel order.
 func buildCategoryList(sp *proxy.StreamProxy, contentType string) []xcCategory {
 	seen := make(map[string]bool)
 	var categories []xcCategory
 
-	sp.Channels.Range(func(name string, ch *types.Channel) bool {
-		ch.Mu.RLock()
+	for _, item := range getSortedChannels(sp) {
+		item.channel.Mu.RLock()
 
-		if len(ch.Streams) == 0 {
-			ch.Mu.RUnlock()
-			return true
+		if len(item.channel.Streams) == 0 {
+			item.channel.Mu.RUnlock()
+			continue
 		}
 
-		chType := getChannelContentType(ch)
-		group := ch.Streams[0].Attributes["group-title"]
-		ch.Mu.RUnlock()
+		chType := getChannelContentType(item.channel)
+		group := item.channel.Streams[0].Attributes["group-title"]
+		item.channel.Mu.RUnlock()
 
 		if chType != contentType || group == "" || seen[group] {
-			return true
+			continue
 		}
 
 		seen[group] = true
@@ -271,8 +291,7 @@ func buildCategoryList(sp *proxy.StreamProxy, contentType string) []xcCategory {
 			CategoryName: group,
 			ParentID:     0,
 		})
-		return true
-	})
+	}
 
 	return categories
 }
@@ -296,7 +315,6 @@ func HandleXCPlayerAPI(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		// Enforce connection limit for data-fetching actions
 		if action != "" {
 			if account.ActiveConns.Load() >= int32(account.MaxConnections) {
 				logger.Warn("{handlers/xcoutput - HandleXCPlayerAPI} Account %s at connection limit (%d)", account.Name, account.MaxConnections)
@@ -354,7 +372,6 @@ func HandleXCPlayerAPI(sp *proxy.StreamProxy) http.HandlerFunc {
 			json.NewEncoder(w).Encode(buildStreamList(sp, "series", sp.Config.BaseURL, username, password))
 
 		default:
-			// Default covers user_info action and bare auth check (no action param)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"user_info":   userInfo,
 				"server_info": serverInfo,
@@ -365,8 +382,7 @@ func HandleXCPlayerAPI(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
-// HandleXCGetPHP handles /get.php requests from Xtream Codes compatible clients,
-// returning a filtered M3U playlist based on account content type settings.
+// HandleXCGetPHP handles /get.php requests, returning a sorted M3U playlist.
 func HandleXCGetPHP(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		username := r.URL.Query().Get("username")
@@ -390,14 +406,7 @@ func HandleXCGetPHP(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
-// HandleXCStream handles direct stream requests from XC clients via the routes:
-//
-//	/live/{username}/{password}/{id}
-//	/movie/{username}/{password}/{id}
-//	/series/{username}/{password}/{id}
-//
-// The {id} path variable may include a file extension (e.g. 12345.ts) which is stripped
-// before looking up the channel by its hashed stream ID.
+// HandleXCStream handles direct stream requests from XC clients.
 func HandleXCStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -411,7 +420,6 @@ func HandleXCStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		// Strip file extension (.ts, .m3u8, .mp4, etc.)
 		id := rawID
 		if dotIdx := strings.LastIndex(rawID, "."); dotIdx != -1 {
 			id = rawID[:dotIdx]
@@ -442,49 +450,45 @@ func HandleXCStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
-// writeXCM3UPlaylist writes an M3U playlist to w, filtered by the account's content settings.
+// writeXCM3UPlaylist writes a sorted M3U playlist filtered by account content settings.
 func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *config.XCOutputAccount) {
 	fmt.Fprintf(w, "#EXTM3U\n")
 
-	sp.Channels.Range(func(name string, ch *types.Channel) bool {
-		ch.Mu.RLock()
+	for _, item := range getSortedChannels(sp) {
+		item.channel.Mu.RLock()
 
-		if len(ch.Streams) == 0 {
-			ch.Mu.RUnlock()
-			return true
+		if len(item.channel.Streams) == 0 {
+			item.channel.Mu.RUnlock()
+			continue
 		}
 
-		contentType := getChannelContentType(ch)
-		attrs := ch.Streams[0].Attributes
-		ch.Mu.RUnlock()
+		contentType := getChannelContentType(item.channel)
+		attrs := item.channel.Streams[0].Attributes
+		item.channel.Mu.RUnlock()
 
-		// Apply per-account content type filters
 		if contentType == "live" && !account.EnableLive {
-			return true
+			continue
 		}
 		if contentType == "vod" && !account.EnableVOD {
-			return true
+			continue
 		}
 		if contentType == "series" && !account.EnableSeries {
-			return true
+			continue
 		}
 
-		streamID := streamIDFromName(name)
+		streamID := streamIDFromName(item.name)
 		logo := attrs["tvg-logo"]
 		group := attrs["group-title"]
 		tvgID := attrs["tvg-id"]
 
 		fmt.Fprintf(w, "#EXTINF:-1 tvg-id=\"%s\" tvg-name=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n",
-			tvgID, name, logo, group, name)
+			tvgID, item.name, logo, group, item.name)
 		fmt.Fprintf(w, "%s/live/%s/%s/%d.ts\n",
 			sp.Config.BaseURL, account.Username, account.Password, streamID)
-
-		return true
-	})
+	}
 }
 
-// HandleXCXMLTV handles /xmltv.php requests from XC clients, delegating to the
-// existing EPG handler after validating XC account credentials.
+// HandleXCXMLTV handles /xmltv.php requests, delegating to the EPG handler.
 func HandleXCXMLTV(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		username := r.URL.Query().Get("username")
