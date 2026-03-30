@@ -122,6 +122,9 @@ func main() {
 	// add the admin routes
 	setupAdminRoutes(router, proxyInstance)
 
+	// add the HDHomeRun emulation routes
+	handlers.SetupHDHRRoutes(router, proxyInstance)
+
 	addr := fmt.Sprintf(":%d", 8080)
 
 	// show info
