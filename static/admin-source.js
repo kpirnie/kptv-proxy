@@ -20,6 +20,7 @@ class KPTVAdmin {
         this.loadAllChannels();
         this.loadLogs();
         this.loadXCAccounts();
+        this.loadSDAccounts();
         this.initScrollToTop();
         this.initTabs();
         this.initModals();
@@ -91,7 +92,8 @@ class KPTVAdmin {
             { id: 'source-modal', closeId: 'close-source-modal', cancelId: 'cancel-source-btn' },
             { id: 'epg-modal', closeId: 'close-epg-modal', cancelId: 'cancel-epg-btn' },
             { id: 'stream-selector-modal', closeId: 'close-stream-selector-modal', cancelId: 'cancel-stream-selector-btn' },
-            { id: 'xc-account-modal', closeId: 'close-xc-account-modal', cancelId: 'cancel-xc-account-btn' }
+            { id: 'xc-account-modal', closeId: 'close-xc-account-modal', cancelId: 'cancel-xc-account-btn' },
+            { id: 'sd-account-modal', closeId: 'close-sd-account-modal', cancelId: 'cancel-sd-account-btn' }
         ];
 
         modals.forEach(({ id, closeId, cancelId }) => {
@@ -219,6 +221,25 @@ class KPTVAdmin {
         });
         document.getElementById('save-xc-account-btn').addEventListener('click', () => {
             this.saveXCAccount();
+        });
+
+        document.getElementById('add-sd-account-btn').addEventListener('click', () => {
+            this.showSDAccountModal();
+        });
+        document.getElementById('sd-discover-btn').addEventListener('click', () => {
+            this.discoverSDLineups();
+        });
+        document.getElementById('save-sd-account-btn').addEventListener('click', () => {
+            this.saveSDAccount();
+        });
+        document.getElementById('sd-back-btn').addEventListener('click', () => {
+            this.sdShowStep(1);
+        });
+        document.getElementById('sd-select-all').addEventListener('click', () => {
+            document.querySelectorAll('#sd-lineups-list input[type="checkbox"]').forEach(cb => cb.checked = true);
+        });
+        document.getElementById('sd-select-none').addEventListener('click', () => {
+            document.querySelectorAll('#sd-lineups-list input[type="checkbox"]').forEach(cb => cb.checked = false);
         });
     }
 
@@ -885,6 +906,252 @@ class KPTVAdmin {
             }, 500);
         } catch (error) {
             this.showNotification('Failed to delete XC account', 'danger');
+        }
+    }
+
+    async loadSDAccounts() {
+        try {
+            const config = await this.apiCall('/api/config');
+            this.config = config;
+            this.renderSDAccounts(config.sdAccounts || []);
+        } catch (error) {
+            document.getElementById('sd-accounts-container').innerHTML =
+                '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">Failed to load SD accounts</div>';
+        }
+    }
+
+    renderSDAccounts(accounts) {
+        const container = document.getElementById('sd-accounts-container');
+        if (!accounts || accounts.length === 0) {
+            container.innerHTML = '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">No Schedules Direct accounts configured</div>';
+            return;
+        }
+        container.innerHTML = accounts.map((account, index) => `
+            <div class="source-item bg-gradient-to-br from-green-900/30 to-kptv-gray border-green-800">
+                <div class="flex justify-between items-center mb-2">
+                    <div class="flex-1">
+                        <h4 class="text-lg font-semibold mb-1">${this.escapeHtml(account.name)}</h4>
+                        <div class="text-gray-400 text-sm">Username: ${this.escapeHtml(account.username)}</div>
+                        <div class="text-gray-400 text-sm">
+                            Lineups: ${account.selectedLineups && account.selectedLineups.length > 0
+                                ? account.selectedLineups.length + ' selected'
+                                : 'All'}
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 ml-4">
+                        <span class="px-2 py-0.5 ${account.enabled ? 'bg-green-700' : 'bg-gray-600'} text-white text-xs rounded">
+                            ${account.enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-kptv-border flex gap-2">
+                    <button class="px-3 py-1 bg-kptv-blue hover:bg-kptv-blue-light rounded text-sm transition-colors flex items-center space-x-1"
+                        onclick="kptvAdmin.editSDAccount(${index})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                        <span>Edit</span>
+                    </button>
+                    <button class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm transition-colors flex items-center space-x-1"
+                        onclick="kptvAdmin.deleteSDAccount(${index})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                        <span>Delete</span>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    clearSDForm() {
+        document.getElementById('sd-account-index').value = '';
+        document.getElementById('sd-account-name').value = '';
+        document.getElementById('sd-account-username').value = '';
+        document.getElementById('sd-account-password').value = '';
+        document.getElementById('sd-account-enabled').checked = true;
+        document.getElementById('sd-discover-error').classList.add('hidden');
+        document.getElementById('sd-discover-error').textContent = '';
+        document.getElementById('sd-lineups-list').innerHTML = '';
+        document.getElementById('sd-days-to-fetch').value = 7;
+        this.sdShowStep(1);
+    }
+
+    sdShowStep(step) {
+        document.getElementById('sd-step-1').classList.toggle('hidden', step !== 1);
+        document.getElementById('sd-step-2').classList.toggle('hidden', step !== 2);
+        document.getElementById('save-sd-account-btn').classList.toggle('hidden', step !== 2);
+    }
+
+    async discoverSDLineups() {
+        const username = document.getElementById('sd-account-username').value.trim();
+        const password = document.getElementById('sd-account-password').value.trim();
+        const errorEl = document.getElementById('sd-discover-error');
+
+        errorEl.classList.add('hidden');
+        errorEl.textContent = '';
+
+        if (!username || !password) {
+            errorEl.textContent = 'Username and password are required.';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+
+        const btn = document.getElementById('sd-discover-btn');
+        btn.disabled = true;
+        btn.querySelector('span').textContent = 'Connecting...';
+
+        try {
+            const result = await this.apiCall('/api/sd/discover', {
+                method: 'POST',
+                body: JSON.stringify({ username, password })
+            });
+
+            if (!result.success) {
+                throw new Error(result.error || 'Discovery failed');
+            }
+
+            // Get currently saved lineups for this account (if editing)
+            const index = document.getElementById('sd-account-index').value;
+            let savedLineups = [];
+            if (index !== '' && this.config?.sdAccounts?.[parseInt(index)]) {
+                savedLineups = this.config.sdAccounts[parseInt(index)].selectedLineups || [];
+            }
+
+            this.renderLineupCheckboxes(result.lineups, savedLineups);
+            this.sdShowStep(2);
+
+        } catch (error) {
+            errorEl.textContent = error.message || 'Failed to connect to Schedules Direct.';
+            errorEl.classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            btn.querySelector('span').textContent = 'Connect & Discover Lineups';
+        }
+    }
+
+    renderLineupCheckboxes(lineups, selectedIDs = []) {
+        const container = document.getElementById('sd-lineups-list');
+        if (!lineups || lineups.length === 0) {
+            container.innerHTML = '<div class="text-gray-400 text-sm p-2">No lineups found on this account.</div>';
+            return;
+        }
+
+        const selectedSet = new Set(selectedIDs);
+
+        container.innerHTML = lineups.map(lineup => `
+            <label class="flex items-start gap-2 p-2 hover:bg-kptv-gray rounded cursor-pointer">
+                <input type="checkbox"
+                    class="mt-0.5 sd-lineup-checkbox"
+                    value="${this.escapeHtml(lineup.lineup || lineup.lineupID)}"
+                    ${selectedSet.size === 0 || selectedSet.has(lineup.lineup || lineup.lineupID) ? 'checked' : ''}>
+                <div class="flex-1">
+                    <div class="text-sm font-medium">${this.escapeHtml(lineup.name)}</div>
+                    ${lineup.transport ? `<div class="text-xs text-gray-400">${this.escapeHtml(lineup.transport)}</div>` : ''}
+                    <div class="text-xs text-gray-500">${this.escapeHtml(lineup.lineup || lineup.lineupID)}</div>
+                </div>
+            </label>
+        `).join('');
+    }
+
+    editSDAccount(index) {
+        this.showSDAccountModal(index);
+    }
+
+    async deleteSDAccount(index) {
+        if (!confirm('Are you sure you want to delete this Schedules Direct account?')) return;
+
+        try {
+            const config = await this.apiCall('/api/config');
+            config.sdAccounts.splice(index, 1);
+
+            await this.apiCall('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+
+            this.showNotification('SD account deleted successfully!', 'success');
+            this.loadSDAccounts();
+            setTimeout(() => { this.restartService(); }, 500);
+
+        } catch (error) {
+            this.showNotification('Failed to delete SD account', 'danger');
+        }
+    }
+
+    showSDAccountModal(accountIndex = null) {
+        document.getElementById('sd-account-modal-title').textContent =
+            accountIndex !== null ? 'Edit Schedules Direct Account' : 'Add Schedules Direct Account';
+
+        this.clearSDForm();
+
+        if (accountIndex !== null && this.config?.sdAccounts?.[accountIndex]) {
+            const account = this.config.sdAccounts[accountIndex];
+            document.getElementById('sd-account-index').value = accountIndex;
+            document.getElementById('sd-account-name').value = account.name || '';
+            document.getElementById('sd-account-username').value = account.username || '';
+            document.getElementById('sd-account-password').value = account.password || '';
+            document.getElementById('sd-account-enabled').checked = account.enabled !== false;
+            document.getElementById('sd-days-to-fetch').value = account.daysToFetch || 7;
+
+            if (account.selectedLineups && account.selectedLineups.length > 0) {
+                this.renderLineupCheckboxes(
+                    account.selectedLineups.map(id => ({ lineup: id, name: id, transport: '' })),
+                    account.selectedLineups
+                );
+                this.sdShowStep(2);
+            }
+        }
+
+        this.showModal('sd-account-modal');
+    }
+
+    async saveSDAccount() {
+        const index = document.getElementById('sd-account-index').value;
+        const name = document.getElementById('sd-account-name').value.trim();
+        const username = document.getElementById('sd-account-username').value.trim();
+        const password = document.getElementById('sd-account-password').value.trim();
+        const enabled = document.getElementById('sd-account-enabled').checked;
+        const daysToFetch = parseInt(document.getElementById('sd-days-to-fetch').value) || 7;
+
+        if (!name || !username || !password) {
+            this.showNotification('Name, username, and password are required', 'danger');
+            return;
+        }
+
+        const selectedLineups = Array.from(
+            document.querySelectorAll('.sd-lineup-checkbox:checked')
+        ).map(cb => cb.value);
+
+        const account = { name, username, password, enabled, daysToFetch, selectedLineups };
+
+        try {
+            const config = await this.apiCall('/api/config');
+            if (!config.sdAccounts) {
+                config.sdAccounts = [];
+            }
+
+            if (index === '') {
+                config.sdAccounts.push(account);
+            } else {
+                config.sdAccounts[parseInt(index)] = account;
+            }
+
+            await this.apiCall('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+
+            this.hideModal('sd-account-modal');
+            this.showNotification('SD account saved successfully!', 'success');
+            this.loadSDAccounts();
+
+            setTimeout(() => { this.restartService(); }, 500);
+
+        } catch (error) {
+            this.showNotification('Failed to save SD account: ' + error.message, 'danger');
         }
     }
 

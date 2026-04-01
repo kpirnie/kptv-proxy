@@ -19,6 +19,16 @@ type EPGConfig struct {
 	Order int    `json:"order"`
 }
 
+// SDAccount represents a Schedules Direct account for EPG data retrieval.
+type SDAccount struct {
+	Name            string   `json:"name"`
+	Username        string   `json:"username"`
+	Password        string   `json:"password"`
+	Enabled         bool     `json:"enabled"`
+	SelectedLineups []string `json:"selectedLineups,omitempty"`
+	DaysToFetch     int      `json:"daysToFetch,omitempty"`
+}
+
 // Config holds all application configuration values for the IPTV proxy server.
 // It includes settings for buffering, caching, streaming, and multiple source configurations.
 type Config struct {
@@ -38,6 +48,7 @@ type Config struct {
 	Sources               []SourceConfig    `json:"sources"`             // List of configured stream sources
 	EPGs                  []EPGConfig       `json:"epgs"`                // List of configured epg sources
 	XCOutputAccounts      []XCOutputAccount `json:"xcOutputAccounts"`
+	SDAccounts            []SDAccount       `json:"sdAccounts,omitempty"`
 	WatcherEnabled        bool              `json:"watcherEnabled"`
 	FFmpegMode            bool              `json:"ffmpegMode"`            // Use FFmpeg instead of Go proxy/restreamer
 	FFmpegPreInput        []string          `json:"ffmpegPreInput"`        // FFmpeg arguments before -i
@@ -92,6 +103,7 @@ type ConfigFile struct {
 	Sources               []SourceConfigFile `json:"sources"`
 	EPGs                  []EPGConfig        `json:"epgs"`
 	XCOutputAccounts      []XCOutputAccount  `json:"xcOutputAccounts"`
+	SDAccounts            []SDAccount        `json:"sdAccounts,omitempty"`
 	WatcherEnabled        bool               `json:"watcherEnabled"`
 	FFmpegMode            bool               `json:"ffmpegMode"`
 	FFmpegPreInput        []string           `json:"ffmpegPreInput"`
@@ -327,6 +339,7 @@ func convertFromFile(cf *ConfigFile) (*Config, error) {
 	// Simple copy since EPGConfig & XC Accounts has no duration fields
 	config.EPGs = cf.EPGs
 	config.XCOutputAccounts = cf.XCOutputAccounts
+	config.SDAccounts = cf.SDAccounts
 	logger.Debug("{config - convertFromFile} convert from the json settings")
 
 	// return the config

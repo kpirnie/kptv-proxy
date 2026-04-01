@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"context"
 	"io"
+	"kptv-proxy/work/config"
 	"kptv-proxy/work/logger"
+	"kptv-proxy/work/schedulesdirect"
 	"net/http"
 	"strings"
 	"sync"
@@ -225,38 +228,96 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 func (sp *StreamProxy) FetchAndMergeEPG() string {
 	logger.Debug("{proxy/epg - FetchAndMergeEPG} Starting EPG aggregation pipeline")
 
-	// get the sources
 	sources := sp.GetEPGSources()
-	if len(sources) == 0 {
+	hasURLSources := len(sources) > 0
+
+	hasSDSources := false
+	for _, acc := range sp.Config.SDAccounts {
+		if acc.Enabled {
+			hasSDSources = true
+			break
+		}
+	}
+
+	if !hasURLSources && !hasSDSources {
 		logger.Warn("{proxy/epg - FetchAndMergeEPG} No EPG sources configured, skipping merge")
 		return ""
 	}
 
-	channels, programmes := sp.FetchEPGData(sources)
+	var (
+		allChannels   []string
+		allProgrammes []string
+		mu            sync.Mutex
+		wg            sync.WaitGroup
+	)
 
-	// do we have data?
-	if len(channels) == 0 && len(programmes) == 0 {
+	// Fetch URL-based sources concurrently
+	if hasURLSources {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			channels, programmes := sp.FetchEPGData(sources)
+			mu.Lock()
+			allChannels = append(allChannels, channels...)
+			allProgrammes = append(allProgrammes, programmes...)
+			mu.Unlock()
+			logger.Debug("{proxy/epg - FetchAndMergeEPG} URL sources complete: %d channels, %d programmes",
+				len(channels), len(programmes))
+		}()
+	}
+
+	// Fetch each enabled SD account concurrently
+	for _, acc := range sp.Config.SDAccounts {
+		if !acc.Enabled {
+			continue
+		}
+		wg.Add(1)
+		go func(account config.SDAccount) {
+			defer wg.Done()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+
+			data, err := schedulesdirect.FetchAccount(ctx, account)
+			if err != nil {
+				logger.Error("{proxy/epg - FetchAndMergeEPG} SD account %s failed: %v", account.Name, err)
+				return
+			}
+
+			channels, programmes := schedulesdirect.GenerateXMLTV(data)
+
+			mu.Lock()
+			allChannels = append(allChannels, channels...)
+			allProgrammes = append(allProgrammes, programmes...)
+			mu.Unlock()
+
+			logger.Debug("{proxy/epg - FetchAndMergeEPG} SD account %s complete: %d channels, %d programmes",
+				account.Name, len(channels), len(programmes))
+		}(acc)
+	}
+
+	wg.Wait()
+
+	if len(allChannels) == 0 && len(allProgrammes) == 0 {
 		logger.Warn("{proxy/epg - FetchAndMergeEPG} No EPG data retrieved from any source")
 		return ""
 	}
 
-	// build the merged XMLTV document with channels first, then programmes
 	var result strings.Builder
 	result.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	result.WriteString(`<tv generator-info-name="KPTV-Proxy">` + "\n")
 
-	// write out the data
-	for _, ch := range channels {
+	for _, ch := range allChannels {
 		result.WriteString(ch)
 	}
-	for _, prog := range programmes {
+	for _, prog := range allProgrammes {
 		result.WriteString(prog)
 	}
 
-	// end the xml
 	result.WriteString("</tv>")
 
-	logger.Debug("{proxy/epg - FetchAndMergeEPG} Merged EPG complete: %d channels, %d programmes (%d bytes)", len(channels), len(programmes), result.Len())
+	logger.Debug("{proxy/epg - FetchAndMergeEPG} Merged EPG complete: %d channels, %d programmes (%d bytes)",
+		len(allChannels), len(allProgrammes), result.Len())
 	return result.String()
 }
 

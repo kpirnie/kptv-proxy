@@ -6,7 +6,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v03272026.19" -trimpath -o kptv-proxy .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=v04012026.09" -trimpath -o kptv-proxy .
 
 # Final stage - keep all GPU drivers
 FROM docker.io/debian:trixie-slim

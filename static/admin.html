@@ -11,6 +11,8 @@
 </head>
 
 <body class="bg-kptv-darker text-gray-100 min-h-screen">
+
+    <!-- overlay -->
     <div id="loading-overlay" class="modal">
         <div class="text-center">
             <div class="spinner mx-auto"></div>
@@ -18,6 +20,7 @@
         </div>
     </div>
 
+    <!-- nav bar -->
     <nav class="bg-kptv-gray border-b border-kptv-border">
         <div class="container mx-auto px-4">
             <div class="flex items-center justify-between">
@@ -38,6 +41,7 @@
         </div>
     </nav>
 
+    <!-- dashboard -->
     <div class="container mx-auto px-4 mt-4">
         <div class="border-b border-kptv-border mb-4">
             <nav class="flex flex-wrap -mb-px text-sm font-medium">
@@ -63,7 +67,6 @@
                     data-tab="6">Logs</button>
             </nav>
         </div>
-
         <div class="tab-content">
             <div class="active">
                 <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
@@ -405,18 +408,29 @@
 
             <!-- epg -->
             <div>
-                <div class="mb-4">
+                <div class="mb-4 flex gap-2">
                     <button
                         class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"
                         id="add-epg-btn">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
-                            </path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                         </svg>
                         <span>Add EPG</span>
                     </button>
+                    <button
+                        class="px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition-colors flex items-center space-x-2"
+                        id="add-sd-account-btn">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        <span>Add SD Account</span>
+                    </button>
                 </div>
                 <div id="epgs-container"></div>
+                <div class="mt-6">
+                    <h3 class="text-base font-semibold mb-3 pb-2 border-b border-kptv-border">Schedules Direct Accounts</h3>
+                    <div id="sd-accounts-container"></div>
+                </div>
             </div>
 
             <!-- channels -->
@@ -789,6 +803,102 @@
                     id="cancel-epg-btn" type="button">Cancel</button>
                 <button class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
                     id="save-epg-btn" type="button">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- sd account modal -->
+    <div id="sd-account-modal" class="modal">
+        <div
+            class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-lg max-h-[90vh] overflow-y-auto m-4">
+            <div
+                class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="sd-account-modal-title">Add Schedules Direct Account</h2>
+                <button class="text-gray-400 hover:text-white" id="close-sd-account-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <!-- Step 1: Credentials -->
+                <div id="sd-step-1">
+                    <input type="hidden" id="sd-account-index" value="">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Account Name</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="sd-account-name" placeholder="My SD Account">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Username</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="sd-account-username" placeholder="Schedules Direct username">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Password</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="password" id="sd-account-password" placeholder="Schedules Direct password">
+                    </div>
+                    <div id="sd-discover-error" class="hidden bg-red-900/20 border border-red-600 text-red-100 px-3 py-2 rounded text-sm mb-4"></div>
+                    <button
+                        class="w-full px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition-colors flex items-center justify-center space-x-2"
+                        id="sd-discover-btn">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                        <span>Connect &amp; Discover Lineups</span>
+                    </button>
+                </div>
+                <!-- Step 2: Lineup Selection -->
+                <div id="sd-step-2" class="hidden">
+                    <div class="mb-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium">Available Lineups</label>
+                            <div class="flex gap-2">
+                                <button class="text-xs text-kptv-blue hover:text-kptv-blue-light" id="sd-select-all">All</button>
+                                <span class="text-gray-500">|</span>
+                                <button class="text-xs text-kptv-blue hover:text-kptv-blue-light" id="sd-select-none">None</button>
+                            </div>
+                        </div>
+                        <div id="sd-lineups-list" class="bg-kptv-gray-light border border-kptv-border rounded p-2 max-h-64 overflow-y-auto space-y-1"></div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Days to Fetch</label>
+                        <select class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            id="sd-days-to-fetch">
+                            <option value="3">3 days</option>
+                            <option value="5">5 days</option>
+                            <option value="7" selected>7 days (default)</option>
+                            <option value="10">10 days</option>
+                            <option value="14">14 days</option>
+                        </select>
+                    </div>
+                    <label class="flex items-center mb-4">
+                        <input class="mr-2" type="checkbox" id="sd-account-enabled" checked>
+                        <span>Enable this account</span>
+                    </label>
+                    <button
+                        class="text-sm text-gray-400 hover:text-white mb-2 flex items-center gap-1"
+                        id="sd-back-btn">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                        </svg>
+                        Back to credentials
+                    </button>
+                </div>
+            </div>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-end gap-2">
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-sd-account-btn" type="button">Cancel</button>
+                <button
+                    class="hidden px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition-colors"
+                    id="save-sd-account-btn" type="button">Save Account</button>
             </div>
         </div>
     </div>

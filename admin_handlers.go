@@ -21,6 +21,7 @@ import (
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/restream"
+	"kptv-proxy/work/schedulesdirect"
 	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
@@ -148,6 +149,7 @@ func setupAdminRoutes(router *mux.Router, proxyInstance *proxy.StreamProxy) {
 	router.HandleFunc("/api/logs", corsMiddleware(handleClearLogs)).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/api/restart", corsMiddleware(handleRestart)).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/watcher/toggle", corsMiddleware(handleToggleWatcher(proxyInstance))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/sd/discover", corsMiddleware(handleSDDiscover(proxyInstance))).Methods("POST", "OPTIONS")
 
 	addLogEntry("info", "Admin interface initialized")
 }
@@ -1023,7 +1025,7 @@ func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
 }
 
 // handleReviveStream removes a stream from the dead streams database
-func handleReviveStream(sp *proxy.StreamProxy) http.HandlerFunc {
+func handleReviveStream(_ *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -1056,6 +1058,49 @@ func handleReviveStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "success",
 			"message": fmt.Sprintf("Stream %d revived", request.StreamIndex),
+		})
+	}
+}
+
+// handleSDDiscover authenticates to Schedules Direct and returns the available
+// lineups for the provided credentials. Nothing is saved to config at this stage.
+func handleSDDiscover(_ *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		var request struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if request.Username == "" || request.Password == "" {
+			http.Error(w, "Username and password are required", http.StatusBadRequest)
+			return
+		}
+
+		logger.Debug("{admin_handlers - handleSDDiscover} Discovering lineups for SD user: %s", request.Username)
+
+		lineups, err := schedulesdirect.DiscoverLineups(request.Username, request.Password)
+		if err != nil {
+			logger.Error("{admin_handlers - handleSDDiscover} Discovery failed for %s: %v", request.Username, err)
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+
+		logger.Debug("{admin_handlers - handleSDDiscover} Found %d lineups for %s", len(lineups), request.Username)
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"lineups": lineups,
 		})
 	}
 }
