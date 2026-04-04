@@ -1897,24 +1897,18 @@ class KPTVAdmin {
         this.originalStreamOrder = data.streams.map((_, index) => index);
 
         container.innerHTML = `
-            <div class="mb-4">
-                <button class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors hidden" id="save-stream-order">
-                    <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                    Save Order
-                </button>
-                <span class="text-sm text-gray-400 ml-2">Use arrows to reorder</span>
+            <div class="mb-4 flex items-center gap-3">
+                <span class="text-sm text-gray-400">Drag to reorder streams</span>
+                <span id="order-save-status" class="text-xs text-gray-500"></span>
             </div>
             <div id="streams-container">
                 ${this.renderStreamCards(data)}
             </div>
         `;
 
-        const saveButton = document.getElementById('save-stream-order');
-        if (saveButton) {
-            saveButton.onclick = () => this.saveStreamOrder();
-        }
+        // Initialize drag-and-drop after cards are rendered
+        this.initStreamDragDrop(data.channelName);
+
     }
 
     renderStreamCards(data) {
@@ -1934,24 +1928,16 @@ class KPTVAdmin {
             const isLast = displayIndex === orderedStreams.length - 1;
 
             return `
-                <div class="stream-card ${cardClass} ${isDead ? 'dead-stream' : ''} border border-kptv-border rounded p-3 mb-2" data-original-index="${originalIndex}" data-display-index="${displayIndex}">
+                <div class="stream-card ${cardClass} ${isDead ? 'dead-stream' : ''} border border-kptv-border rounded p-3 mb-2 cursor-grab active:cursor-grabbing"
+                    data-original-index="${originalIndex}"
+                    data-display-index="${displayIndex}"
+                    draggable="true">
                     <div class="flex justify-between items-center">
                         <div class="flex items-center flex-1">
-                            <div class="flex flex-col mr-2">
-                                <button class="stream-order-btn mb-1" 
-                                        onclick="kptvAdmin.moveStreamUp('${this.escapeHtml(data.channelName)}', ${displayIndex}); return false;"
-                                        ${isFirst ? 'disabled' : ''}>
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path>
-                                    </svg>
-                                </button>
-                                <button class="stream-order-btn" 
-                                        onclick="kptvAdmin.moveStreamDown('${this.escapeHtml(data.channelName)}', ${displayIndex}); return false;"
-                                        ${isLast ? 'disabled' : ''}>
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                    </svg>
-                                </button>
+                            <div class="flex items-center mr-3 text-gray-600 cursor-grab">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path>
+                                </svg>
                             </div>
                             <div class="flex-1">
                                 <div class="font-bold flex items-center gap-2">
@@ -2009,6 +1995,65 @@ class KPTVAdmin {
         }).join('');
     }
 
+    /**
+     * Initializes drag-and-drop sorting on the streams container
+     * Attaches dragstart, dragover, drop and dragend events to stream cards
+     * Auto-saves order to server after a successful drop with debounce
+     * @param {string} channelName - The channel name for saving order
+     */
+    initStreamDragDrop(channelName) {
+        const container = document.getElementById('streams-container');
+        if (!container) return;
+
+        let dragCard = null;
+        let debounceTimer = null;
+
+        container.addEventListener('dragstart', (e) => {
+            dragCard = e.target.closest('.stream-card');
+            if (!dragCard) return;
+            dragCard.classList.add('opacity-50');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        container.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const target = e.target.closest('.stream-card');
+            if (!target || target === dragCard) return;
+
+            const rect = target.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (e.clientY < midY) {
+                container.insertBefore(dragCard, target);
+            } else {
+                container.insertBefore(dragCard, target.nextSibling);
+            }
+        });
+
+        container.addEventListener('dragend', () => {
+            if (!dragCard) return;
+            dragCard.classList.remove('opacity-50');
+            dragCard = null;
+
+            // Update display indices after drop
+            const cards = container.querySelectorAll('.stream-card');
+            cards.forEach((card, idx) => card.setAttribute('data-display-index', idx));
+
+            // Debounced auto-save
+            clearTimeout(debounceTimer);
+            const statusEl = document.getElementById('order-save-status');
+            if (statusEl) statusEl.textContent = 'Saving...';
+
+            debounceTimer = setTimeout(async () => {
+                await this.saveStreamOrder();
+                if (statusEl) {
+                    statusEl.textContent = 'Saved';
+                    setTimeout(() => statusEl.textContent = '', 2000);
+                }
+            }, 600);
+        });
+    }
+
     async copyToClipboard(text, successMessage = 'Copied to clipboard') {
         try {
             if (navigator.clipboard && window.isSecureContext) {
@@ -2053,14 +2098,19 @@ class KPTVAdmin {
         }
     }
 
+    /**
+     * Saves the current stream card order to the server
+     * Reads data-original-index from each card in current DOM order
+     * Called automatically after drag-and-drop with debounce
+     * @returns {Promise<void>}
+     */
     async saveStreamOrder() {
-        const streamCards = document.querySelectorAll('.stream-card');
-        const newOrder = [];
+        const cards = document.querySelectorAll('.stream-card');
+        if (!cards.length) return;
 
-        streamCards.forEach(card => {
-            const originalIndex = parseInt(card.getAttribute('data-original-index'));
-            newOrder.push(originalIndex);
-        });
+        const newOrder = Array.from(cards).map(card =>
+            parseInt(card.getAttribute('data-original-index'))
+        );
 
         try {
             const encodedChannelName = encodeURIComponent(this.currentChannelName);
@@ -2068,15 +2118,9 @@ class KPTVAdmin {
                 method: 'POST',
                 body: JSON.stringify({ streamOrder: newOrder })
             });
-
-            this.showNotification('Stream order saved successfully!', 'success');
-
-            const saveButton = document.getElementById('save-stream-order');
-            if (saveButton) {
-                saveButton.classList.add('hidden');
-            }
-
         } catch (error) {
+            const statusEl = document.getElementById('order-save-status');
+            if (statusEl) statusEl.textContent = 'Save failed';
             this.showNotification('Failed to save stream order: ' + error.message, 'danger');
         }
     }

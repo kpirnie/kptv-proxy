@@ -170,18 +170,6 @@
         @apply bg-black text-gray-300 text-xs px-2 py-1 border border-kptv-border rounded;
     }
 
-    .stream-order-btn {
-        @apply p-1 leading-none bg-kptv-gray border border-kptv-border rounded transition-colors;
-    }
-
-    .stream-order-btn:hover:not(:disabled) {
-        @apply bg-kptv-blue border-kptv-blue;
-    }
-
-    .stream-order-btn:disabled {
-        @apply opacity-30 cursor-not-allowed;
-    }
-
     .in-totop {
         @apply fixed right-6 bottom-6 w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center text-white text-lg opacity-0 transition-opacity;
     }

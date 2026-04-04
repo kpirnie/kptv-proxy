@@ -260,9 +260,14 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 		// Apply the new order immediately without restart
 		channel.Mu.Lock()
 		parser.SortStreams(channel.Streams, sp.Config, channelName)
-
-		// Update preferred stream index to match the new first position
 		atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
+
+		// If a restreamer is active, force it to switch to the new first stream
+		if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
+			r := &restream.Restream{Restreamer: channel.Restreamer}
+			r.ForceStreamSwitch(0)
+			addLogEntry("info", fmt.Sprintf("Forced stream switch to index 0 after reorder for channel %s", channelName))
+		}
 		channel.Mu.Unlock()
 
 		w.WriteHeader(http.StatusOK)
