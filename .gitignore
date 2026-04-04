@@ -70,3 +70,4 @@ other/
 settings/
 
 package-lock.json
+static/admin-concat.js

@@ -149,7 +149,7 @@ func main() {
 
 		// start a loop
 		for {
-			<-restartChan
+			<-admin.GetRestartChan()
 
 			// debug logging
 			logger.Debug("{main} Graceful restart requested...")

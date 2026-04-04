@@ -1,11 +1,14 @@
 {
     "name": "kptv-proxy-admin",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": "KPTV Proxy Admin Interface",
     "scripts": {
         "build:css": "tailwindcss -i ./static/admin-source.css -o ./static/admin.css --minify",
-        "build:js": "terser static/admin-source.js -o static/admin.js -c -m",
-        "build": "npm run build:css && npm run build:js"
+        "build:js:concat": "cat static/src/utils.js static/src/tabs.js static/src/modals.js static/src/logs.js static/src/stats.js static/src/channels.js static/src/streams.js static/src/sources.js static/src/epg.js static/src/xc.js static/src/sd.js static/src/core.js > static/admin-concat.js",
+        "build:js:minify": "terser static/admin-concat.js -o static/admin.js -c -m",
+        "build:js": "npm run build:js:concat && npm run build:js:minify",
+        "build": "npm run build:css && npm run build:js",
+        "clean": "rm -f static/admin-concat.js"
     },
     "devDependencies": {
         "tailwindcss": "^3.4.1",
