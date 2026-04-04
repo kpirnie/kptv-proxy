@@ -10,6 +10,7 @@ import (
 	"github.com/panjf2000/ants/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"kptv-proxy/work/admin"
 	"kptv-proxy/work/buffer"
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
@@ -119,8 +120,8 @@ func main() {
 	// Metrics handler
 	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
 
-	// add the admin routes
-	setupAdminRoutes(router, proxyInstance)
+	// add the admin
+	admin.SetupAdminRoutes(router, proxyInstance)
 
 	// add the HDHomeRun emulation routes
 	handlers.SetupHDHRRoutes(router, proxyInstance)
