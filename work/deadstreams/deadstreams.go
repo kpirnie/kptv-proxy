@@ -2,9 +2,11 @@ package deadstreams
 
 import (
 	"encoding/json"
+	"fmt"
 	"kptv-proxy/work/logger"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,6 +27,19 @@ type DeadStreamEntry struct {
 // and enable future extension with additional metadata if needed.
 type DeadStreamsFile struct {
 	DeadStreams []DeadStreamEntry `json:"deadStreams"` // Array of all dead stream records
+}
+
+// in-memory cache of dead streams, keyed by "channel:index"
+// populated on first load, updated on every write
+var (
+	deadStreamCache    map[string]DeadStreamEntry
+	deadStreamCacheMu  sync.RWMutex
+	deadStreamCacheSet bool // true once the cache has been populated
+)
+
+// cacheKey builds the lookup key from channel name and stream index
+func cacheKey(channelName string, streamIndex int) string {
+	return fmt.Sprintf("%s:%d", channelName, streamIndex)
 }
 
 // LoadDeadStreams reads and parses the dead streams database from disk.
@@ -130,31 +145,36 @@ func SaveDeadStreams(deadStreams *DeadStreamsFile) error {
 // Returns:
 //   - error: non-nil if the dead streams database cannot be loaded or saved
 func MarkStreamDead(channelName string, streamIndex int, url, sourceName, reason string) error {
+	ensureCacheLoaded()
 
-	// Load current dead streams database
 	deadStreams, err := LoadDeadStreams()
 	if err != nil {
 		logger.Error("{deadstreams - MarkDeadStream} loading deadstreams %v", err)
 		return err
 	}
 
-	// Search for existing entry with same channel and stream index
+	// check for existing entry — update reason if it changed
 	for i, entry := range deadStreams.DeadStreams {
 		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
-
-			// Update existing entry only if reason has changed
 			if entry.Reason != reason {
 				deadStreams.DeadStreams[i].Reason = reason
 				deadStreams.DeadStreams[i].Timestamp = time.Now().Format(time.RFC3339)
-				return SaveDeadStreams(deadStreams)
+
+				if err := SaveDeadStreams(deadStreams); err != nil {
+					return err
+				}
+
+				// sync updated entry into cache
+				deadStreamCacheMu.Lock()
+				deadStreamCache[cacheKey(channelName, streamIndex)] = deadStreams.DeadStreams[i]
+				deadStreamCacheMu.Unlock()
 			}
 			logger.Warn("{deadstreams - MarkDeadStream} deadstream already exists")
-			// Entry already exists with same reason - no update needed
 			return nil
 		}
 	}
 
-	// Create new entry with current timestamp
+	// build new entry
 	newEntry := DeadStreamEntry{
 		Channel:     channelName,
 		StreamIndex: streamIndex,
@@ -164,12 +184,19 @@ func MarkStreamDead(channelName string, streamIndex int, url, sourceName, reason
 		Reason:      reason,
 	}
 
-	// debug log it
-	logger.Debug("dead stream entry created: %v", newEntry)
-
-	// Append new entry and persist to disk
 	deadStreams.DeadStreams = append(deadStreams.DeadStreams, newEntry)
-	return SaveDeadStreams(deadStreams)
+
+	if err := SaveDeadStreams(deadStreams); err != nil {
+		return err
+	}
+
+	// add new entry to cache
+	deadStreamCacheMu.Lock()
+	deadStreamCache[cacheKey(channelName, streamIndex)] = newEntry
+	deadStreamCacheMu.Unlock()
+
+	logger.Debug("dead stream entry created: %v", newEntry)
+	return nil
 }
 
 // ReviveStream removes a dead stream record from the persistent database.
@@ -183,33 +210,41 @@ func MarkStreamDead(channelName string, streamIndex int, url, sourceName, reason
 // Returns:
 //   - error: non-nil if the stream is not found in dead streams or database operations fail
 func ReviveStream(channelName string, streamIndex int) error {
+	ensureCacheLoaded()
 
-	// Load current dead streams database
 	deadStreams, err := LoadDeadStreams()
 	if err != nil {
 		return err
 	}
 
-	// Build new slice excluding the target stream
 	var newDeadStreams []DeadStreamEntry
 	found := false
 	for _, entry := range deadStreams.DeadStreams {
 		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
 			found = true
-			continue // Skip this entry to effectively remove it
+			continue
 		}
 		newDeadStreams = append(newDeadStreams, entry)
 	}
 
-	// Verify the target stream was actually found
 	if !found {
 		logger.Error("{deadstreams - ReviveStream} stream not found")
 		return nil
 	}
-	logger.Debug("{deadstreams - ReviveStream} revive stream")
-	// Update database with revised stream list
+
 	deadStreams.DeadStreams = newDeadStreams
-	return SaveDeadStreams(deadStreams)
+
+	if err := SaveDeadStreams(deadStreams); err != nil {
+		return err
+	}
+
+	// evict from cache on successful revive
+	deadStreamCacheMu.Lock()
+	delete(deadStreamCache, cacheKey(channelName, streamIndex))
+	deadStreamCacheMu.Unlock()
+
+	logger.Debug("{deadstreams - ReviveStream} revive stream")
+	return nil
 }
 
 // IsStreamDead checks whether a specific stream is currently marked as dead.
@@ -224,21 +259,14 @@ func ReviveStream(channelName string, streamIndex int) error {
 //   - bool: true if the stream is marked dead, false if alive or database unavailable
 func IsStreamDead(channelName string, streamIndex int) bool {
 
-	// Load dead streams database (return false on any error for safety)
-	deadStreams, err := LoadDeadStreams()
-	if err != nil {
-		logger.Error("{deadstreams - IsStreamDead} error loading %v", err)
-		return false
-	}
+	// ensure cache is warm before reading
+	ensureCacheLoaded()
 
-	// Search for matching dead stream entry
-	for _, entry := range deadStreams.DeadStreams {
-		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
-			logger.Debug("{deadstreams - IsStreamDead} dead stream: %v(%v)", channelName, streamIndex)
-			return true
-		}
-	}
-	return false
+	deadStreamCacheMu.RLock()
+	defer deadStreamCacheMu.RUnlock()
+
+	_, exists := deadStreamCache[cacheKey(channelName, streamIndex)]
+	return exists
 }
 
 // GetDeadStreamReason retrieves the reason why a specific stream was marked as dead.
@@ -252,20 +280,46 @@ func IsStreamDead(channelName string, streamIndex int) bool {
 // Returns:
 //   - string: reason the stream was marked dead, or empty string if not found or database unavailable
 func GetDeadStreamReason(channelName string, streamIndex int) string {
+	ensureCacheLoaded()
 
-	// Load dead streams database (return empty string on any error)
-	deadStreams, err := LoadDeadStreams()
-	if err != nil {
-		logger.Error("{deadstreams - GetDeadStreamReason} error loading %v", err)
-		return ""
-	}
+	deadStreamCacheMu.RLock()
+	defer deadStreamCacheMu.RUnlock()
 
-	// Search for matching entry and return its reason
-	for _, entry := range deadStreams.DeadStreams {
-		if entry.Channel == channelName && entry.StreamIndex == streamIndex {
-			logger.Debug("{deadstreams - GetDeadStreamReason} dead reason %v", entry.Reason)
-			return entry.Reason
-		}
+	if entry, exists := deadStreamCache[cacheKey(channelName, streamIndex)]; exists {
+		return entry.Reason
 	}
 	return ""
+}
+
+// ensureCacheLoaded populates the in-memory cache from disk if not already done.
+// Uses double-checked locking to avoid redundant disk reads under concurrency.
+func ensureCacheLoaded() {
+	deadStreamCacheMu.RLock()
+	loaded := deadStreamCacheSet
+	deadStreamCacheMu.RUnlock()
+
+	if loaded {
+		return
+	}
+
+	deadStreamCacheMu.Lock()
+	defer deadStreamCacheMu.Unlock()
+
+	// double-check after acquiring write lock
+	if deadStreamCacheSet {
+		return
+	}
+
+	file, err := LoadDeadStreams()
+	if err != nil || file == nil {
+		deadStreamCache = make(map[string]DeadStreamEntry)
+		deadStreamCacheSet = true
+		return
+	}
+
+	deadStreamCache = make(map[string]DeadStreamEntry, len(file.DeadStreams))
+	for _, entry := range file.DeadStreams {
+		deadStreamCache[cacheKey(entry.Channel, entry.StreamIndex)] = entry
+	}
+	deadStreamCacheSet = true
 }
