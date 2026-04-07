@@ -26,10 +26,17 @@ type StreamOrderFile struct {
 	ChannelOrders []ChannelStreamOrder `json:"channelOrders"`
 }
 
+// in-memory cache of channel stream orders, keyed by channel name
 var (
-	// orderMutex provides thread-safe access to stream order file operations, protecting
-	// against race conditions during concurrent read and write operations from multiple
-	// goroutines handling admin interface requests.
+	orderCache    map[string][]StreamOrderEntry
+	orderCacheMu  sync.RWMutex
+	orderCacheSet bool // true once the cache has been populated from disk
+)
+
+// orderMutex provides thread-safe access to stream order file operations, protecting
+// against race conditions during concurrent read and write operations from multiple
+// goroutines handling admin interface requests.
+var (
 	orderMutex sync.RWMutex
 )
 
@@ -156,46 +163,50 @@ func SaveStreamOrders(orders *StreamOrderFile) error {
  * @return error - non-nil if database operations fail
  */
 func SetChannelStreamOrder(channelName string, streamOrder []StreamOrderEntry) error {
-	logger.Debug("{stream/streamorder - SetChannelStreamOrder} Setting stream order for channel: %s (%d streams)", channelName, len(streamOrder))
+	ensureOrderCacheLoaded()
 
 	orderMutex.Lock()
 	defer orderMutex.Unlock()
 
-	// Load current orders
 	orders, err := LoadStreamOrders()
 	if err != nil {
 		logger.Error("{stream/streamorder - SetChannelStreamOrder} Failed to load stream orders for update: %v", err)
 		return err
 	}
 
-	// Check if order already exists for this channel
+	// update existing entry if found
 	for i, order := range orders.ChannelOrders {
 		if order.Channel == channelName {
-			logger.Debug("{stream/streamorder - SetChannelStreamOrder} Updating existing order for channel: %s", channelName)
 			orders.ChannelOrders[i].StreamOrder = streamOrder
 
 			if err := SaveStreamOrders(orders); err != nil {
-				logger.Error("{stream/streamorder - SetChannelStreamOrder} Failed to save updated stream order for channel %s: %v", channelName, err)
 				return err
 			}
+
+			// sync to cache
+			orderCacheMu.Lock()
+			orderCache[channelName] = streamOrder
+			orderCacheMu.Unlock()
 
 			logger.Debug("{stream/streamorder - SetChannelStreamOrder} Successfully updated stream order for channel: %s", channelName)
 			return nil
 		}
 	}
 
-	// Create new order entry
-	logger.Debug("{stream/streamorder - SetChannelStreamOrder} Creating new order entry for channel: %s", channelName)
-	newOrder := ChannelStreamOrder{
+	// create new entry
+	orders.ChannelOrders = append(orders.ChannelOrders, ChannelStreamOrder{
 		Channel:     channelName,
 		StreamOrder: streamOrder,
-	}
-	orders.ChannelOrders = append(orders.ChannelOrders, newOrder)
+	})
 
 	if err := SaveStreamOrders(orders); err != nil {
-		logger.Error("{stream/streamorder - SetChannelStreamOrder} Failed to save new stream order for channel %s: %v", channelName, err)
 		return err
 	}
+
+	// add to cache
+	orderCacheMu.Lock()
+	orderCache[channelName] = streamOrder
+	orderCacheMu.Unlock()
 
 	logger.Debug("{stream/streamorder - SetChannelStreamOrder} Successfully created new stream order for channel: %s", channelName)
 	return nil
@@ -216,37 +227,35 @@ func SetChannelStreamOrder(channelName string, streamOrder []StreamOrderEntry) e
  * @return error - non-nil if database operations fail
  */
 func DeleteChannelStreamOrder(channelName string) error {
-	logger.Debug("{stream/streamorder - DeleteChannelStreamOrder} Deleting stream order for channel: %s", channelName)
+	ensureOrderCacheLoaded()
 
 	orderMutex.Lock()
 	defer orderMutex.Unlock()
 
-	// Load current orders
 	orders, err := LoadStreamOrders()
 	if err != nil {
 		logger.Error("{stream/streamorder - DeleteChannelStreamOrder} Failed to load stream orders for deletion: %v", err)
 		return err
 	}
 
-	// Find and remove the channel order
 	for i, order := range orders.ChannelOrders {
 		if order.Channel == channelName {
-			logger.Debug("{stream/streamorder - DeleteChannelStreamOrder} Found order entry for channel %s at index %d, removing", channelName, i)
-
-			// Remove this entry
 			orders.ChannelOrders = append(orders.ChannelOrders[:i], orders.ChannelOrders[i+1:]...)
 
 			if err := SaveStreamOrders(orders); err != nil {
-				logger.Error("{stream/streamorder - DeleteChannelStreamOrder} Failed to save after deleting order for channel %s: %v", channelName, err)
 				return err
 			}
+
+			// evict from cache
+			orderCacheMu.Lock()
+			delete(orderCache, channelName)
+			orderCacheMu.Unlock()
 
 			logger.Debug("{stream/streamorder - DeleteChannelStreamOrder} Successfully deleted stream order for channel: %s", channelName)
 			return nil
 		}
 	}
 
-	// If not found, that's okay - it's already not in the file (idempotent)
 	logger.Debug("{stream/streamorder - DeleteChannelStreamOrder} No order entry found for channel %s, nothing to delete", channelName)
 	return nil
 }
@@ -265,28 +274,46 @@ func DeleteChannelStreamOrder(channelName string) error {
  * @return ([]int, error) - array of stream indices in custom order (nil if no custom order), error on failure
  */
 func GetChannelStreamOrder(channelName string) ([]StreamOrderEntry, error) {
+	ensureOrderCacheLoaded()
 
-	//logger.Debug("{stream/streamorder - GetChannelStreamOrder} Getting stream order for channel: %s", channelName)
+	orderCacheMu.RLock()
+	defer orderCacheMu.RUnlock()
 
-	orderMutex.RLock()
-	defer orderMutex.RUnlock()
-
-	// Load current orders
-	orders, err := LoadStreamOrders()
-	if err != nil {
-		logger.Error("{stream/streamorder - GetChannelStreamOrder} Failed to load stream orders for retrieval: %v", err)
-		return nil, err
+	if entries, exists := orderCache[channelName]; exists {
+		return entries, nil
 	}
-
-	// Find matching channel order
-	for _, order := range orders.ChannelOrders {
-		if order.Channel == channelName {
-			logger.Debug("{stream/streamorder - GetChannelStreamOrder} Found custom order for channel %s: %d streams", channelName, len(order.StreamOrder))
-			return order.StreamOrder, nil
-		}
-	}
-
-	// No custom order found - return nil to indicate default ordering
-	//logger.Debug("{stream/streamorder - GetChannelStreamOrder} No custom order found for channel: %s, using default ordering", channelName)
 	return nil, nil
+}
+
+// ensureOrderCacheLoaded populates the in-memory cache from disk if not already done.
+// Uses double-checked locking to avoid redundant disk reads under concurrency.
+func ensureOrderCacheLoaded() {
+	orderCacheMu.RLock()
+	loaded := orderCacheSet
+	orderCacheMu.RUnlock()
+
+	if loaded {
+		return
+	}
+
+	orderCacheMu.Lock()
+	defer orderCacheMu.Unlock()
+
+	// double-check after acquiring write lock
+	if orderCacheSet {
+		return
+	}
+
+	orders, err := LoadStreamOrders()
+	if err != nil || orders == nil {
+		orderCache = make(map[string][]StreamOrderEntry)
+		orderCacheSet = true
+		return
+	}
+
+	orderCache = make(map[string][]StreamOrderEntry, len(orders.ChannelOrders))
+	for _, order := range orders.ChannelOrders {
+		orderCache[order.Channel] = order.StreamOrder
+	}
+	orderCacheSet = true
 }
