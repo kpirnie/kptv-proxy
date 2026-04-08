@@ -2,134 +2,60 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 
 	"github.com/gorilla/mux"
-	"github.com/panjf2000/ants/v2"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"kptv-proxy/work/admin"
-	"kptv-proxy/work/buffer"
-	"kptv-proxy/work/cache"
-	"kptv-proxy/work/client"
+	"kptv-proxy/app"
 	"kptv-proxy/work/config"
-	"kptv-proxy/work/handlers"
 	"kptv-proxy/work/logger"
-	"kptv-proxy/work/parser"
-	"kptv-proxy/work/proxy"
-	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 )
 
-// default version
-var (
-	Version = "v0.1.0"
-)
-
-// our main app worker
 func main() {
 
-	// Ensure config file exists before loading
+	// Ensure the config file exists on disk, creating a default if not present
 	if err := config.EnsureConfigExists(); err != nil {
-		log.Fatalf("Failed to ensure config exists: %v", err)
+		os.Exit(1)
 	}
 
-	// load our config
+	// Load configuration from /settings/config.json
 	cfg := config.LoadConfig()
 
-	// Set up logging
+	// Apply log level from config and compile content classification regexes
 	logger.SetLogLevel(cfg.LogLevel)
-
-	// Compile content type regexes once at startup
 	utils.InitContentRegexes()
 
-	// Initialize buffer pool
-	bufferPool := buffer.NewBufferPool(cfg.BufferSizePerStream * 1024 * 1024)
-
-	// Initialize HTTP client
-	httpClient := client.NewHeaderSettingClient(cfg.ResponseHeaderTimeout)
-
-	// Initialize worker pool, then make sure it gets released
-	workerPool, err := ants.NewPool(cfg.WorkerThreads, ants.WithPreAlloc(true))
+	// Bootstrap all core dependencies: buffer pool, HTTP client, worker pool, cache, and proxy instance
+	a, err := app.New(cfg)
 	if err != nil {
-		logger.Error("Failed to create worker pool: %v", err)
 		os.Exit(1)
 	}
-	defer workerPool.Release()
-	defer bufferPool.Cleanup()
 
-	// Initialize cache and defer killing it.
-	cacheInstance, err := cache.NewCache(cfg.CacheDuration)
-	if err != nil {
-		logger.Error("Failed to create cache: %v", err)
-		os.Exit(1)
-	}
-	defer cacheInstance.Close()
+	proxyInstance := a.Proxy
 
-	// Create proxy instance
-	proxyInstance := proxy.New(cfg, bufferPool, httpClient, workerPool, cacheInstance)
+	// Start background maintenance loops
+	go proxyInstance.RestreamCleanup()    // Cleans up inactive restreamers and disconnected clients
+	go proxyInstance.StartImportRefresh() // Periodically re-imports source playlists on configured interval
+	proxyInstance.StartEPGWarmup()        // Pre-warms the EPG disk cache on startup
 
-	// Initialize master playlist handler
-	proxyInstance.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(cfg)
-
-	// Start restreamer cleanup routine
-	go proxyInstance.RestreamCleanup()
-
-	// Start import refresh routine
-	go proxyInstance.StartImportRefresh()
-
-	// fire up the EPG warmup
-	proxyInstance.StartEPGWarmup()
-
-	// Start watcher if enabled
+	// Start stream watcher if enabled in config
 	if cfg.WatcherEnabled {
 		proxyInstance.WatcherManager.Start()
 	}
 
-	// Initial import
+	// Perform initial import of all configured stream sources
 	proxyInstance.ImportStreams()
 
-	// Setup HTTP routes
+	// Register all HTTP routes: playlists, streams, XC API, EPG, metrics, admin, HDHomeRun
 	router := mux.NewRouter()
-
-	// Original playlist route (all channels)
-	router.HandleFunc("/pl", handlers.HandlePlaylist(proxyInstance)).Methods("GET")
-	router.HandleFunc("/playlist", handlers.HandlePlaylist(proxyInstance)).Methods("GET")
-
-	// Group-based playlist route
-	router.HandleFunc("/pl/{group}", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
-	router.HandleFunc("/playlist/{group}", handlers.HandleGroupPlaylist(proxyInstance)).Methods("GET")
-
-	// Channel stream handler
-	router.HandleFunc("/s/{channel}", handlers.HandleStream(proxyInstance)).Methods("GET")
-
-	// Xtream Codes compatible API and stream routes
-	router.HandleFunc("/player_api.php", handlers.HandleXCPlayerAPI(proxyInstance)).Methods("GET", "POST")
-	router.HandleFunc("/get.php", handlers.HandleXCGetPHP(proxyInstance)).Methods("GET")
-	router.HandleFunc("/xmltv.php", handlers.HandleXCXMLTV(proxyInstance)).Methods("GET")
-	router.HandleFunc("/live/{username}/{password}/{id}", handlers.HandleXCStream(proxyInstance)).Methods("GET")
-	router.HandleFunc("/movie/{username}/{password}/{id}", handlers.HandleXCStream(proxyInstance)).Methods("GET")
-	router.HandleFunc("/series/{username}/{password}/{id}", handlers.HandleXCStream(proxyInstance)).Methods("GET")
-
-	// EPG handler for XC sources
-	router.HandleFunc("/epg", handlers.HandleEPG(proxyInstance)).Methods("GET")
-	router.HandleFunc("/epg.xml", handlers.HandleEPG(proxyInstance)).Methods("GET")
-
-	// Metrics handler
-	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
-
-	// add the admin
-	admin.SetupAdminRoutes(router, proxyInstance)
-
-	// add the HDHomeRun emulation routes
-	handlers.SetupHDHRRoutes(router, proxyInstance)
+	app.RegisterRoutes(router, proxyInstance)
 
 	addr := fmt.Sprintf(":%d", 8080)
 
-	// show info
-	logger.Info("Starting KPTV Proxy %s", Version)
+	// Log startup summary
+	logger.Info("Starting KPTV Proxy %s", app.VersionString())
 	logger.Info("Server configuration:")
 	logger.Info("  - Base URL: %s", cfg.BaseURL)
 	logger.Info("  - Worker Threads: %d", cfg.WorkerThreads)
@@ -144,56 +70,17 @@ func main() {
 	logger.Info("  - Log Level: %v", cfg.LogLevel)
 	logger.Info("  - URL Obfuscation: %v", cfg.ObfuscateUrls)
 
-	// gracefully restart if it's requested to do.
+	// Start the graceful restart loop, listening for signals from the admin interface
+	go a.RunRestartLoop()
+
+	// Start HTTP server in a goroutine so main can block on the shutdown signal below
 	go func() {
-
-		// start a loop
-		for {
-			<-admin.GetRestartChan()
-
-			// debug logging
-			logger.Debug("{main} Graceful restart requested...")
-
-			// Stop/Start watcher based on new config
-			logger.Debug("{main} Managing watcher state during restart...")
-			proxyInstance.WatcherManager.Stop()
-
-			// if its enabled
-			if cfg.WatcherEnabled {
-				proxyInstance.WatcherManager.Start()
-			}
-
-			// Stop import refresh
-			proxyInstance.StopImportRefresh()
-
-			// CLEAR CONFIG CACHE FIRST
-			config.ClearConfigCache()
-
-			// Reload config from file
-			newConfig := config.LoadConfig()
-			proxyInstance.Config = newConfig
-
-			// Clear existing channels
-			proxyInstance.Channels.Range(func(key string, value *types.Channel) bool {
-				proxyInstance.Channels.Delete(key)
-				return true
-			})
-
-			// Restart import process
-			proxyInstance.ImportStreams()
-			go proxyInstance.StartImportRefresh()
-
-			// debug logging
-			logger.Debug("{main} Graceful restart completed - loaded %d sources", len(newConfig.Sources))
-
+		if err := http.ListenAndServe(addr, router); err != nil {
+			logger.Error("{main} Server failed to start: %v", err)
+			os.Exit(1)
 		}
-
 	}()
 
-	// fire us up, if there's an error log it
-	if err := http.ListenAndServe(addr, router); err != nil {
-		logger.Error("{main} Server failed to start: %v", err)
-		os.Exit(1)
-	}
-
+	// Block until SIGINT or SIGTERM is received, then cleanly stop watchers, import loop, and cache
+	a.WaitForShutdown()
 }
