@@ -84,3 +84,4 @@ CREATE INDEX IF NOT EXISTS idx_streams_channel_id ON kp_streams(channel_id);
 CREATE INDEX IF NOT EXISTS idx_streams_source_id  ON kp_streams(source_id);
 CREATE INDEX IF NOT EXISTS idx_streams_s_hash     ON kp_streams(s_hash);
 CREATE INDEX IF NOT EXISTS idx_sd_lineups_account ON kp_sd_lineups(sd_account_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_streams_channel_hash ON kp_streams(channel_id, s_hash);

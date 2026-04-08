@@ -8,6 +8,7 @@ require (
 	github.com/grafov/m3u8 v0.12.1
 	github.com/klauspost/compress v1.18.5
 	github.com/maypok86/otter/v2 v2.3.0
+	github.com/ncruces/go-sqlite3 v0.33.2
 	github.com/panjf2000/ants/v2 v2.12.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
@@ -21,6 +22,8 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/ncruces/go-sqlite3-wasm v1.0.4-0.20260329114232-2491c387476c // indirect
+	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.5 // indirect
