@@ -177,9 +177,9 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 				streams[i].Attributes[k] = v
 			}
 
-			if deadstreams.IsStreamDead(channelName, i) {
+			if deadstreams.IsStreamDead(channelName, stream.URLHash) {
 				streams[i].Attributes["dead"] = "true"
-				streams[i].Attributes["dead_reason"] = deadstreams.GetDeadStreamReason(channelName, i)
+				streams[i].Attributes["dead_reason"] = deadstreams.GetDeadStreamReason(channelName, stream.URLHash)
 			}
 		}
 

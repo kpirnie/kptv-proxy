@@ -96,12 +96,10 @@ func HandleStreamFailure(stream *types.Stream, cfg *config.Config, channelName s
 		logger.Debug("{stream/stream - HandleStreamFailure} Marking stream as dead in database for channel %s, stream %d",
 			channelName, streamIndex)
 
-		err := deadstreams.MarkStreamDead(
-			channelName,        // Channel identifier for stream location
-			streamIndex,        // Stream index within channel for precise identification
-			stream.URL,         // Complete stream URL for debugging and verification
-			stream.Source.Name, // Source name for provider tracking and analysis
-			"auto_blocked",     // Reason categorization for failure analysis
+		err := deadstreams.MarkStreamDeadByHash(
+			channelName,
+			stream.URLHash,
+			"auto_blocked",
 		)
 
 		// Handle dead stream recording errors gracefully without disrupting operation

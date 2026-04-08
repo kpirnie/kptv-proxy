@@ -575,8 +575,8 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 	r.Channel.Mu.RUnlock()
 
 	// Check if the stream was previously marked as dead, but allow occasional retries
-	if deadstreams.IsStreamDead(r.Channel.Name, index) {
-		deadReason := deadstreams.GetDeadStreamReason(r.Channel.Name, index)
+	if deadstreams.IsStreamDead(r.Channel.Name, stream.URLHash) {
+		deadReason := deadstreams.GetDeadStreamReason(r.Channel.Name, stream.URLHash)
 		if deadReason == "manual" {
 			// Always skip manually killed streams
 			logger.Debug("{restream/restream - StreamFromSource} Channel %s: Stream %d is manually marked dead", r.Channel.Name, index)

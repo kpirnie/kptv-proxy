@@ -1,43 +1,105 @@
+// work/admin/config.go
 package admin
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/proxy"
 	"net/http"
-	"os"
 )
 
-// handleGetConfig retrieves the current system configuration directly from the
-// configuration file, ensuring that the admin interface displays the persistent
-// configuration state rather than potentially modified runtime values.
+// handleGetConfig serialises the current runtime configuration to JSON for
+// the admin interface. Reads directly from the live config on the proxy
+// instance rather than from disk.
 func handleGetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		configPath := "/settings/config.json"
-		data, err := os.ReadFile(configPath)
-		if err != nil {
-			addLogEntry("error", fmt.Sprintf("Failed to read config file: %v", err))
-			http.Error(w, "Failed to read config file", http.StatusInternalServerError)
-			return
+		cfg := sp.Config
+
+		// Marshal sources with duration fields as strings.
+		type sourceOut struct {
+			Name                   string `json:"name"`
+			URL                    string `json:"url"`
+			Order                  int    `json:"order"`
+			MaxConnections         int    `json:"maxConnections"`
+			MaxStreamTimeout       string `json:"maxStreamTimeout"`
+			RetryDelay             string `json:"retryDelay"`
+			MaxRetries             int    `json:"maxRetries"`
+			MaxFailuresBeforeBlock int    `json:"maxFailuresBeforeBlock"`
+			MinDataSize            int64  `json:"minDataSize"`
+			UserAgent              string `json:"userAgent"`
+			ReqOrigin              string `json:"reqOrigin"`
+			ReqReferrer            string `json:"reqReferrer"`
+			Username               string `json:"username"`
+			Password               string `json:"password"`
+			LiveIncludeRegex       string `json:"liveIncludeRegex"`
+			LiveExcludeRegex       string `json:"liveExcludeRegex"`
+			SeriesIncludeRegex     string `json:"seriesIncludeRegex"`
+			SeriesExcludeRegex     string `json:"seriesExcludeRegex"`
+			VODIncludeRegex        string `json:"vodIncludeRegex"`
+			VODExcludeRegex        string `json:"vodExcludeRegex"`
+		}
+		sources := make([]sourceOut, len(cfg.Sources))
+		for i, s := range cfg.Sources {
+			sources[i] = sourceOut{
+				Name: s.Name, URL: s.URL, Order: s.Order,
+				MaxConnections:         s.MaxConnections,
+				MaxStreamTimeout:       s.MaxStreamTimeout.String(),
+				RetryDelay:             s.RetryDelay.String(),
+				MaxRetries:             s.MaxRetries,
+				MaxFailuresBeforeBlock: s.MaxFailuresBeforeBlock,
+				MinDataSize:            s.MinDataSize, UserAgent: s.UserAgent,
+				ReqOrigin: s.ReqOrigin, ReqReferrer: s.ReqReferrer,
+				Username: s.Username, Password: s.Password,
+				LiveIncludeRegex: s.LiveIncludeRegex, LiveExcludeRegex: s.LiveExcludeRegex,
+				SeriesIncludeRegex: s.SeriesIncludeRegex, SeriesExcludeRegex: s.SeriesExcludeRegex,
+				VODIncludeRegex: s.VODIncludeRegex, VODExcludeRegex: s.VODExcludeRegex,
+			}
 		}
 
-		w.Write(data)
+		out := map[string]interface{}{
+			"baseURL":               cfg.BaseURL,
+			"bufferSizePerStream":   cfg.BufferSizePerStream,
+			"cacheEnabled":          cfg.CacheEnabled,
+			"cacheDuration":         cfg.CacheDuration.String(),
+			"importRefreshInterval": cfg.ImportRefreshInterval.String(),
+			"workerThreads":         cfg.WorkerThreads,
+			"debug":                 cfg.Debug,
+			"logLevel":              cfg.LogLevel,
+			"obfuscateUrls":         cfg.ObfuscateUrls,
+			"sortField":             cfg.SortField,
+			"sortDirection":         cfg.SortDirection,
+			"streamTimeout":         cfg.StreamTimeout.String(),
+			"maxConnectionsToApp":   cfg.MaxConnectionsToApp,
+			"watcherEnabled":        cfg.WatcherEnabled,
+			"ffmpegMode":            cfg.FFmpegMode,
+			"ffmpegPreInput":        cfg.FFmpegPreInput,
+			"ffmpegPreOutput":       cfg.FFmpegPreOutput,
+			"responseHeaderTimeout": cfg.ResponseHeaderTimeout.String(),
+			"sources":               sources,
+			"epgs":                  cfg.EPGs,
+			"xcOutputAccounts":      cfg.XCOutputAccounts,
+			"sdAccounts":            cfg.SDAccounts,
+		}
+
+		if err := json.NewEncoder(w).Encode(out); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to encode config: %v", err))
+			http.Error(w, "Failed to encode config", http.StatusInternalServerError)
+		}
 	}
 }
 
-// handleSetConfig processes configuration updates through the admin interface,
-// implementing atomic file operations and comprehensive validation to ensure
-// configuration consistency and system stability during updates.
+// handleSetConfig decodes a JSON config payload from the admin interface,
+// validates the base URL, persists every field to SQLite via PersistConfig,
+// and clears the in-memory config cache so the next LoadConfig call returns
+// fresh data.
 func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		addLogEntry("info", "POST /api/config received")
 
-		// Panic recovery for robust error handling
 		defer func() {
 			if err := recover(); err != nil {
 				addLogEntry("error", fmt.Sprintf("PANIC in handleSetConfig: %v", err))
@@ -53,58 +115,44 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			http.Error(w, "Failed to read body", http.StatusBadRequest)
 			return
 		}
-		addLogEntry("info", fmt.Sprintf("Request body length: %d bytes", len(body)))
 
-		r.Body = io.NopCloser(bytes.NewBuffer(body))
-
-		// Clear all compiled regex filters so changed patterns are recompiled on next use
-		if sp.FilterManager != nil {
-			sp.FilterManager.ClearFilters()
-			addLogEntry("info", "Cleared all compiled regex filters due to config update")
-		}
-
-		var configFile config.ConfigFile
-		if err := json.NewDecoder(r.Body).Decode(&configFile); err != nil {
+		// Decode into the runtime Config type directly — no intermediate
+		// ConfigFile needed now that persistence goes through SQLite.
+		var incoming config.Config
+		if err := json.Unmarshal(body, &incoming); err != nil {
 			addLogEntry("error", fmt.Sprintf("JSON decode error: %v", err))
 			http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		if configFile.BaseURL == "" {
+		if incoming.BaseURL == "" {
 			addLogEntry("error", "Base URL is required but empty")
 			http.Error(w, "Base URL is required", http.StatusBadRequest)
 			return
 		}
 
-		// Ensure FFmpeg argument slices are never nil in the persisted config
-		if configFile.FFmpegPreInput == nil {
-			configFile.FFmpegPreInput = []string{}
+		// Ensure FFmpeg slices are never nil in the persisted config.
+		if incoming.FFmpegPreInput == nil {
+			incoming.FFmpegPreInput = []string{}
 		}
-		if configFile.FFmpegPreOutput == nil {
-			configFile.FFmpegPreOutput = []string{}
+		if incoming.FFmpegPreOutput == nil {
+			incoming.FFmpegPreOutput = []string{}
 		}
 
-		configPath := "/settings/config.json"
-		tempPath := "/settings/config.json.tmp"
+		// Clear compiled regex filters so changed patterns are recompiled on next use.
+		if sp.FilterManager != nil {
+			sp.FilterManager.ClearFilters()
+			addLogEntry("info", "Cleared compiled regex filters due to config update")
+		}
 
-		data, err := json.MarshalIndent(configFile, "", "  ")
-		if err != nil {
-			addLogEntry("error", fmt.Sprintf("Failed to marshal config: %v", err))
-			http.Error(w, "Failed to marshal config", http.StatusInternalServerError)
+		if err := config.PersistConfig(&incoming); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to persist config: %v", err))
+			http.Error(w, "Failed to save config: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		if err := os.WriteFile(tempPath, data, 0644); err != nil {
-			addLogEntry("error", fmt.Sprintf("Failed to write temp file: %v", err))
-			http.Error(w, "Failed to write temp file: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if err := os.Rename(tempPath, configPath); err != nil {
-			addLogEntry("error", fmt.Sprintf("Failed to move temp file: %v", err))
-			http.Error(w, "Failed to move config file: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
+		// Invalidate the in-memory cache so the next LoadConfig reads fresh data.
+		config.ClearConfigCache()
 
 		addLogEntry("info", "Configuration updated via admin interface")
 

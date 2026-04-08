@@ -36,7 +36,6 @@ func Get() *sql.DB {
 			panic(err)
 		}
 
-		logger.Info("SQLite database initialized at %s", dbPath)
 	})
 	return instance
 }
@@ -97,23 +96,6 @@ func initSchema(db *sql.DB) error {
 		sort_order INTEGER NOT NULL DEFAULT 1
 	);
 
-	CREATE TABLE IF NOT EXISTS kp_channels (
-		id             INTEGER PRIMARY KEY AUTOINCREMENT,
-		name           TEXT    NOT NULL UNIQUE,
-		m3u_attributes TEXT    NOT NULL DEFAULT ''
-	);
-
-	CREATE TABLE IF NOT EXISTS kp_streams (
-		id          INTEGER PRIMARY KEY AUTOINCREMENT,
-		channel_id  INTEGER NOT NULL REFERENCES kp_channels(id) ON DELETE CASCADE,
-		source_id   INTEGER NOT NULL REFERENCES kp_sources(id)  ON DELETE CASCADE,
-		s_order     INTEGER NOT NULL DEFAULT 0,
-		s_status    INTEGER NOT NULL DEFAULT 0,
-		s_hash      TEXT    NOT NULL DEFAULT '',
-		s_url       TEXT    NOT NULL DEFAULT '',
-		dead_reason TEXT    NOT NULL DEFAULT ''
-	);
-
 	CREATE TABLE IF NOT EXISTS kp_xc_accounts (
 		id            INTEGER PRIMARY KEY AUTOINCREMENT,
 		name          TEXT    NOT NULL,
@@ -140,11 +122,18 @@ func initSchema(db *sql.DB) error {
 		lineup_id     TEXT    NOT NULL DEFAULT ''
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_streams_channel_id ON kp_streams(channel_id);
-	CREATE INDEX IF NOT EXISTS idx_streams_source_id  ON kp_streams(source_id);
-	CREATE INDEX IF NOT EXISTS idx_streams_s_hash     ON kp_streams(s_hash);
-	CREATE INDEX IF NOT EXISTS idx_sd_lineups_account ON kp_sd_lineups(sd_account_id);
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_streams_channel_hash ON kp_streams(channel_id, s_hash);
+	CREATE TABLE IF NOT EXISTS kp_stream_overrides (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		channel     TEXT    NOT NULL,
+		s_hash      TEXT    NOT NULL,
+		s_status    INTEGER NOT NULL DEFAULT 0,
+		s_order     INTEGER NOT NULL DEFAULT -1,
+		dead_reason TEXT    NOT NULL DEFAULT '',
+		UNIQUE(channel, s_hash)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_sd_lineups_account     ON kp_sd_lineups(sd_account_id);
+	CREATE INDEX IF NOT EXISTS idx_overrides_channel_hash ON kp_stream_overrides(channel, s_hash);
 	`)
 
 	return err

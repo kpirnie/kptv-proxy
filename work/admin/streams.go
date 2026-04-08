@@ -145,11 +145,10 @@ func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		stream := channel.Streams[request.StreamIndex]
-		streamURL := stream.URL
-		sourceName := stream.Source.Name
+		hash := stream.URLHash
 		channel.Mu.RUnlock()
 
-		if err := deadstreams.MarkStreamDead(channelName, request.StreamIndex, streamURL, sourceName, "manual"); err != nil {
+		if err := deadstreams.MarkStreamDeadByHash(channelName, hash, "manual"); err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to kill stream: %v", err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -167,7 +166,7 @@ func handleKillStream(sp *proxy.StreamProxy) http.HandlerFunc {
 
 // handleReviveStream removes a stream from the dead streams database,
 // restoring it to active rotation for failover and manual selection.
-func handleReviveStream(_ *proxy.StreamProxy) http.HandlerFunc {
+func handleReviveStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -187,7 +186,23 @@ func handleReviveStream(_ *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		if err := deadstreams.ReviveStream(channelName, request.StreamIndex); err != nil {
+		channel, exists := sp.Channels.Load(channelName)
+		if !exists {
+			http.Error(w, "Channel not found", http.StatusNotFound)
+			return
+		}
+		channel.Mu.RLock()
+
+		if request.StreamIndex >= len(channel.Streams) {
+			channel.Mu.RUnlock()
+			http.Error(w, "Invalid stream index", http.StatusBadRequest)
+			return
+		}
+
+		hash := channel.Streams[request.StreamIndex].URLHash
+		channel.Mu.RUnlock()
+
+		if err := deadstreams.ReviveStream(channelName, hash); err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to revive stream: %v", err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

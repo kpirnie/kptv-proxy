@@ -28,7 +28,7 @@ func (a *App) RunRestartLoop() {
 		// Invalidate the in-memory config cache so LoadConfig reads fresh from disk
 		config.ClearConfigCache()
 
-		// Load the updated configuration from /settings/config.json
+		// Load the updated configuration
 		newConfig := config.LoadConfig()
 		a.Proxy.Config = newConfig
 

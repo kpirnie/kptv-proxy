@@ -5,6 +5,7 @@ import (
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/proxy"
 	"os"
@@ -67,6 +68,7 @@ func (a *App) Cleanup() {
 	a.WorkerPool.Release()
 	a.BufferPool.Cleanup()
 	a.Cache.Close()
+	db.Close()
 }
 
 // WaitForShutdown blocks until SIGINT or SIGTERM is received, then performs

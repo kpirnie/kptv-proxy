@@ -1,18 +1,16 @@
 package config
 
 import (
-	"encoding/json"
-	"fmt"
+	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
-	"log"
-	"net/url"
-	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-// EPGConfig represents an Electronic Program Guide source
+// EPGConfig represents an Electronic Program Guide source.
 type EPGConfig struct {
 	Name  string `json:"name"`
 	URL   string `json:"url"`
@@ -30,114 +28,61 @@ type SDAccount struct {
 }
 
 // Config holds all application configuration values for the IPTV proxy server.
-// It includes settings for buffering, caching, streaming, and multiple source configurations.
+// All persistence is handled via SQLite through LoadConfig and PersistConfig.
 type Config struct {
-	BaseURL               string            `json:"baseURL"`               // Base URL for the application (used for API and links)
-	BufferSizePerStream   int64             `json:"bufferSizePerStream"`   // Buffer size per individual stream in MB
-	CacheEnabled          bool              `json:"cacheEnabled"`          // Whether caching is enabled globally
-	CacheDuration         time.Duration     `json:"cacheDuration"`         // Duration before cache entries expire
-	ImportRefreshInterval time.Duration     `json:"importRefreshInterval"` // Interval for refreshing imported content
-	WorkerThreads         int               `json:"workerThreads"`         // Number of worker threads for background tasks
-	Debug                 bool              `json:"debug"`                 // Enable debug logging
+	BaseURL               string            `json:"baseURL"`
+	BufferSizePerStream   int64             `json:"bufferSizePerStream"`
+	CacheEnabled          bool              `json:"cacheEnabled"`
+	CacheDuration         time.Duration     `json:"cacheDuration"`
+	ImportRefreshInterval time.Duration     `json:"importRefreshInterval"`
+	WorkerThreads         int               `json:"workerThreads"`
+	Debug                 bool              `json:"debug"`
 	LogLevel              string            `json:"logLevel"`
-	ObfuscateUrls         bool              `json:"obfuscateUrls"`       // Obfuscate URLs in logs for security
-	SortField             string            `json:"sortField"`           // Field to sort channels by (e.g., tvg-name)
-	SortDirection         string            `json:"sortDirection"`       // Sort direction: "asc" or "desc"
-	StreamTimeout         time.Duration     `json:"streamTimeout"`       // Timeout for stream operations
-	MaxConnectionsToApp   int               `json:"maxConnectionsToApp"` // Maximum concurrent connections allowed to the app
-	Sources               []SourceConfig    `json:"sources"`             // List of configured stream sources
-	EPGs                  []EPGConfig       `json:"epgs"`                // List of configured epg sources
+	ObfuscateUrls         bool              `json:"obfuscateUrls"`
+	SortField             string            `json:"sortField"`
+	SortDirection         string            `json:"sortDirection"`
+	StreamTimeout         time.Duration     `json:"streamTimeout"`
+	MaxConnectionsToApp   int               `json:"maxConnectionsToApp"`
+	Sources               []SourceConfig    `json:"sources"`
+	EPGs                  []EPGConfig       `json:"epgs"`
 	XCOutputAccounts      []XCOutputAccount `json:"xcOutputAccounts"`
 	SDAccounts            []SDAccount       `json:"sdAccounts,omitempty"`
 	WatcherEnabled        bool              `json:"watcherEnabled"`
-	FFmpegMode            bool              `json:"ffmpegMode"`            // Use FFmpeg instead of Go proxy/restreamer
-	FFmpegPreInput        []string          `json:"ffmpegPreInput"`        // FFmpeg arguments before -i
-	FFmpegPreOutput       []string          `json:"ffmpegPreOutput"`       // FFmpeg arguments before output URL
-	ResponseHeaderTimeout time.Duration     `json:"responseHeaderTimeout"` // Timeout for waiting for response headers from source
+	FFmpegMode            bool              `json:"ffmpegMode"`
+	FFmpegPreInput        []string          `json:"ffmpegPreInput"`
+	FFmpegPreOutput       []string          `json:"ffmpegPreOutput"`
+	ResponseHeaderTimeout time.Duration     `json:"responseHeaderTimeout"`
 }
 
 // SourceConfig represents the configuration for a single stream source.
-// It includes connection limits, timeouts, retry settings, and HTTP headers.
+// ActiveConns and EPGURL are runtime-only and never persisted.
 type SourceConfig struct {
-	Name                   string        `json:"name"`                   // Descriptive name for the source
-	URL                    string        `json:"url"`                    // URL of the stream/playlist
-	Order                  int           `json:"order"`                  // Priority order for failover/selection
-	MaxConnections         int           `json:"maxConnections"`         // Maximum concurrent connections to this source
-	MaxStreamTimeout       time.Duration `json:"maxStreamTimeout"`       // Maximum timeout per stream request
-	RetryDelay             time.Duration `json:"retryDelay"`             // Delay between retry attempts
-	MaxRetries             int           `json:"maxRetries"`             // Maximum retry attempts before failing
-	MaxFailuresBeforeBlock int           `json:"maxFailuresBeforeBlock"` // Failures before marking source as blocked
-	MinDataSize            int64         `json:"minDataSize"`            // Minimum valid data size for a stream
-	UserAgent              string        `json:"userAgent"`              // HTTP User-Agent header for requests
-	ReqOrigin              string        `json:"reqOrigin"`              // HTTP Origin header for requests
-	ReqReferrer            string        `json:"reqReferrer"`            // HTTP Referer header for requests
-	ActiveConns            atomic.Int32  `json:"-"`                      // Runtime-only: tracks active connections (not serialized)
-	Username               string        `json:"username"`               // XC Username
-	Password               string        `json:"password"`               // XC Password
+	Name                   string        `json:"name"`
+	URL                    string        `json:"url"`
+	Order                  int           `json:"order"`
+	MaxConnections         int           `json:"maxConnections"`
+	MaxStreamTimeout       time.Duration `json:"maxStreamTimeout"`
+	RetryDelay             time.Duration `json:"retryDelay"`
+	MaxRetries             int           `json:"maxRetries"`
+	MaxFailuresBeforeBlock int           `json:"maxFailuresBeforeBlock"`
+	MinDataSize            int64         `json:"minDataSize"`
+	UserAgent              string        `json:"userAgent"`
+	ReqOrigin              string        `json:"reqOrigin"`
+	ReqReferrer            string        `json:"reqReferrer"`
+	ActiveConns            atomic.Int32  `json:"-"`
+	Username               string        `json:"username"`
+	Password               string        `json:"password"`
 	LiveIncludeRegex       string        `json:"liveIncludeRegex,omitempty"`
 	LiveExcludeRegex       string        `json:"liveExcludeRegex,omitempty"`
 	SeriesIncludeRegex     string        `json:"seriesIncludeRegex,omitempty"`
 	SeriesExcludeRegex     string        `json:"seriesExcludeRegex,omitempty"`
 	VODIncludeRegex        string        `json:"vodIncludeRegex,omitempty"`
 	VODExcludeRegex        string        `json:"vodExcludeRegex,omitempty"`
-	EPGURL                 string        `json:"-"` // Parsed from M3U8, not from config file
-
+	EPGURL                 string        `json:"-"`
 }
 
-// ConfigFile represents the JSON file structure for marshaling/unmarshaling configuration.
-// String duration fields (e.g., "30m") are parsed into time.Duration values.
-type ConfigFile struct {
-	BaseURL               string             `json:"baseURL"`
-	BufferSizePerStream   int64              `json:"bufferSizePerStream"`
-	CacheEnabled          bool               `json:"cacheEnabled"`
-	CacheDuration         string             `json:"cacheDuration"`         // Duration as string (e.g., "30m")
-	ImportRefreshInterval string             `json:"importRefreshInterval"` // Duration as string (e.g., "12h")
-	WorkerThreads         int                `json:"workerThreads"`
-	Debug                 bool               `json:"debug"`
-	LogLevel              string             `json:"logLevel"`
-	ObfuscateUrls         bool               `json:"obfuscateUrls"`
-	SortField             string             `json:"sortField"`
-	SortDirection         string             `json:"sortDirection"`
-	StreamTimeout         string             `json:"streamTimeout"` // Duration as string (e.g., "10s")
-	MaxConnectionsToApp   int                `json:"maxConnectionsToApp"`
-	Sources               []SourceConfigFile `json:"sources"`
-	EPGs                  []EPGConfig        `json:"epgs"`
-	XCOutputAccounts      []XCOutputAccount  `json:"xcOutputAccounts"`
-	SDAccounts            []SDAccount        `json:"sdAccounts,omitempty"`
-	WatcherEnabled        bool               `json:"watcherEnabled"`
-	FFmpegMode            bool               `json:"ffmpegMode"`
-	FFmpegPreInput        []string           `json:"ffmpegPreInput"`
-	FFmpegPreOutput       []string           `json:"ffmpegPreOutput"`
-	ResponseHeaderTimeout string             `json:"responseHeaderTimeout"` // Duration as string (e.g., "10s")
-}
-
-// SourceConfigFile represents the source configuration in JSON format.
-// Duration fields are stored as strings (parsed later into time.Duration).
-type SourceConfigFile struct {
-	Name                   string `json:"name"`
-	URL                    string `json:"url"`
-	Order                  int    `json:"order"`
-	MaxConnections         int    `json:"maxConnections"`
-	MaxStreamTimeout       string `json:"maxStreamTimeout"` // Duration string (e.g., "30s")
-	RetryDelay             string `json:"retryDelay"`       // Duration string (e.g., "5s")
-	MaxRetries             int    `json:"maxRetries"`
-	MaxFailuresBeforeBlock int    `json:"maxFailuresBeforeBlock"`
-	MinDataSize            int64  `json:"minDataSize"`
-	UserAgent              string `json:"userAgent"`   // User-Agent header
-	ReqOrigin              string `json:"reqOrigin"`   // Origin header
-	ReqReferrer            string `json:"reqReferrer"` // Referer header
-	Username               string `json:"username"`
-	Password               string `json:"password"`
-	LiveIncludeRegex       string `json:"liveIncludeRegex,omitempty"`
-	LiveExcludeRegex       string `json:"liveExcludeRegex,omitempty"`
-	SeriesIncludeRegex     string `json:"seriesIncludeRegex,omitempty"`
-	SeriesExcludeRegex     string `json:"seriesExcludeRegex,omitempty"`
-	VODIncludeRegex        string `json:"vodIncludeRegex,omitempty"`
-	VODExcludeRegex        string `json:"vodExcludeRegex,omitempty"`
-}
-
-// XCOutputAccount represents an Xtream Codes compatible output account
-// for exposing proxy streams to XC-compatible IPTV clients.
+// XCOutputAccount represents an Xtream Codes compatible output account.
+// ActiveConns is runtime-only and never persisted.
 type XCOutputAccount struct {
 	Name           string       `json:"name"`
 	Username       string       `json:"username"`
@@ -146,54 +91,18 @@ type XCOutputAccount struct {
 	EnableLive     bool         `json:"enableLive"`
 	EnableSeries   bool         `json:"enableSeries"`
 	EnableVOD      bool         `json:"enableVOD"`
-	ActiveConns    atomic.Int32 `json:"-"` // Runtime connection tracking, not serialized
+	ActiveConns    atomic.Int32 `json:"-"`
 }
 
-// hold the config cache
 var (
-	configCache *Config      // Cached configuration instance (singleton)
-	configMutex sync.RWMutex // Mutex for safe concurrent access to configCache
+	configCache *Config
+	configMutex sync.RWMutex
 )
 
-// EnsureConfigExists checks if config file exists and creates it with defaults if not
-func EnsureConfigExists() error {
-	configPath := "/settings/config.json"
-
-	// Check if config file exists
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-
-		// Ensure directory exists
-		if err := os.MkdirAll("/settings", 0755); err != nil {
-			logger.Error("{config - EnsureConfigExists} failed to create settings directory: %v", err)
-			return err
-		}
-
-		// Create default config file
-		log.Println("Config file not found, creating default config at", configPath)
-		if err := CreateExampleConfig(configPath); err != nil {
-			logger.Error("{config - EnsureConfigExists} failed to create default config: %v", err)
-			return err
-		}
-		logger.Debug("{config - EnsureConfigExists} config exists")
-	}
-
-	// dont return anything
-	return nil
-}
-
-// LoadConfig loads the configuration from file or returns the cached instance.
-//
-// Process:
-//   - Uses double-checked locking to avoid redundant reloads.
-//   - Attempts to load from `/settings/config.json`.
-//   - Falls back to default config if file is missing or invalid.
-//   - Runs validation to ensure safe defaults.
-//
-// Returns:
-//   - *Config: fully validated configuration object
+// LoadConfig loads configuration from SQLite, returning a cached instance on
+// subsequent calls. Falls back to compiled defaults on first boot before any
+// settings have been persisted.
 func LoadConfig() *Config {
-
-	// set a lock for the config cache
 	configMutex.RLock()
 	if configCache != nil {
 		defer configMutex.RUnlock()
@@ -201,180 +110,396 @@ func LoadConfig() *Config {
 	}
 	configMutex.RUnlock()
 
-	// do it again!
 	configMutex.Lock()
 	defer configMutex.Unlock()
 
-	// Double-check under write lock
 	if configCache != nil {
 		return configCache
 	}
 
-	// Attempt to load from file
-	configPath := "/settings/config.json"
-	config, err := loadFromFile(configPath)
+	config, err := loadFromDB()
 	if err != nil {
-		logger.Error("{config - LoadConfig} Failed to load config from %s: %v", configPath, err)
+		logger.Error("{config - LoadConfig} Failed to load config from DB: %v", err)
 		config = getDefaultConfig()
 	}
 
-	// Ensure safe defaults for missing values
 	validateAndSetDefaults(config)
-
-	// Cache for future calls
 	configCache = config
-
-	// Debug logging of loaded config
-	logger.Debug("{config - LoadConfig} Configuration loaded")
-
-	// return the config
+	logger.Debug("{config - LoadConfig} Configuration loaded from SQLite")
 	return config
 }
 
-// loadFromFile reads and parses the configuration from a JSON file.
-//
-// Parameters:
-//   - path: path to JSON config file
-//
-// Returns:
-//   - *Config: parsed configuration
-//   - error: if reading/parsing failed
-func loadFromFile(path string) (*Config, error) {
+// ClearConfigCache resets the in-memory cache, forcing a full reload from
+// SQLite on the next LoadConfig call. Called before graceful restarts.
+func ClearConfigCache() {
+	configMutex.Lock()
+	defer configMutex.Unlock()
+	configCache = nil
+	logger.Debug("{config - ClearConfigCache} Config cache cleared")
+}
 
-	// read from tthe file
-	data, err := os.ReadFile(path)
+// loadFromDB reads kp_settings and the four related tables to build a Config.
+// Missing keys fall back to the compiled defaults from getDefaultConfig.
+func loadFromDB() (*Config, error) {
+	settings, err := db.AllSettings()
 	if err != nil {
-		logger.Error("{config - loadFromFile} failed to read config file: %v", err)
 		return nil, err
 	}
 
-	// unmarshal the config file
-	var configFile ConfigFile
-	if err := json.Unmarshal(data, &configFile); err != nil {
-		logger.Error("{config - loadFromFile} failed to parse config JSON: %v", err)
-		return nil, err
-	}
-	logger.Debug("{config - loadFromFile} parsed the config file")
+	// Start from safe defaults so any missing key gets a sane value.
+	cfg := getDefaultConfig()
 
-	// convert to our settings
-	return convertFromFile(&configFile)
-}
-
-// convertFromFile converts a ConfigFile to Config,
-// parsing duration strings into time.Duration.
-func convertFromFile(cf *ConfigFile) (*Config, error) {
-	config := &Config{
-		BaseURL:             cf.BaseURL,
-		BufferSizePerStream: cf.BufferSizePerStream,
-		CacheEnabled:        true,
-		WorkerThreads:       cf.WorkerThreads,
-		Debug:               cf.Debug,
-		LogLevel:            cf.LogLevel,
-		ObfuscateUrls:       cf.ObfuscateUrls,
-		SortField:           cf.SortField,
-		SortDirection:       cf.SortDirection,
-		MaxConnectionsToApp: cf.MaxConnectionsToApp,
-		WatcherEnabled:      cf.WatcherEnabled,
-		FFmpegMode:          cf.FFmpegMode,
-		FFmpegPreInput:      cf.FFmpegPreInput,
-		FFmpegPreOutput:     cf.FFmpegPreOutput,
+	if v, ok := settings["baseURL"]; ok {
+		cfg.BaseURL = v
 	}
-
-	// Parse duration fields
-	var err error
-	if config.CacheDuration, err = time.ParseDuration(cf.CacheDuration); err != nil {
-		logger.Error("{config - convertFromFile} invalid cacheDuration: %v", err)
-		return nil, err
-	}
-	if config.ImportRefreshInterval, err = time.ParseDuration(cf.ImportRefreshInterval); err != nil {
-		logger.Error("{config - convertFromFile} invalid importRefreshInterval: %v", err)
-		return nil, err
-	}
-	if config.StreamTimeout, err = time.ParseDuration(cf.StreamTimeout); err != nil {
-		logger.Error("{config - convertFromFile} invalid streamTimeout: %v", err)
-		return nil, err
-	}
-
-	if cf.ResponseHeaderTimeout == "" {
-		config.ResponseHeaderTimeout = 10 * time.Second
-	} else if config.ResponseHeaderTimeout, err = time.ParseDuration(cf.ResponseHeaderTimeout); err != nil {
-		logger.Error("{config - convertFromFile} invalid responseHeaderTimeout: %v", err)
-		return nil, err
-	}
-
-	// Convert sources
-	config.Sources = make([]SourceConfig, len(cf.Sources))
-	for i, srcFile := range cf.Sources {
-		src := &config.Sources[i]
-		src.Name = srcFile.Name
-		src.URL = srcFile.URL
-		src.Order = srcFile.Order
-		src.MaxConnections = srcFile.MaxConnections
-		src.MaxRetries = srcFile.MaxRetries
-		src.MaxFailuresBeforeBlock = srcFile.MaxFailuresBeforeBlock
-		src.MinDataSize = srcFile.MinDataSize
-		src.UserAgent = srcFile.UserAgent
-		src.ReqOrigin = srcFile.ReqOrigin
-		src.ReqReferrer = srcFile.ReqReferrer
-		src.Username = srcFile.Username
-		src.Password = srcFile.Password
-		src.LiveIncludeRegex = srcFile.LiveIncludeRegex
-		src.LiveExcludeRegex = srcFile.LiveExcludeRegex
-		src.SeriesIncludeRegex = srcFile.SeriesIncludeRegex
-		src.SeriesExcludeRegex = srcFile.SeriesExcludeRegex
-		src.VODIncludeRegex = srcFile.VODIncludeRegex
-		src.VODExcludeRegex = srcFile.VODExcludeRegex
-
-		// Parse per-source durations
-		if src.MaxStreamTimeout, err = time.ParseDuration(srcFile.MaxStreamTimeout); err != nil {
-			logger.Error("{config - convertFromFile} invalid maxStreamTimeout for source %s: %v", src.Name, err)
-			return nil, err
+	if v, ok := settings["bufferSizePerStream"]; ok {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			cfg.BufferSizePerStream = n
 		}
-		if src.RetryDelay, err = time.ParseDuration(srcFile.RetryDelay); err != nil {
-			logger.Error("{config - convertFromFile} invalid retryDelay for source %s: %v", src.Name, err)
-			return nil, err
+	}
+	if v, ok := settings["cacheEnabled"]; ok {
+		cfg.CacheEnabled = v == "true"
+	}
+	if v, ok := settings["cacheDuration"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.CacheDuration = d
+		}
+	}
+	if v, ok := settings["importRefreshInterval"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.ImportRefreshInterval = d
+		}
+	}
+	if v, ok := settings["workerThreads"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.WorkerThreads = n
+		}
+	}
+	if v, ok := settings["debug"]; ok {
+		cfg.Debug = v == "true"
+	}
+	if v, ok := settings["logLevel"]; ok {
+		cfg.LogLevel = v
+	}
+	if v, ok := settings["obfuscateUrls"]; ok {
+		cfg.ObfuscateUrls = v == "true"
+	}
+	if v, ok := settings["sortField"]; ok {
+		cfg.SortField = v
+	}
+	if v, ok := settings["sortDirection"]; ok {
+		cfg.SortDirection = v
+	}
+	if v, ok := settings["streamTimeout"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.StreamTimeout = d
+		}
+	}
+	if v, ok := settings["maxConnectionsToApp"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.MaxConnectionsToApp = n
+		}
+	}
+	if v, ok := settings["watcherEnabled"]; ok {
+		cfg.WatcherEnabled = v == "true"
+	}
+	if v, ok := settings["ffmpegMode"]; ok {
+		cfg.FFmpegMode = v == "true"
+	}
+	if v, ok := settings["ffmpegPreInput"]; ok && v != "" {
+		cfg.FFmpegPreInput = strings.Fields(v)
+	}
+	if v, ok := settings["ffmpegPreOutput"]; ok && v != "" {
+		cfg.FFmpegPreOutput = strings.Fields(v)
+	}
+	if v, ok := settings["responseHeaderTimeout"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.ResponseHeaderTimeout = d
 		}
 	}
 
-	// Simple copy since EPGConfig & XC Accounts has no duration fields
-	config.EPGs = cf.EPGs
-	config.XCOutputAccounts = cf.XCOutputAccounts
-	config.SDAccounts = cf.SDAccounts
-	logger.Debug("{config - convertFromFile} convert from the json settings")
+	cfg.Sources, err = loadSourcesFromDB()
+	if err != nil {
+		return nil, err
+	}
+	cfg.EPGs, err = loadEPGsFromDB()
+	if err != nil {
+		return nil, err
+	}
+	cfg.XCOutputAccounts, err = loadXCAccountsFromDB()
+	if err != nil {
+		return nil, err
+	}
+	cfg.SDAccounts, err = loadSDAccountsFromDB()
+	if err != nil {
+		return nil, err
+	}
 
-	// return the config
-	return config, nil
+	return cfg, nil
 }
 
-// getDefaultConfig returns a baseline configuration
-// with sensible defaults when no file is present.
+// loadSourcesFromDB converts kp_sources rows into SourceConfig values.
+func loadSourcesFromDB() ([]SourceConfig, error) {
+	rows, err := db.GetAllSources()
+	if err != nil {
+		return nil, err
+	}
+	sources := make([]SourceConfig, 0, len(rows))
+	for _, r := range rows {
+		maxStreamTo, err := time.ParseDuration(r.MaxStreamTo)
+		if err != nil {
+			maxStreamTo = 30 * time.Second
+		}
+		retryDelay, err := time.ParseDuration(r.RetryDelay)
+		if err != nil {
+			retryDelay = 5 * time.Second
+		}
+		sources = append(sources, SourceConfig{
+			Name:                   r.Name,
+			URL:                    r.URI,
+			Order:                  r.SortOrder,
+			MaxConnections:         r.MaxCnx,
+			MaxStreamTimeout:       maxStreamTo,
+			RetryDelay:             retryDelay,
+			MaxRetries:             r.MaxRetries,
+			MaxFailuresBeforeBlock: r.MaxFailures,
+			MinDataSize:            int64(r.MinDataSize),
+			UserAgent:              r.UserAgent,
+			ReqOrigin:              r.ReqOrigin,
+			ReqReferrer:            r.ReqReferer,
+			Username:               r.Username,
+			Password:               r.Password,
+			LiveIncludeRegex:       r.LiveIncRegex,
+			LiveExcludeRegex:       r.LiveExcRegex,
+			SeriesIncludeRegex:     r.SeriesIncRegex,
+			SeriesExcludeRegex:     r.SeriesExcRegex,
+			VODIncludeRegex:        r.VODIncRegex,
+			VODExcludeRegex:        r.VODExcRegex,
+		})
+	}
+	return sources, nil
+}
+
+// loadEPGsFromDB converts kp_epgs rows into EPGConfig values.
+func loadEPGsFromDB() ([]EPGConfig, error) {
+	rows, err := db.GetAllEPGs()
+	if err != nil {
+		return nil, err
+	}
+	epgs := make([]EPGConfig, 0, len(rows))
+	for _, r := range rows {
+		epgs = append(epgs, EPGConfig{
+			Name:  r.Name,
+			URL:   r.URL,
+			Order: r.SortOrder,
+		})
+	}
+	return epgs, nil
+}
+
+// loadXCAccountsFromDB converts kp_xc_accounts rows into XCOutputAccount values.
+func loadXCAccountsFromDB() ([]XCOutputAccount, error) {
+	rows, err := db.GetAllXCAccounts()
+	if err != nil {
+		return nil, err
+	}
+	accounts := make([]XCOutputAccount, 0, len(rows))
+	for _, r := range rows {
+		accounts = append(accounts, XCOutputAccount{
+			Name:           r.Name,
+			Username:       r.Username,
+			Password:       r.Password,
+			MaxConnections: r.MaxCnx,
+			EnableLive:     r.EnableLive,
+			EnableSeries:   r.EnableSeries,
+			EnableVOD:      r.EnableVOD,
+		})
+	}
+	return accounts, nil
+}
+
+// loadSDAccountsFromDB converts kp_sd_accounts rows (with lineups) into SDAccount values.
+func loadSDAccountsFromDB() ([]SDAccount, error) {
+	rows, err := db.GetAllSDAccountsWithLineups()
+	if err != nil {
+		return nil, err
+	}
+	accounts := make([]SDAccount, 0, len(rows))
+	for _, r := range rows {
+		accounts = append(accounts, SDAccount{
+			Name:            r.Name,
+			Username:        r.Username,
+			Password:        r.Password,
+			Enabled:         r.Enabled,
+			DaysToFetch:     r.DaysToFetch,
+			SelectedLineups: r.Lineups,
+		})
+	}
+	return accounts, nil
+}
+
+// PersistConfig writes every field of cfg into kp_settings and syncs the
+// four related tables. Called by the admin API after validation.
+func PersistConfig(cfg *Config) error {
+	settings := map[string]string{
+		"baseURL":               cfg.BaseURL,
+		"bufferSizePerStream":   strconv.FormatInt(cfg.BufferSizePerStream, 10),
+		"cacheEnabled":          strconv.FormatBool(cfg.CacheEnabled),
+		"cacheDuration":         cfg.CacheDuration.String(),
+		"importRefreshInterval": cfg.ImportRefreshInterval.String(),
+		"workerThreads":         strconv.Itoa(cfg.WorkerThreads),
+		"debug":                 strconv.FormatBool(cfg.Debug),
+		"logLevel":              cfg.LogLevel,
+		"obfuscateUrls":         strconv.FormatBool(cfg.ObfuscateUrls),
+		"sortField":             cfg.SortField,
+		"sortDirection":         cfg.SortDirection,
+		"streamTimeout":         cfg.StreamTimeout.String(),
+		"maxConnectionsToApp":   strconv.Itoa(cfg.MaxConnectionsToApp),
+		"watcherEnabled":        strconv.FormatBool(cfg.WatcherEnabled),
+		"ffmpegMode":            strconv.FormatBool(cfg.FFmpegMode),
+		"ffmpegPreInput":        strings.Join(cfg.FFmpegPreInput, " "),
+		"ffmpegPreOutput":       strings.Join(cfg.FFmpegPreOutput, " "),
+		"responseHeaderTimeout": cfg.ResponseHeaderTimeout.String(),
+	}
+
+	for k, v := range settings {
+		if err := db.SetSetting(k, v); err != nil {
+			return err
+		}
+	}
+
+	if err := syncSourcesToDB(cfg.Sources); err != nil {
+		return err
+	}
+	if err := syncEPGsToDB(cfg.EPGs); err != nil {
+		return err
+	}
+	if err := syncXCAccountsToDB(cfg.XCOutputAccounts); err != nil {
+		return err
+	}
+	return syncSDAccountsToDB(cfg.SDAccounts)
+}
+
+// syncSourcesToDB replaces all kp_sources rows to match cfg.
+func syncSourcesToDB(sources []SourceConfig) error {
+	if _, err := db.Get().Exec(`DELETE FROM kp_sources`); err != nil {
+		return err
+	}
+	for _, s := range sources {
+		if _, err := db.InsertSource(db.Source{
+			Name:           s.Name,
+			URI:            s.URL,
+			Username:       s.Username,
+			Password:       s.Password,
+			SortOrder:      s.Order,
+			MaxCnx:         s.MaxConnections,
+			MaxStreamTo:    s.MaxStreamTimeout.String(),
+			RetryDelay:     s.RetryDelay.String(),
+			MaxRetries:     s.MaxRetries,
+			MaxFailures:    s.MaxFailuresBeforeBlock,
+			MinDataSize:    int(s.MinDataSize),
+			UserAgent:      s.UserAgent,
+			ReqOrigin:      s.ReqOrigin,
+			ReqReferer:     s.ReqReferrer,
+			LiveIncRegex:   s.LiveIncludeRegex,
+			LiveExcRegex:   s.LiveExcludeRegex,
+			SeriesIncRegex: s.SeriesIncludeRegex,
+			SeriesExcRegex: s.SeriesExcludeRegex,
+			VODIncRegex:    s.VODIncludeRegex,
+			VODExcRegex:    s.VODExcludeRegex,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// syncEPGsToDB replaces all kp_epgs rows to match cfg.
+func syncEPGsToDB(epgs []EPGConfig) error {
+	if _, err := db.Get().Exec(`DELETE FROM kp_epgs`); err != nil {
+		return err
+	}
+	for _, e := range epgs {
+		if _, err := db.InsertEPG(db.EPG{
+			Name:      e.Name,
+			URL:       e.URL,
+			SortOrder: e.Order,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// syncXCAccountsToDB replaces all kp_xc_accounts rows to match cfg.
+func syncXCAccountsToDB(accounts []XCOutputAccount) error {
+	if _, err := db.Get().Exec(`DELETE FROM kp_xc_accounts`); err != nil {
+		return err
+	}
+	for _, a := range accounts {
+		if _, err := db.InsertXCAccount(db.XCAccount{
+			Name:         a.Name,
+			Username:     a.Username,
+			Password:     a.Password,
+			MaxCnx:       a.MaxConnections,
+			EnableLive:   a.EnableLive,
+			EnableSeries: a.EnableSeries,
+			EnableVOD:    a.EnableVOD,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// syncSDAccountsToDB replaces all kp_sd_accounts rows (and their lineups) to match cfg.
+func syncSDAccountsToDB(accounts []SDAccount) error {
+	if _, err := db.Get().Exec(`DELETE FROM kp_sd_accounts`); err != nil {
+		return err
+	}
+	for _, a := range accounts {
+		if _, err := db.InsertSDAccount(db.SDAccount{
+			Name:        a.Name,
+			Username:    a.Username,
+			Password:    a.Password,
+			Enabled:     a.Enabled,
+			DaysToFetch: a.DaysToFetch,
+			Lineups:     a.SelectedLineups,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// getDefaultConfig returns a baseline configuration with sensible defaults
+// used on first boot before any settings have been persisted to SQLite.
 func getDefaultConfig() *Config {
-	logger.Debug("{config - getDefaultConfig} load the default config")
-
-	// return the default config
 	return &Config{
 		BaseURL:               "http://localhost:8080",
-		BufferSizePerStream:   1,                // Default: 1 MB per stream
-		CacheEnabled:          true,             // Enable caching
-		CacheDuration:         30 * time.Minute, // Default 30 min expiration
-		ImportRefreshInterval: 12 * time.Hour,   // Default: refresh imports every 12 hours
-		WorkerThreads:         8,                // Default worker threads
-		Debug:                 true,             // Debug disabled
+		BufferSizePerStream:   1,
+		CacheEnabled:          true,
+		CacheDuration:         30 * time.Minute,
+		ImportRefreshInterval: 12 * time.Hour,
+		WorkerThreads:         8,
+		Debug:                 true,
 		LogLevel:              "INFO",
-		ObfuscateUrls:         false,            // Do not obfuscate by default
-		SortField:             "tvg-name",       // Default sort field
-		SortDirection:         "asc",            // Default ascending order
-		StreamTimeout:         10 * time.Second, // Default stream timeout
-		MaxConnectionsToApp:   100,              // Default connection limit
-		Sources:               []SourceConfig{}, // No sources configured
-		EPGs:                  []EPGConfig{},    // No EPGs configured
+		ObfuscateUrls:         false,
+		SortField:             "tvg-name",
+		SortDirection:         "asc",
+		StreamTimeout:         10 * time.Second,
+		MaxConnectionsToApp:   100,
+		Sources:               []SourceConfig{},
+		EPGs:                  []EPGConfig{},
 		WatcherEnabled:        true,
+		FFmpegPreInput:        []string{},
+		FFmpegPreOutput:       []string{},
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
 }
 
 // validateAndSetDefaults ensures all config values are valid,
-// filling in defaults for missing/invalid ones.
+// filling in defaults for missing or invalid ones.
 func validateAndSetDefaults(config *Config) {
 	if config.BaseURL == "" {
 		config.BaseURL = "http://localhost:8080"
@@ -409,17 +534,21 @@ func validateAndSetDefaults(config *Config) {
 	if config.LogLevel == "" {
 		config.LogLevel = "INFO"
 	}
-	// Validate XC output accounts
+	if config.FFmpegPreInput == nil {
+		config.FFmpegPreInput = []string{}
+	}
+	if config.FFmpegPreOutput == nil {
+		config.FFmpegPreOutput = []string{}
+	}
 	for i := range config.XCOutputAccounts {
 		if config.XCOutputAccounts[i].MaxConnections <= 0 {
 			config.XCOutputAccounts[i].MaxConnections = 10
 		}
 	}
-	// Validate each source
 	for i := range config.Sources {
 		src := &config.Sources[i]
 		if src.Name == "" {
-			src.Name = fmt.Sprintf("Source_%d", i+1)
+			src.Name = strconv.Itoa(i + 1)
 		}
 		if src.Order <= 0 {
 			src.Order = i + 1
@@ -445,15 +574,12 @@ func validateAndSetDefaults(config *Config) {
 		if src.UserAgent == "" {
 			src.UserAgent = "VLC/3.0.18 LibVLC/3.0.18"
 		}
-		// ReqOrigin and ReqReferrer may remain empty
 	}
 }
 
 // GetSourceByURL returns a pointer to the SourceConfig matching the given URL.
 // Returns nil if no match is found.
 func (c *Config) GetSourceByURL(url string) *SourceConfig {
-	logger.Debug("{config - GetSourceByURL} get the source config by the url")
-	// loop the sources to make sure the url is valid
 	for i := range c.Sources {
 		if c.Sources[i].URL == url {
 			return &c.Sources[i]
@@ -463,15 +589,9 @@ func (c *Config) GetSourceByURL(url string) *SourceConfig {
 }
 
 // GetSourcesByOrder returns a copy of sources sorted by their Order field.
-// Original slice remains unmodified.
 func (c *Config) GetSourcesByOrder() []SourceConfig {
-	logger.Debug("{config - GetSourcesByOrder} get the ordered sources")
-
-	// setup the original sources
 	sources := make([]SourceConfig, len(c.Sources))
 	copy(sources, c.Sources)
-
-	// Simple bubble sort (sufficient since number of sources is small)
 	for i := 0; i < len(sources)-1; i++ {
 		for j := i + 1; j < len(sources); j++ {
 			if sources[i].Order > sources[j].Order {
@@ -479,125 +599,5 @@ func (c *Config) GetSourcesByOrder() []SourceConfig {
 			}
 		}
 	}
-
-	// return the sorted sources
 	return sources
-}
-
-// CreateExampleConfig creates an example config file on disk.
-//
-// Parameters:
-//   - path: file path to write example config
-//
-// Returns:
-//   - error: if write fails
-func CreateExampleConfig(path string) error {
-	example := ConfigFile{
-		BaseURL:               "http://localhost:8080",
-		BufferSizePerStream:   16,
-		CacheEnabled:          true,
-		CacheDuration:         "30m",
-		ImportRefreshInterval: "12h",
-		WorkerThreads:         4,
-		Debug:                 true,
-		LogLevel:              "INFO",
-		ObfuscateUrls:         true,
-		SortField:             "tvg-name",
-		SortDirection:         "asc",
-		StreamTimeout:         "10s",
-		MaxConnectionsToApp:   100,
-		ResponseHeaderTimeout: "10s",
-		Sources: []SourceConfigFile{
-			{
-				Name:                   "Primary IPTV Source",
-				URL:                    "http://example.com/playlist1.m3u8",
-				Username:               "",
-				Password:               "",
-				Order:                  1,
-				MaxConnections:         5,
-				MaxStreamTimeout:       "30s",
-				RetryDelay:             "5s",
-				MaxRetries:             3,
-				MaxFailuresBeforeBlock: 5,
-				MinDataSize:            2,
-				UserAgent:              "VLC/3.0.18 LibVLC/3.0.18",
-				ReqOrigin:              "",
-				ReqReferrer:            "",
-				LiveIncludeRegex:       "",
-				LiveExcludeRegex:       "",
-				SeriesIncludeRegex:     "",
-				SeriesExcludeRegex:     "",
-				VODIncludeRegex:        "",
-				VODExcludeRegex:        "",
-			},
-			{
-				Name:                   "Backup IPTV Source",
-				URL:                    "http://example.com/playlist2.m3u8",
-				Username:               "",
-				Password:               "",
-				Order:                  2,
-				MaxConnections:         10,
-				MaxStreamTimeout:       "45s",
-				RetryDelay:             "10s",
-				MaxRetries:             2,
-				MaxFailuresBeforeBlock: 3,
-				MinDataSize:            1,
-				UserAgent:              "Mozilla/5.0 (Smart TV; Linux)",
-				ReqOrigin:              "https://provider2.com",
-				ReqReferrer:            "https://provider2.com/player",
-				LiveIncludeRegex:       "",
-				LiveExcludeRegex:       "",
-				SeriesIncludeRegex:     "",
-				SeriesExcludeRegex:     "",
-				VODIncludeRegex:        "",
-				VODExcludeRegex:        "",
-			},
-		},
-	}
-
-	// setup the data properly
-	data, err := json.MarshalIndent(example, "", "  ")
-	if err != nil {
-		logger.Error("{config - CreateExampleConfig} example config: %v", err)
-		return err
-	}
-	logger.Debug("{config - CreateExampleConfig} created the example config")
-	// write the config file
-	return os.WriteFile(path, data, 0644)
-}
-
-// ClearConfigCache resets the configCache to nil.
-// Forces a reload on the next LoadConfig() call.
-func ClearConfigCache() {
-	logger.Debug("{config - ClearConfigCache} clear the config cache")
-	configMutex.Lock()
-	defer configMutex.Unlock()
-	configCache = nil
-}
-
-// obfuscateURL masks sensitive parts of a URL for logging.
-//
-// Example:
-//
-//	Input:  "http://example.com/secret/stream.m3u8?token=abc"
-//	Output: "http://example.com/***?***"
-func obfuscateURL(urlStr string) string {
-	if urlStr == "" {
-		return ""
-	}
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		return "***OBFUSCATED***"
-	}
-	result := u.Scheme + "://" + u.Host
-	if u.Path != "" && u.Path != "/" {
-		result += "/***"
-	}
-	if u.RawQuery != "" {
-		result += "?***"
-	}
-	if u.Fragment != "" {
-		result += "#***"
-	}
-	return result
 }

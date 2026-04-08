@@ -237,15 +237,15 @@ func (sp *StreamProxy) ImportStreams() {
 		channelName := key
 		channel := value
 
-		// Hash URLs before sorting so SortStreams can use them for custom ordering
+		// Hash URLs before sorting so SortStreams can use them for custom ordering.
 		for _, s := range channel.Streams {
 			s.URLHash = utils.HashURL(s.URL)
 		}
 
-		// SortStreams handles both global sort and custom ordering internally
+		// SortStreams handles both global sort and custom ordering internally.
 		parser.SortStreams(channel.Streams, sp.Config, channelName)
 
-		// Preserve the existing preferred stream index across import cycles
+		// Preserve the existing preferred stream index across import cycles.
 		if existingChannel, exists := sp.Channels.Load(channelName); exists {
 			existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
 			atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
@@ -256,12 +256,6 @@ func (sp *StreamProxy) ImportStreams() {
 		return true
 	})
 
-	if sp.Config.CacheEnabled {
-		sp.Cache.ClearIfNeeded()
-		logger.Debug("{proxy/stream - ImportStreams} Cache cleanup triggered after import")
-	}
-
-	logger.Debug("{proxy/stream - ImportStreams} Import complete: %d channels discovered", count)
 }
 
 // GeneratePlaylist creates and serves a complete M3U8 playlist containing all discovered
@@ -607,9 +601,16 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 			channel.Restreamer.Clients = xsync.NewMapOf[string, *types.RestreamClient]()
 			logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Re-initialized client map on existing restreamer", channel.Name)
 		}
+		// If not running, reset CurrentIndex to PreferredStreamIndex so the
+		// next Stream() call starts from the correct custom-ordered position.
+		if !channel.Restreamer.Running.Load() {
+			preferred := atomic.LoadInt32(&channel.PreferredStreamIndex)
+			atomic.StoreInt32(&channel.Restreamer.CurrentIndex, preferred)
+		}
 		restreamer = &restream.Restream{Restreamer: channel.Restreamer}
 		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Reusing existing restreamer", channel.Name)
 	}
+
 	channel.Mu.Unlock()
 
 	// generate a unique client identifier
@@ -777,4 +778,14 @@ func (sp *StreamProxy) getChannelSortValue(ch channelBatch) string {
 	}
 
 	return strings.ToLower(ch.name)
+}
+
+// ChannelCount returns the current number of channels in the channel map.
+func (sp *StreamProxy) ChannelCount() int {
+	count := 0
+	sp.Channels.Range(func(_ string, _ *types.Channel) bool {
+		count++
+		return true
+	})
+	return count
 }

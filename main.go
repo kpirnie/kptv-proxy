@@ -9,18 +9,20 @@ import (
 
 	"kptv-proxy/app"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/utils"
 )
 
 func main() {
 
-	// Ensure the config file exists on disk, creating a default if not present
-	if err := config.EnsureConfigExists(); err != nil {
-		os.Exit(1)
-	}
+	// Initialize the SQLite database before loading config.
+	db.Get()
 
-	// Load configuration from /settings/config.json
+	// migrate the existing settings: this'll only happen once, but will backup the original config.json
+	db.MigrateFromJSON()
+
+	// Load configuration from settings
 	cfg := config.LoadConfig()
 
 	// Apply log level from config and compile content classification regexes
@@ -60,6 +62,7 @@ func main() {
 	logger.Info("  - Base URL: %s", cfg.BaseURL)
 	logger.Info("  - Worker Threads: %d", cfg.WorkerThreads)
 	logger.Info("  - Sources: %d", len(cfg.Sources))
+	logger.Info("  - Channels: %d", proxyInstance.ChannelCount())
 	logger.Info("  - EPGs: %d", len(cfg.EPGs))
 	logger.Info("  - Per-Stream Buffer: %s", utils.FormatBytes(cfg.BufferSizePerStream*1024*1024))
 	logger.Info("  - Cache Enabled: %v", cfg.CacheEnabled)

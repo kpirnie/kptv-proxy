@@ -6,16 +6,15 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 )
 
 const (
 	sdBaseURL        = "https://json.schedulesdirect.org/20141201"
-	tokenCachePath   = "/settings/sd-tokens.json"
 	tokenValidHours  = 24
 	refreshThreshold = 12 * time.Hour
 )
@@ -28,7 +27,7 @@ type tokenCacheEntry struct {
 	LastRefreshAttempt time.Time `json:"lastRefreshAttempt"`
 }
 
-// tokenCacheFile is the structure of /settings/sd-tokens.json.
+// tokenCacheFile is the structure
 type tokenCacheFile struct {
 	Accounts []tokenCacheEntry `json:"accounts"`
 }
@@ -162,38 +161,29 @@ func findEntry(cache *tokenCacheFile, username string) *tokenCacheEntry {
 	return nil
 }
 
-// loadTokenCache reads and parses the token cache file from disk.
+// loadTokenCache reads the token cache from kp_settings.
 func loadTokenCache() (*tokenCacheFile, error) {
-	if _, err := os.Stat(tokenCachePath); os.IsNotExist(err) {
-		return &tokenCacheFile{Accounts: []tokenCacheEntry{}}, nil
-	}
-
-	data, err := os.ReadFile(tokenCachePath)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(data) == 0 {
+	value, ok := db.GetSetting("sd_token_cache")
+	if !ok || value == "" {
 		return &tokenCacheFile{Accounts: []tokenCacheEntry{}}, nil
 	}
 
 	var cache tokenCacheFile
-	if err := json.Unmarshal(data, &cache); err != nil {
-		return nil, err
+	if err := json.Unmarshal([]byte(value), &cache); err != nil {
+		logger.Warn("{schedulesdirect/auth - loadTokenCache} corrupt cache, resetting: %v", err)
+		return &tokenCacheFile{Accounts: []tokenCacheEntry{}}, nil
 	}
-
 	if cache.Accounts == nil {
 		cache.Accounts = []tokenCacheEntry{}
 	}
-
 	return &cache, nil
 }
 
-// saveTokenCache writes the token cache to disk as formatted JSON.
+// saveTokenCache writes the token cache to kp_settings as JSON.
 func saveTokenCache(cache *tokenCacheFile) error {
-	data, err := json.MarshalIndent(cache, "", "  ")
+	data, err := json.Marshal(cache)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(tokenCachePath, data, 0644)
+	return db.SetSetting("sd_token_cache", string(data))
 }
