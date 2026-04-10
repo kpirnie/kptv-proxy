@@ -80,9 +80,6 @@ func handleGetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			"ffmpegPreOutput":       cfg.FFmpegPreOutput,
 			"responseHeaderTimeout": cfg.ResponseHeaderTimeout.String(),
 			"sources":               sources,
-			"epgs":                  cfg.EPGs,
-			"xcOutputAccounts":      cfg.XCOutputAccounts,
-			"sdAccounts":            cfg.SDAccounts,
 		}
 
 		if err := json.NewEncoder(w).Encode(out); err != nil {

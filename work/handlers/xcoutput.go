@@ -501,6 +501,6 @@ func HandleXCXMLTV(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		logger.Debug("{handlers/xcoutput - HandleXCXMLTV} EPG request for account: %s", account.Name)
-		HandleEPG(sp)(w, r)
+		serveEPG(sp)(w, r)
 	}
 }

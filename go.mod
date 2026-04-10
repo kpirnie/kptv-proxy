@@ -1,6 +1,6 @@
 module kptv-proxy
 
-go 1.26.1
+go 1.26.2
 
 require (
 	github.com/gorilla/mux v1.8.1
@@ -13,6 +13,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	go.uber.org/ratelimit v0.3.1
+	golang.org/x/crypto v0.50.0
 )
 
 require (

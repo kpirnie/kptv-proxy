@@ -1,5 +1,5 @@
 # Build stage - use alpine for smaller builder
-FROM docker.io/golang:1.26.1-alpine AS builder
+FROM docker.io/golang:1.26.2-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 WORKDIR /app

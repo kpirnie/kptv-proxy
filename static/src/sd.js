@@ -5,9 +5,10 @@
  */
 async function loadSDAccounts() {
     try {
-        const config = await apiCall('/api/config');
-        adminConfig = config;
-        renderSDAccounts(config.sdAccounts || []);
+        const accounts = await apiCall('/api/sd-accounts');
+        adminConfig = adminConfig || {};
+        adminConfig.sdAccounts = accounts;
+        renderSDAccounts(accounts || []);
     } catch (error) {
         document.getElementById('sd-accounts-container').innerHTML =
             '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">Failed to load SD accounts</div>';
@@ -235,16 +236,13 @@ async function saveSDAccount() {
     const account = { name, username, password, enabled, daysToFetch, selectedLineups };
 
     try {
-        const config = await apiCall('/api/config');
-        if (!config.sdAccounts) config.sdAccounts = [];
-
         if (index === '') {
-            config.sdAccounts.push(account);
+            await apiCall('/api/sd-accounts', { method: 'POST', body: JSON.stringify(account) });
         } else {
-            config.sdAccounts[parseInt(index)] = account;
+            const id = adminConfig.sdAccounts[parseInt(index)].id;
+            await apiCall(`/api/sd-accounts/${id}`, { method: 'PUT', body: JSON.stringify(account) });
         }
 
-        await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
         hideModal('sd-account-modal');
         showNotification('SD account saved successfully!', 'success');
         loadSDAccounts();
@@ -272,9 +270,8 @@ async function deleteSDAccount(index) {
     if (!confirm('Are you sure you want to delete this Schedules Direct account?')) return;
 
     try {
-        const config = await apiCall('/api/config');
-        config.sdAccounts.splice(index, 1);
-        await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
+        const id = adminConfig.sdAccounts[index].id;
+        await apiCall(`/api/sd-accounts/${id}`, { method: 'DELETE' });
         showNotification('SD account deleted successfully!', 'success');
         loadSDAccounts();
         setTimeout(() => restartService(), 500);

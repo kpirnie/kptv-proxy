@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPTV Proxy — Login</title>
+    <link rel="stylesheet" href="/static/admin.css">
+    <link rel="icon" type="image/png" href="https://cdn.kcp.im/tv/kptv-icon.png" />
+</head>
+<body class="bg-kptv-darker text-gray-100 min-h-screen flex items-center justify-center">
+    <div class="w-full max-w-lg p-6">
+        <div class="flex justify-center mb-8">
+            <img src="https://cdn.kcp.im/tv/kptv-icon.svg" alt="KPTV" class="h-32 w-32">
+        </div>
+        <div class="bg-kptv-gray rounded border border-kptv-border">
+            <div class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3">
+                <h2 class="text-xl font-semibold text-center">Sign In</h2>
+            </div>
+            <div class="p-6">
+                <div id="error-box" class="hidden bg-red-900/20 border border-red-600 text-red-100 px-4 py-3 rounded mb-4"></div>
+                <form method="POST" action="/login">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Username/Email</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" name="identifier" required autofocus autocomplete="username">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Password</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="password" name="password" required>
+                    </div>
+                    <div class="mb-6">
+                        <label class="flex items-center">
+                            <input class="mr-2" type="checkbox" name="remember_me">
+                            <span class="text-sm">Remember me for 30 days</span>
+                        </label>
+                    </div>
+                    <button
+                        class="w-full px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors font-medium"
+                        type="submit">Sign In</button>
+                </form>
+            </div>
+        </div>
+        <div class="text-center mt-4 text-xs text-gray-500">
+            KPTV Proxy &copy; <span id="year"></span> <a href="https://kevinpirnie.com" target="_blank" class="text-kptv-blue hover:text-kptv-blue-light">Kevin C. Pirnie</a>
+        </div>
+    </div>
+    <script>
+        document.getElementById('year').textContent = new Date().getFullYear();
+        const params = new URLSearchParams(window.location.search);
+        const error = params.get('error');
+        if (error) {
+            const box = document.getElementById('error-box');
+            box.textContent = decodeURIComponent(error);
+            box.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

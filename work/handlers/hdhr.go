@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/proxy"
+	"kptv-proxy/work/users"
 	"kptv-proxy/work/utils"
 	"net/http"
 
@@ -108,13 +109,13 @@ func hdhrGuideNumber(channelName string) string {
 // router. No config toggle is needed — these routes are always active when the
 // proxy is running. Clients point directly at the proxy IP and port.
 func SetupHDHRRoutes(router *mux.Router, sp *proxy.StreamProxy) {
-	router.HandleFunc("/discover.json", handleHDHRDiscover(sp)).Methods("GET")
-	router.HandleFunc("/device.xml", handleHDHRDeviceXML(sp)).Methods("GET")
-	router.HandleFunc("/lineup_status.json", handleHDHRLineupStatus()).Methods("GET")
-	router.HandleFunc("/lineup.json", handleHDHRLineup(sp)).Methods("GET")
-	router.HandleFunc("/lineup.post", handleHDHRLineupPost()).Methods("POST", "GET")
+	router.HandleFunc("/discover.json", users.RequireLocalNetwork(handleHDHRDiscover(sp))).Methods("GET")
+	router.HandleFunc("/device.xml", users.RequireLocalNetwork(handleHDHRDeviceXML(sp))).Methods("GET")
+	router.HandleFunc("/lineup_status.json", users.RequireLocalNetwork(handleHDHRLineupStatus())).Methods("GET")
+	router.HandleFunc("/lineup.json", users.RequireLocalNetwork(handleHDHRLineup(sp))).Methods("GET")
+	router.HandleFunc("/lineup.post", users.RequireLocalNetwork(handleHDHRLineupPost())).Methods("POST", "GET")
 
-	logger.Info("HDHomeRun emulation active (deviceID: %s)", hdhrDeviceID(sp.Config.BaseURL))
+	logger.Info("HDHomeRun emulation active (local network only, deviceID: %s)", hdhrDeviceID(sp.Config.BaseURL))
 }
 
 // handleHDHRDiscover serves /discover.json — the primary device identification

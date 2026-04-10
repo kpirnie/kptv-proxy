@@ -28,15 +28,22 @@
                     <img src="https://cdn.kcp.im/tv/kptv-icon.svg" alt="KPTV" class="h-32 w-32 -my-4">
                     <span class="text-xl font-semibold hidden sm:block">KPTV Proxy</span>
                 </a>
-                <button id="restart-btn"
-                    class="flex items-center space-x-2 px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
-                        </path>
-                    </svg>
-                    <span class="hidden sm:inline">Restart</span>
-                </button>
+                <div class="flex items-center space-x-2">
+                    <button id="restart-btn" class="flex items-center space-x-2 px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                            </path>
+                        </svg>
+                        <span class="hidden sm:inline">Restart</span>
+                    </button>
+                    <a href="/logout" class="flex items-center space-x-2 px-4 py-2 bg-red-700 hover:bg-red-600 rounded transition-colors" onclick="return confirm('Are you sure you want to log out?')">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                            </path>
+                        </svg>
+                        <span class="hidden sm:inline">Logout</span>
+                    </a>
+                </div>
             </div>
         </div>
     </nav>
@@ -49,10 +56,10 @@
                     data-tab="0">Dashboard</button>
                 <button
                     class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
-                    data-tab="1">Global Settings</button>
+                    data-tab="1">Settings</button>
                 <button
                     class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
-                    data-tab="2">Xtreme Accounts</button>
+                    data-tab="2">Accounts</button>
                 <button
                     class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
                     data-tab="3">Sources</button>
@@ -67,8 +74,13 @@
                     data-tab="6">Logs</button>
             </nav>
         </div>
+
         <div class="tab-content">
+
+            <!-- dashboard -->
             <div class="active">
+
+                <!-- STATS -->
                 <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
                     <div class="stat-card rounded p-6 text-center">
                         <div class="text-4xl font-bold" id="total-channels">-</div>
@@ -92,6 +104,7 @@
                     </div>
                 </div>
 
+                <!-- statistics -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
                     <div class="bg-kptv-gray rounded border border-kptv-border">
                         <div class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3">
@@ -178,6 +191,7 @@
                     </div>
                 </div>
 
+                <!-- activity -->
                 <div class="bg-kptv-gray rounded border border-kptv-border">
                     <div
                         class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center">
@@ -209,7 +223,7 @@
                 <form id="global-settings-form">
                     <div class="bg-kptv-gray rounded border border-kptv-border">
                         <div class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3">
-                            <h3 class="text-lg font-semibold">Global Configuration</h3>
+                            <h3 class="text-lg font-semibold">Global Settings</h3>
                         </div>
                         <div class="p-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -384,10 +398,26 @@
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                         </svg>
-                        <span>Add XC Account</span>
+                        <span>Add Account</span>
                     </button>
                 </div>
                 <div id="xc-accounts-container"></div>
+                <div class="mt-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-base font-semibold pb-2 border-b border-kptv-border w-full">API Tokens</h3>
+                    </div>
+                    <div class="mb-4">
+                        <button
+                            class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"
+                            id="add-token-btn">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            <span>Add API Token</span>
+                        </button>
+                    </div>
+                    <div id="tokens-container"></div>
+                </div>
             </div>
 
             <!-- source -->
@@ -983,6 +1013,113 @@
                     id="cancel-xc-account-btn" type="button">Cancel</button>
                 <button class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
                     id="save-xc-account-btn" type="button">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- token modal -->
+    <div id="token-modal" class="modal">
+        <div
+            class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-lg max-h-[90vh] overflow-y-auto m-4">
+            <div
+                class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="token-modal-title">Add API Token</h2>
+                <button class="text-gray-400 hover:text-white" id="close-token-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Token Name</label>
+                    <input
+                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                        type="text" id="token-name" placeholder="e.g. Emby Integration">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-3">Permissions</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input class="mr-2 token-perm-checkbox" type="checkbox" value="255">
+                            <span>Full Access</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input class="mr-2 token-perm-checkbox" type="checkbox" value="1">
+                            <span>Read</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input class="mr-2 token-perm-checkbox" type="checkbox" value="2">
+                            <span>Config Write</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input class="mr-2 token-perm-checkbox" type="checkbox" value="4">
+                            <span>Restart</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input class="mr-2 token-perm-checkbox" type="checkbox" value="8">
+                            <span>Streams</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input class="mr-2 token-perm-checkbox" type="checkbox" value="16">
+                            <span>Logs</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input class="mr-2 token-perm-checkbox" type="checkbox" value="32">
+                            <span>XC Accounts</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input class="mr-2 token-perm-checkbox" type="checkbox" value="64">
+                            <span>EPGs</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input class="mr-2 token-perm-checkbox" type="checkbox" value="128">
+                            <span>Schedules Direct</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-end gap-2">
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-token-btn" type="button">Cancel</button>
+                <button class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
+                    id="save-token-btn" type="button">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- token reveal modal -->
+    <div id="token-reveal-modal" class="modal">
+        <div
+            class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-lg m-4">
+            <div
+                class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold">Your New API Token</h2>
+                <button class="text-gray-400 hover:text-white" id="close-token-reveal-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <div class="bg-red-900/20 border border-red-600 text-red-100 px-4 py-3 rounded mb-4 text-sm">
+                    Copy this token now. It will never be shown again.
+                </div>
+                <div class="bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 font-mono text-sm break-all" id="raw-token-value"></div>
+                <button
+                    class="mt-3 w-full px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center justify-center space-x-2"
+                    onclick="copyToClipboard(document.getElementById('raw-token-value').textContent, 'Token copied to clipboard')">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                    </svg>
+                    <span>Copy Token</span>
+                </button>
+            </div>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-end">
+                <button
+                    class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
+                    id="close-token-reveal-btn" type="button">Done</button>
             </div>
         </div>
     </div>

@@ -5,9 +5,10 @@
  */
 async function loadXCAccounts() {
     try {
-        const config = await apiCall('/api/config');
-        adminConfig = config;
-        renderXCAccounts(config.xcOutputAccounts || []);
+        const accounts = await apiCall('/api/xc-accounts');
+        adminConfig = adminConfig || {};
+        adminConfig.xcOutputAccounts = accounts;
+        renderXCAccounts(accounts);
     } catch (error) {
         document.getElementById('xc-accounts-container').innerHTML =
             '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">Failed to load XC accounts</div>';
@@ -34,31 +35,71 @@ function renderXCAccounts(accounts) {
                     <h4 class="text-lg font-semibold mb-1">${escapeHtml(account.name)}</h4>
                     <div class="text-gray-400 text-sm">Max Connections: ${account.maxConnections}</div>
                 </div>
-                <div class="flex items-center gap-2 ml-4">
-                    <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                        title="Copy base URL"
-                        onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}', 'URL copied')">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
-                        </svg>
-                        URL
-                    </button>
-                    <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                        title="Copy username"
-                        onclick="copyToClipboard('${escapeHtml(account.username).replace(/'/g, "\\'")}', 'Username copied')">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                        </svg>
-                        User
-                    </button>
-                    <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                        title="Copy password"
-                        onclick="copyToClipboard('${account.password.replace(/'/g, "\\'")}', 'Password copied')">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                        </svg>
-                        Pass
-                    </button>
+                <div class="flex flex-col items-end gap-2 ml-4">
+                    <div class="flex items-center gap-2">
+                        <button class="font-bold flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="Xtreme Codes" disabled>XC</button>
+                        <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="Copy base URL"
+                            onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}', 'URL copied')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                            </svg>
+                            URL
+                        </button>
+                        <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="Copy username"
+                            onclick="copyToClipboard('${escapeHtml(account.username).replace(/'/g, "\\'")}', 'Username copied')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                            </svg>
+                            User
+                        </button>
+                        <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="Copy password"
+                            onclick="copyToClipboard('${account.password.replace(/'/g, "\\'")}', 'Password copied')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                            Pass
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button class="font-bold flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="M3U Playlists" disabled>M3U</button>
+                        <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="Copy all playlist URL"
+                            onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}' + '/pl/${escapeHtml(account.username)}/${account.password}', 'All playlist URL copied')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                            </svg>
+                            All
+                        </button>
+                        <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="Copy live playlist URL"
+                            onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}' + '/pl/${escapeHtml(account.username)}/${account.password}/live', 'Live playlist URL copied')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                            </svg>
+                            Live
+                        </button>
+                        <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="Copy series playlist URL"
+                            onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}' + '/pl/${escapeHtml(account.username)}/${account.password}/series', 'Series playlist URL copied')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                            </svg>
+                            Series
+                        </button>
+                        <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="Copy VOD playlist URL"
+                            onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}' + '/pl/${escapeHtml(account.username)}/${account.password}/vod', 'VOD playlist URL copied')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                            </svg>
+                            VOD
+                        </button>
+                    </div>
                 </div>
             </div>
             <div class="mt-1 flex gap-1">
@@ -160,20 +201,22 @@ async function saveXCAccount() {
             return;
         }
 
-        const config = await apiCall('/api/config');
-        if (!config.xcOutputAccounts) config.xcOutputAccounts = [];
-
         if (index === '') {
-            config.xcOutputAccounts.push(account);
+            await apiCall('/api/xc-accounts', {
+                method: 'POST',
+                body: JSON.stringify(account)
+            });
         } else {
-            config.xcOutputAccounts[parseInt(index)] = account;
+            const id = adminConfig.xcOutputAccounts[parseInt(index)].id;
+            await apiCall(`/api/xc-accounts/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(account)
+            });
         }
 
-        await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
         hideModal('xc-account-modal');
         showNotification('XC account saved successfully!', 'success');
         loadXCAccounts();
-        setTimeout(() => restartService(), 500);
     } catch (error) {
         showNotification('Failed to save XC account: ' + error.message, 'danger');
     }
@@ -197,12 +240,10 @@ async function deleteXCAccount(index) {
     if (!confirm('Are you sure you want to delete this XC account?')) return;
 
     try {
-        const config = await apiCall('/api/config');
-        config.xcOutputAccounts.splice(index, 1);
-        await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
+        const id = adminConfig.xcOutputAccounts[index].id;
+        await apiCall(`/api/xc-accounts/${id}`, { method: 'DELETE' });
         showNotification('XC account deleted successfully!', 'success');
         loadXCAccounts();
-        setTimeout(() => restartService(), 500);
     } catch (error) {
         showNotification('Failed to delete XC account', 'danger');
     }

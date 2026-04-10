@@ -266,7 +266,7 @@ func (sp *StreamProxy) ImportStreams() {
 // Channels are sorted according to the configured sort field and direction before
 // rendering. Each channel entry includes its stream attributes and a proxy URL pointing
 // back to this server for transparent stream proxying.
-func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, groupFilter string) {
+func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, groupFilter string, account *config.XCOutputAccount) {
 	var seenClients sync.Map
 
 	clientKey := r.RemoteAddr + "-" + r.Header.Get("User-Agent")
@@ -275,10 +275,10 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 			r.RemoteAddr, r.Header.Get("User-Agent"))
 	}
 
-	// construct cache key with optional group filter suffix
-	cacheKey := "playlist"
+	// construct cache key per account with optional group filter suffix
+	cacheKey := fmt.Sprintf("playlist_%s", account.Username)
 	if groupFilter != "" {
-		cacheKey = "playlist_" + strings.ToLower(groupFilter)
+		cacheKey = fmt.Sprintf("playlist_%s_%s", account.Username, strings.ToLower(groupFilter))
 	}
 
 	// serve from cache if available
@@ -322,6 +322,29 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 				}
 			}
 
+			// determine content type from group-title attribute
+			group := strings.ToLower(attrs["group-title"])
+			contentType := "live"
+			if strings.Contains(group, "series") {
+				contentType = "series"
+			} else if strings.Contains(group, "vod") || strings.Contains(group, "movie") {
+				contentType = "vod"
+			}
+
+			// skip channels that don't match the account content settings
+			if contentType == "live" && !account.EnableLive {
+				ch.channel.Mu.RUnlock()
+				continue
+			}
+			if contentType == "vod" && !account.EnableVOD {
+				ch.channel.Mu.RUnlock()
+				continue
+			}
+			if contentType == "series" && !account.EnableSeries {
+				ch.channel.Mu.RUnlock()
+				continue
+			}
+
 			filteredCount++
 
 			// write the EXTINF line with all stream attributes
@@ -335,11 +358,11 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 				}
 			}
 
-			// write the channel name and proxy URL
+			// write the channel name and proxy URL with XC credentials
 			cleanName := strings.Trim(ch.name, "\"")
 			playlist.WriteString(fmt.Sprintf(",%s\n", cleanName))
 			safeName := utils.SanitizeChannelName(ch.name)
-			proxyURL := fmt.Sprintf("%s/s/%s", sp.Config.BaseURL, safeName)
+			proxyURL := fmt.Sprintf("%s/s/%s/%s/%s", sp.Config.BaseURL, account.Username, account.Password, safeName)
 			playlist.WriteString(proxyURL + "\n")
 		}
 		ch.channel.Mu.RUnlock()

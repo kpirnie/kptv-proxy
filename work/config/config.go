@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"strconv"
@@ -99,6 +101,132 @@ var (
 	configMutex sync.RWMutex
 )
 
+// UnmarshalJSON implements custom JSON unmarshaling for Config,
+// handling duration fields that arrive as strings from the admin API.
+func (c *Config) UnmarshalJSON(data []byte) error {
+	type SourceAlias struct {
+		Name                   string `json:"name"`
+		URL                    string `json:"url"`
+		Order                  int    `json:"order"`
+		MaxConnections         int    `json:"maxConnections"`
+		MaxStreamTimeout       string `json:"maxStreamTimeout"`
+		RetryDelay             string `json:"retryDelay"`
+		MaxRetries             int    `json:"maxRetries"`
+		MaxFailuresBeforeBlock int    `json:"maxFailuresBeforeBlock"`
+		MinDataSize            int64  `json:"minDataSize"`
+		UserAgent              string `json:"userAgent"`
+		ReqOrigin              string `json:"reqOrigin"`
+		ReqReferrer            string `json:"reqReferrer"`
+		Username               string `json:"username"`
+		Password               string `json:"password"`
+		LiveIncludeRegex       string `json:"liveIncludeRegex"`
+		LiveExcludeRegex       string `json:"liveExcludeRegex"`
+		SeriesIncludeRegex     string `json:"seriesIncludeRegex"`
+		SeriesExcludeRegex     string `json:"seriesExcludeRegex"`
+		VODIncludeRegex        string `json:"vodIncludeRegex"`
+		VODExcludeRegex        string `json:"vodExcludeRegex"`
+	}
+
+	aux := &struct {
+		BaseURL               string        `json:"baseURL"`
+		BufferSizePerStream   int64         `json:"bufferSizePerStream"`
+		CacheEnabled          bool          `json:"cacheEnabled"`
+		CacheDuration         string        `json:"cacheDuration"`
+		ImportRefreshInterval string        `json:"importRefreshInterval"`
+		WorkerThreads         int           `json:"workerThreads"`
+		Debug                 bool          `json:"debug"`
+		LogLevel              string        `json:"logLevel"`
+		ObfuscateUrls         bool          `json:"obfuscateUrls"`
+		SortField             string        `json:"sortField"`
+		SortDirection         string        `json:"sortDirection"`
+		StreamTimeout         string        `json:"streamTimeout"`
+		MaxConnectionsToApp   int           `json:"maxConnectionsToApp"`
+		WatcherEnabled        bool          `json:"watcherEnabled"`
+		FFmpegMode            bool          `json:"ffmpegMode"`
+		FFmpegPreInput        []string      `json:"ffmpegPreInput"`
+		FFmpegPreOutput       []string      `json:"ffmpegPreOutput"`
+		ResponseHeaderTimeout string        `json:"responseHeaderTimeout"`
+		Sources               []SourceAlias `json:"sources"`
+	}{}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	c.BaseURL = aux.BaseURL
+	c.BufferSizePerStream = aux.BufferSizePerStream
+	c.CacheEnabled = aux.CacheEnabled
+	c.WorkerThreads = aux.WorkerThreads
+	c.Debug = aux.Debug
+	c.LogLevel = aux.LogLevel
+	c.ObfuscateUrls = aux.ObfuscateUrls
+	c.SortField = aux.SortField
+	c.SortDirection = aux.SortDirection
+	c.MaxConnectionsToApp = aux.MaxConnectionsToApp
+	c.WatcherEnabled = aux.WatcherEnabled
+	c.FFmpegMode = aux.FFmpegMode
+	c.FFmpegPreInput = aux.FFmpegPreInput
+	c.FFmpegPreOutput = aux.FFmpegPreOutput
+
+	var err error
+	if aux.CacheDuration != "" {
+		if c.CacheDuration, err = time.ParseDuration(aux.CacheDuration); err != nil {
+			return fmt.Errorf("invalid cacheDuration: %w", err)
+		}
+	}
+	if aux.ImportRefreshInterval != "" {
+		if c.ImportRefreshInterval, err = time.ParseDuration(aux.ImportRefreshInterval); err != nil {
+			return fmt.Errorf("invalid importRefreshInterval: %w", err)
+		}
+	}
+	if aux.StreamTimeout != "" {
+		if c.StreamTimeout, err = time.ParseDuration(aux.StreamTimeout); err != nil {
+			return fmt.Errorf("invalid streamTimeout: %w", err)
+		}
+	}
+	if aux.ResponseHeaderTimeout != "" {
+		if c.ResponseHeaderTimeout, err = time.ParseDuration(aux.ResponseHeaderTimeout); err != nil {
+			return fmt.Errorf("invalid responseHeaderTimeout: %w", err)
+		}
+	}
+
+	c.Sources = make([]SourceConfig, len(aux.Sources))
+	for i, s := range aux.Sources {
+		c.Sources[i] = SourceConfig{
+			Name:                   s.Name,
+			URL:                    s.URL,
+			Order:                  s.Order,
+			MaxConnections:         s.MaxConnections,
+			MaxRetries:             s.MaxRetries,
+			MaxFailuresBeforeBlock: s.MaxFailuresBeforeBlock,
+			MinDataSize:            s.MinDataSize,
+			UserAgent:              s.UserAgent,
+			ReqOrigin:              s.ReqOrigin,
+			ReqReferrer:            s.ReqReferrer,
+			Username:               s.Username,
+			Password:               s.Password,
+			LiveIncludeRegex:       s.LiveIncludeRegex,
+			LiveExcludeRegex:       s.LiveExcludeRegex,
+			SeriesIncludeRegex:     s.SeriesIncludeRegex,
+			SeriesExcludeRegex:     s.SeriesExcludeRegex,
+			VODIncludeRegex:        s.VODIncludeRegex,
+			VODExcludeRegex:        s.VODExcludeRegex,
+		}
+		if s.MaxStreamTimeout != "" {
+			if c.Sources[i].MaxStreamTimeout, err = time.ParseDuration(s.MaxStreamTimeout); err != nil {
+				return fmt.Errorf("invalid maxStreamTimeout for source %s: %w", s.Name, err)
+			}
+		}
+		if s.RetryDelay != "" {
+			if c.Sources[i].RetryDelay, err = time.ParseDuration(s.RetryDelay); err != nil {
+				return fmt.Errorf("invalid retryDelay for source %s: %w", s.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // LoadConfig loads configuration from SQLite, returning a cached instance on
 // subsequent calls. Falls back to compiled defaults on first boot before any
 // settings have been persisted.
@@ -146,7 +274,6 @@ func loadFromDB() (*Config, error) {
 		return nil, err
 	}
 
-	// Start from safe defaults so any missing key gets a sane value.
 	cfg := getDefaultConfig()
 
 	if v, ok := settings["baseURL"]; ok {
@@ -338,8 +465,7 @@ func loadSDAccountsFromDB() ([]SDAccount, error) {
 	return accounts, nil
 }
 
-// PersistConfig writes every field of cfg into kp_settings and syncs the
-// four related tables. Called by the admin API after validation.
+// PersistConfig writes every field of cfg into kp_settings and syncs sources.
 func PersistConfig(cfg *Config) error {
 	settings := map[string]string{
 		"baseURL":               cfg.BaseURL,
@@ -368,16 +494,7 @@ func PersistConfig(cfg *Config) error {
 		}
 	}
 
-	if err := syncSourcesToDB(cfg.Sources); err != nil {
-		return err
-	}
-	if err := syncEPGsToDB(cfg.EPGs); err != nil {
-		return err
-	}
-	if err := syncXCAccountsToDB(cfg.XCOutputAccounts); err != nil {
-		return err
-	}
-	return syncSDAccountsToDB(cfg.SDAccounts)
+	return syncSourcesToDB(cfg.Sources)
 }
 
 // syncSourcesToDB replaces all kp_sources rows to match cfg.
@@ -472,8 +589,7 @@ func syncSDAccountsToDB(accounts []SDAccount) error {
 	return nil
 }
 
-// getDefaultConfig returns a baseline configuration with sensible defaults
-// used on first boot before any settings have been persisted to SQLite.
+// getDefaultConfig returns a baseline configuration with sensible defaults.
 func getDefaultConfig() *Config {
 	return &Config{
 		BaseURL:               "http://localhost:8080",
@@ -498,8 +614,7 @@ func getDefaultConfig() *Config {
 	}
 }
 
-// validateAndSetDefaults ensures all config values are valid,
-// filling in defaults for missing or invalid ones.
+// validateAndSetDefaults ensures all config values are valid.
 func validateAndSetDefaults(config *Config) {
 	if config.BaseURL == "" {
 		config.BaseURL = "http://localhost:8080"
@@ -578,7 +693,6 @@ func validateAndSetDefaults(config *Config) {
 }
 
 // GetSourceByURL returns a pointer to the SourceConfig matching the given URL.
-// Returns nil if no match is found.
 func (c *Config) GetSourceByURL(url string) *SourceConfig {
 	for i := range c.Sources {
 		if c.Sources[i].URL == url {

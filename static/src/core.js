@@ -243,6 +243,9 @@ async function saveGlobalSettings() {
         // Always preserve sources from the server copy
         if (currentConfig.sources) mergedConfig.sources = currentConfig.sources;
 
+        delete mergedConfig.xcOutputAccounts;
+        delete mergedConfig.epgs;
+        delete mergedConfig.sdAccounts;
         await apiCall('/api/config', {
             method: 'POST',
             body: JSON.stringify(mergedConfig)
@@ -313,9 +316,9 @@ async function toggleWatcher(enable) {
 function setupEventListeners() {
 
     // Stat card navigation shortcuts
-    document.getElementById('total-channels').parentElement.addEventListener('click', () => switchTab(4));
-    document.getElementById('total-sources').parentElement.addEventListener('click', () => switchTab(2));
-    document.getElementById('total-epgs').parentElement.addEventListener('click', () => switchTab(3));
+    document.getElementById('total-channels').parentElement.addEventListener('click', () => switchTab(5));
+    document.getElementById('total-sources').parentElement.addEventListener('click', () => switchTab(3));
+    document.getElementById('total-epgs').parentElement.addEventListener('click', () => switchTab(4));
 
     // Global settings form
     document.getElementById('global-settings-form').addEventListener('submit', (e) => {
@@ -388,6 +391,9 @@ function setupEventListeners() {
     document.getElementById('sd-select-none').addEventListener('click', () => {
         document.querySelectorAll('#sd-lineups-list input[type="checkbox"]').forEach(cb => cb.checked = false);
     });
+
+    document.getElementById('add-token-btn').addEventListener('click', () => showAddTokenModal());
+    document.getElementById('save-token-btn').addEventListener('click', () => saveToken());
 }
 
 /**
@@ -395,6 +401,11 @@ function setupEventListeners() {
  * Initializes all UI subsystems, loads initial data, and starts auto-refresh.
  */
 document.addEventListener('DOMContentLoaded', () => {
+    const noticeParams = new URLSearchParams(window.location.search);
+    if (noticeParams.get('notice') === 'already_logged_in') {
+        showNotification('You are already logged in.', 'warning');
+        window.history.replaceState({}, document.title, '/');
+    }
     initScrollToTop();
     initTabs();
     initModals();
@@ -409,6 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadLogs();
     loadXCAccounts();
     loadSDAccounts();
+    loadTokens();
 
     startAutoRefresh();
 

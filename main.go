@@ -11,6 +11,7 @@ import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
+	"kptv-proxy/work/users"
 	"kptv-proxy/work/utils"
 )
 
@@ -21,6 +22,14 @@ func main() {
 
 	// migrate the existing settings: this'll only happen once, but will backup the original config.json
 	db.MigrateFromJSON()
+
+	// Check if admin user exists, log a warning if not so operator knows to visit /register
+	count, err := users.UserCount()
+	if err != nil {
+		logger.Error("Failed to check user count: %v", err)
+	} else if count == 0 {
+		logger.Warn("No admin user found — visit /register to create one before accessing the admin interface")
+	}
 
 	// Load configuration from settings
 	cfg := config.LoadConfig()

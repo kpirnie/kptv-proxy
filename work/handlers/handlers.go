@@ -17,9 +17,19 @@ import (
 // containing all available channels from all configured sources.
 func HandlePlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		username := vars["username"]
+		password := vars["password"]
+
+		account := findXCAccount(sp.Config, username, password)
+		if account == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		logger.Debug("{handlers - HandlePlaylist} present the playlist")
 		middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-			sp.GeneratePlaylist(w, r, "")
+			sp.GeneratePlaylist(w, r, "", account)
 		})(w, r)
 	}
 }
@@ -28,11 +38,20 @@ func HandlePlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 // containing only channels belonging to a specific group.
 func HandleGroupPlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		username := vars["username"]
+		password := vars["password"]
+		group := vars["group"]
+
+		account := findXCAccount(sp.Config, username, password)
+		if account == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		logger.Debug("{handlers - HandleGroupPlaylist} present the grouped playlist")
 		middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-			vars := mux.Vars(r)
-			group := vars["group"]
-			sp.GeneratePlaylist(w, r, group)
+			sp.GeneratePlaylist(w, r, group, account)
 		})(w, r)
 	}
 }
@@ -42,7 +61,15 @@ func HandleGroupPlaylist(sp *proxy.StreamProxy) http.HandlerFunc {
 func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
+		username := vars["username"]
+		password := vars["password"]
 		safeName := vars["channel"]
+
+		if findXCAccount(sp.Config, username, password) == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		channelName := sp.FindChannelBySafeName(safeName)
 		channel, exists := sp.Channels.Load(channelName)
 		if !exists {
@@ -59,10 +86,20 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 // HandleEPG serves combined EPG data from disk cache, streaming directly to the
 // client via http.ServeContent. Sets Cache-Control max-age to the remaining TTL
 // so downstream players (Emby/Plex/Channels) cache appropriately.
-// HandleEPG serves combined EPG data from disk cache, streaming directly to the
-// client via http.ServeContent. Sets Cache-Control max-age to the remaining TTL
-// so downstream players (Emby/Plex/Channels) cache appropriately.
 func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		username := r.URL.Query().Get("username")
+		password := r.URL.Query().Get("password")
+
+		if findXCAccount(sp.Config, username, password) == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		serveEPG(sp)(w, r)
+	}
+}
+func serveEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		// Try to serve from disk cache via streaming

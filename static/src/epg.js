@@ -5,8 +5,8 @@
  */
 async function loadEPGs() {
     try {
-        const config = await apiCall('/api/config');
-        renderEPGs(config.epgs || []);
+        const epgs = await apiCall('/api/epgs');
+        renderEPGs(epgs || []);
     } catch (error) {
         document.getElementById('epgs-container').innerHTML =
             '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">Failed to load EPGs</div>';
@@ -118,16 +118,12 @@ async function saveEPG() {
             return;
         }
 
-        const config = await apiCall('/api/config');
-        if (!config.epgs) config.epgs = [];
-
         if (index === '') {
-            config.epgs.push(epg);
+            await apiCall('/api/epgs', { method: 'POST', body: JSON.stringify(epg) });
         } else {
-            config.epgs[parseInt(index)] = epg;
+            const id = (await apiCall('/api/epgs'))[parseInt(index)].id;
+            await apiCall(`/api/epgs/${id}`, { method: 'PUT', body: JSON.stringify(epg) });
         }
-
-        await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
         hideModal('epg-modal');
         showNotification('EPG saved successfully!', 'success');
         loadEPGs();
@@ -155,9 +151,9 @@ async function deleteEPG(index) {
     if (!confirm('Are you sure you want to delete this EPG?')) return;
 
     try {
-        const config = await apiCall('/api/config');
-        config.epgs.splice(index, 1);
-        await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
+        const epgs = await apiCall('/api/epgs');
+        const id = epgs[index].id;
+        await apiCall(`/api/epgs/${id}`, { method: 'DELETE' });
         showNotification('EPG deleted successfully!', 'success');
         loadEPGs();
         setTimeout(() => restartService(), 500);

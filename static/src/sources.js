@@ -207,14 +207,16 @@ async function saveSource() {
 
         const config = await apiCall('/api/config');
         if (!config.sources) config.sources = [];
-
         if (index === '') {
             config.sources.push(source);
         } else {
             config.sources[parseInt(index)] = source;
         }
-
+        delete config.xcOutputAccounts;
+        delete config.epgs;
+        delete config.sdAccounts;
         await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
+
         hideModal('source-modal');
         showNotification('Source saved successfully!', 'success');
         loadSources();
@@ -244,6 +246,9 @@ async function deleteSource(index) {
     try {
         const config = await apiCall('/api/config');
         config.sources.splice(index, 1);
+        delete config.xcOutputAccounts;
+        delete config.epgs;
+        delete config.sdAccounts;
         await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
         showNotification('Source deleted successfully!', 'success');
         loadSources();
