@@ -14,14 +14,18 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 
 ## Screenshots
 
-### Login
-![Login](screenshots/login.png)
+## Screenshots
 
-### Initial Setup
-![Register](screenshots/register.png)
-
-### Dashboard
-![Home](screenshots/home.png)
+<p align="center">
+  <img src="screenshots/login.png" alt="Login" width="30%">
+  &nbsp;&nbsp;
+  <img src="screenshots/register.png" alt="Initial Setup" width="30%">
+  &nbsp;&nbsp;
+  <img src="screenshots/home.png" alt="Dashboard" width="30%">
+</p>
+<p align="center">
+  <em>Login &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Initial Setup &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Dashboard</em>
+</p>
 
 ## Key Features
 
