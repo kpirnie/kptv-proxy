@@ -12,7 +12,43 @@
 
 A high-performance Go-based IPTV proxy server that intelligently aggregates streams from multiple sources, provides automatic channel deduplication, failover capabilities, and serves them through a unified M3U8 playlist with advanced streaming options including FFmpeg integration.
 
+## Screenshots
+
+### Login
+![Login](screenshots/login.png)
+
+### Initial Setup
+![Register](screenshots/register.png)
+
+### Dashboard
+![Home](screenshots/home.png)
+
 ## Key Features
+
+### 🔒 **Authentication & Security**
+
+- **Secure Admin Interface**: Full authentication system protecting the admin panel
+- **Argon2id Password Hashing**: Industry-leading memory-hard password hashing
+- **Session Management**: HTTP-only secure cookies with configurable TTL (24h default, 30-day remember me)
+- **API Token System**: Multiple named API tokens with granular permission control
+- **First-Run Registration**: On fresh install, guided admin account creation before access is granted
+- **Local Network Restriction**: HDHomeRun emulation endpoints restricted to RFC1918 addresses only
+- **XC Account Authentication**: All M3U and stream output endpoints authenticated via Xtream Codes accounts
+
+### 🔑 **API Token Permissions**
+
+Tokens support granular permission bitmasks:
+
+| Permission | Description |
+|-----------|-------------|
+| `Read` | GET endpoints only |
+| `Config Write` | Modify global configuration |
+| `Restart` | Trigger graceful restarts |
+| `Streams` | Manage channels and streams |
+| `Logs` | Read and clear logs |
+| `XC Accounts` | Manage Xtream Codes output accounts |
+| `EPGs` | Manage EPG sources |
+| `Schedules Direct` | Manage Schedules Direct accounts |
 
 ### 🔄 **Multi-Source Aggregation**
 
@@ -57,7 +93,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 
 ### 🔧 **Advanced Configuration**
 
-- **JSON-based configuration** with per-source customization
+- **SQLite-based configuration** with per-source customization
 - **Per-source settings** for headers, timeouts, retries, and connection limits
 - **Flexible source configuration** with custom User-Agent, Origin, and Referrer headers
 - **Customizable stream sorting** by any M3U8 attribute
@@ -85,13 +121,14 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - **Live Logs**: Real-time log viewing with filtering by level (error, warning, info, debug)
 - **Graceful Restart**: Apply configuration changes with zero-downtime restarts
 - **Auto-Refresh**: Dashboard updates every 5 seconds for real-time monitoring
+- **Security Tab**: Manage API tokens with granular permissions directly from the UI
 
 ### 🔒 **Dead Stream Management**
 
 - **Stream Health Tracking**: Mark problematic streams as "dead" to prevent automatic selection
 - **Manual Stream Control**: Activate specific streams or mark them as unplayable through the admin interface
 - **Stream Revival**: Restore previously dead streams when they become functional again
-- **Persistent Dead Stream Storage**: Dead stream information stored in `/settings/dead-streams.json`
+- **Persistent Dead Stream Storage**: Dead stream information stored in SQLite
 - **Intelligent Stream Selection**: Proxy automatically skips dead streams during failover
 - **Visual Dead Stream Indicators**: Clear visual markers for dead streams in the admin interface
 
@@ -122,9 +159,9 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 - **Multi-Account Support**: Create multiple XC output accounts with independent credentials
 - **Per-Account Content Control**: Enable or disable Live, VOD, and Series per account
 - **Connection Limits**: Configurable maximum connections per account
-- **M3U Playlist Export**: `/get.php` endpoint for M3U playlist generation
-- **XMLTV EPG**: Full EPG passthrough via `/xmltv.php`
-- **Quick Copy**: Copy base URL, username, and password directly from the admin interface
+- **M3U Playlist Export**: Path-based M3U playlist URLs with per-account content filtering
+- **XMLTV EPG**: Full EPG passthrough
+- **Quick Copy**: Copy base URL, username, password, and playlist URLs directly from the admin interface
 
 ## Architecture Overview
 
@@ -139,6 +176,8 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                                  │
                     ┌────────────▼────────────┐
                     │     KPTV Proxy          │
+                    │  • Auth (Argon2id)      │
+                    │  • API Token Auth       │
                     │  • Channel grouping     │
                     │  • Master playlist      │
                     │    detection            │
@@ -155,8 +194,9 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
                     └────────────┬────────────┘
                                  │
                     ┌────────────▼────────────┐
-                    │   Unified M3U8 + XC     │
-                    │   /pl  /player_api.php  │
+                    │   Unified M3U + XC      │
+                    │ /pl/{user}/{pass}        │
+                    │ /player_api.php          │
                     └─────────────────────────┘
                                  │
           ┌──────────────────────┼──────────────────────┐
@@ -178,47 +218,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 mkdir settings
 ```
 
-2. **Create your configuration file** at `settings/config.json`:
-
-```json
-{
-  "baseURL": "http://your-server-ip:9500",
-  "bufferSizePerStream": 16,
-  "cacheEnabled": true,
-  "cacheDuration": "30m",
-  "importRefreshInterval": "12h",
-  "workerThreads": 4,
-  "debug": false,
-  "obfuscateUrls": true,
-  "sortField": "tvg-name",
-  "sortDirection": "asc",
-  "streamTimeout": "10s",
-  "maxConnectionsToApp": 100,
-  "watcherEnabled": true,
-  "ffmpegMode": false,
-  "ffmpegPreInput": [],
-  "ffmpegPreOutput": ["-c", "copy"],
-  "responseHeaderTimeout": "10s",
-  "sources": [
-    {
-      "name": "Primary IPTV Source",
-      "url": "http://provider1.com/playlist.m3u8",
-      "order": 1,
-      "maxConnections": 5,
-      "maxStreamTimeout": "30s",
-      "retryDelay": "5s",
-      "maxRetries": 3,
-      "maxFailuresBeforeBlock": 5,
-      "minDataSize": 2,
-      "userAgent": "VLC/3.0.18 LibVLC/3.0.18",
-      "reqOrigin": "",
-      "reqReferrer": ""
-    }
-  ]
-}
-```
-
-3. **Start the proxy:**
+2. **Start the proxy:**
 
 ```bash
 # Docker
@@ -228,13 +228,18 @@ docker compose up -d
 podman-compose up -d
 ```
 
+3. **Complete initial setup:**
+
+On first run, navigate to `http://your-server-ip:PORT/` — you will be redirected to `/register` to create your admin account.
+
 4. **Access your services:**
 
 ```
-Unified Playlist:        http://your-server-ip:9500/pl
-Group Filtered Playlist: http://your-server-ip:9500/pl/{group}
-Admin Interface:         http://your-server-ip:9500/
-XC API:                  http://your-server-ip:9500/player_api.php
+Admin Interface:         http://your-server-ip:PORT/
+Login:                   http://your-server-ip:PORT/login
+Unified Playlist:        http://your-server-ip:PORT/pl/{username}/{password}
+Group Filtered Playlist: http://your-server-ip:PORT/pl/{username}/{password}/{group}
+XC API:                  http://your-server-ip:PORT/player_api.php
 ```
 
 ## Docker Compose Examples
@@ -281,12 +286,8 @@ services:
       - WHATEVER_PORT_YOU_WANT_TO_USE:8080
     volumes:
       - ./settings/:/settings/
-      # FFmpeg and FFprobe binaries from host
       - /usr/local/bin/ffmpeg:/usr/local/bin/ffmpeg:ro
       - /usr/local/bin/ffprobe:/usr/local/bin/ffprobe:ro
-      # VA-API driver libraries from host
-      # Debian/Ubuntu: /usr/lib/x86_64-linux-gnu/dri
-      # RHEL/Fedora:   /usr/lib64/dri
       - /usr/lib/x86_64-linux-gnu/dri:/usr/lib/x86_64-linux-gnu/dri:ro
     devices:
       - /dev/dri:/dev/dri
@@ -301,40 +302,39 @@ services:
       start_period: 30s
 ```
 
-> **Note**: The render node is typically `/dev/dri/renderD128`. If you have multiple GPUs it may be `renderD129` or higher. Verify with `ls /dev/dri/` on the host.
+## Authentication
 
-The corresponding `config.json` FFmpeg section for hardware acceleration:
+### Initial Setup
 
-```json
-{
-  "ffmpegMode": true,
-  "ffmpegPreInput": [
-    "-hide_banner",
-    "-loglevel", "panic",
-    "-hwaccel", "vaapi",
-    "-hwaccel_output_format", "vaapi",
-    "-hwaccel_device", "/dev/dri/renderD128",
-    "-fflags", "+genpts+discardcorrupt+igndts",
-    "-analyzeduration", "250000",
-    "-probesize", "4194304",
-    "-max_delay", "250000",
-    "-copytb", "1"
-  ],
-  "ffmpegPreOutput": [
-    "-f", "mpegts",
-    "-c", "copy",
-    "-copyts",
-    "-max_muxing_queue_size", "2048",
-    "-flush_packets", "0",
-    "-mpegts_flags", "initial_discontinuity",
-    "-mpegts_copyts", "1"
-  ]
-}
+On first run with no existing admin account, navigating to the admin interface automatically redirects to `/register` where you create your admin account with full name, email, username, and password (minimum 8 characters, hashed with Argon2id).
+
+### Login
+
+Authenticate with either your username or email address plus password at `/login`. Optionally check **Remember me** to extend your session to 30 days.
+
+### API Tokens
+
+API tokens allow programmatic access to the admin API without session cookies. Create tokens from the **Accounts** tab with specific permissions:
+
+- Tokens are 64 characters of cryptographically secure random alphanumeric characters
+- The raw token is shown **exactly once** at creation — copy it immediately
+- Tokens are stored as Argon2id hashes — the raw value is never stored
+- Each token has a friendly name and a permission bitmask
+- Tokens can be deleted (revoked) at any time
+
+Use tokens via the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" http://your-server:PORT/api/stats
 ```
+
+### Changing Your Password
+
+From the **Accounts** tab in the admin interface, use the change password form. Requires your current password.
 
 ## Web Admin Interface
 
-Access the admin interface at `http://your-server:port/` for comprehensive management.
+Access the admin interface at `http://your-server:port/` after logging in.
 
 ### Custom Styling
 
@@ -357,11 +357,13 @@ Create `/settings/custom.css` to customize the admin interface appearance. This 
 - Validation and error handling for all settings
 - Save changes and trigger graceful restart to apply new configuration
 
-### Xtream Codes Output Accounts
+### Accounts Tab
 
-Create XC-compatible output accounts to expose your aggregated streams to any Xtream Codes compatible player (Tivimate, IPTV Smarters, etc.).
+The Accounts tab consolidates all output account management and security:
 
-**Per-account configuration:**
+**Xtream Codes Output Accounts** — Create XC-compatible output accounts to expose your aggregated streams to any Xtream Codes compatible player (Tivimate, IPTV Smarters, etc.).
+
+Per-account configuration:
 
 | Setting | Description |
 |---------|-------------|
@@ -373,21 +375,16 @@ Create XC-compatible output accounts to expose your aggregated streams to any Xt
 | Enable Series | Include series content |
 | Enable VOD | Include video on demand |
 
-**Quick copy buttons** on each account card allow you to instantly copy:
-- Base URL (for configuring players)
+Quick copy buttons on each account card:
+- Base URL
 - Username
 - Password
+- All M3U playlist URL
+- Live M3U playlist URL
+- Series M3U playlist URL
+- VOD M3U playlist URL
 
-**XC API Endpoints:**
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /player_api.php` | Main XC API endpoint |
-| `GET /get.php` | M3U playlist export |
-| `GET /xmltv.php` | EPG data |
-| `GET /live/{user}/{pass}/{id}` | Live stream |
-| `GET /movie/{user}/{pass}/{id}` | VOD stream |
-| `GET /series/{user}/{pass}/{id}` | Series stream |
+**API Tokens** — Create and manage API tokens for programmatic access with granular permissions.
 
 ### Source Management
 
@@ -466,7 +463,7 @@ KPTV Proxy supports two streaming modes. In order to utilize FFmpeg, you must ha
 
 - **Manual Stream Control**: Mark streams as dead or revive them from the admin interface
 - **Automatic Blocking**: Streams exceeding failure thresholds are auto-blocked
-- **Persistent Storage**: Dead stream data stored in `/settings/dead-streams.json`
+- **Persistent Storage**: Dead stream data stored in SQLite
 - **Automatic Skipping**: Proxy skips dead streams during failover
 - **Stream Revival**: Dead streams can be restored when functional again
 
@@ -477,8 +474,7 @@ KPTV Proxy supports two streaming modes. In order to utilize FFmpeg, you must ha
    - **▶️ Activate**: Switch to this specific stream
    - **🚫 Kill**: Mark this stream as dead
    - **🔄 Revive**: Restore a dead stream
-3. Dead streams are persisted to `/settings/dead-streams.json`
-4. During automatic failover, dead streams are skipped
+3. During automatic failover, dead streams are skipped
 
 ## Stream Watcher - Automatic Monitoring
 
@@ -502,31 +498,111 @@ The Stream Watcher runs as a background service monitoring active streams every 
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /` | Web admin interface |
-| `GET /metrics` | Prometheus metrics |
-| `GET /pl` | Unified playlist (all channels) |
-| `GET /pl/{group}` | Group-filtered playlist |
-| `GET /s/{channel}` | Stream proxy with automatic failover |
-| `GET /epg` | EPG |
-| `GET /epg.xml` | EPG |
+| `GET /` | Web admin interface (requires admin auth) |
+| `GET /login` | Login page |
+| `GET /register` | Initial setup page (only accessible when no admin exists) |
+| `GET /logout` | Logout and clear session |
+| `GET /metrics` | Prometheus metrics (requires admin auth) |
+| `GET /pl/{username}/{password}` | Unified playlist (XC account auth) |
+| `GET /pl/{username}/{password}/{group}` | Group-filtered playlist (XC account auth) |
+| `GET /s/{username}/{password}/{channel}` | Stream proxy with automatic failover (XC account auth) |
+| `GET /epg/{username}/{password}` | EPG (XC account auth) |
+| `GET /epg.xml/{username}/{password}` | EPG XML (XC account auth) |
 
 ## API Endpoints
 
+All `/api/*` endpoints require either a valid session cookie or a `Authorization: Bearer TOKEN` header with appropriate permissions.
+
+### Auth
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/me` | GET | Current session info |
+| `/api/auth/password` | POST | Change password |
+| `/api/auth/permissions` | GET | Permission constants |
+| `/api/auth/tokens` | GET | List API tokens |
+| `/api/auth/tokens` | POST | Create API token |
+| `/api/auth/tokens` | DELETE | Delete API token |
+
+### Config & System
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|-----------|-------------|
+| `/api/config` | GET | Read | Get current configuration |
+| `/api/config` | POST | Config Write | Update configuration |
+| `/api/stats` | GET | Read | System statistics |
+| `/api/restart` | POST | Restart | Graceful restart |
+| `/api/watcher/toggle` | POST | Streams | Enable/disable stream watcher |
+
+### Channels
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|-----------|-------------|
+| `/api/channels` | GET | Read | All channels |
+| `/api/channels/active` | GET | Read | Active channels only |
+| `/api/channels/{channel}/streams` | GET | Read | Available streams for channel |
+| `/api/channels/{channel}/stats` | GET | Read | Stream stats for channel |
+| `/api/channels/{channel}/stream` | POST | Streams | Set active stream |
+| `/api/channels/{channel}/kill-stream` | POST | Streams | Mark stream as dead |
+| `/api/channels/{channel}/revive-stream` | POST | Streams | Revive dead stream |
+| `/api/channels/{channel}/order` | POST | Streams | Set stream order |
+
+### Logs
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|-----------|-------------|
+| `/api/logs` | GET | Logs | Application logs |
+| `/api/logs` | DELETE | Logs | Clear logs |
+
+### XC Accounts
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|-----------|-------------|
+| `/api/xc-accounts` | GET | XC Accounts | List XC output accounts |
+| `/api/xc-accounts` | POST | XC Accounts | Create XC output account |
+| `/api/xc-accounts/{id}` | PUT | XC Accounts | Update XC output account |
+| `/api/xc-accounts/{id}` | DELETE | XC Accounts | Delete XC output account |
+
+### EPGs
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|-----------|-------------|
+| `/api/epgs` | GET | EPGs | List EPG sources |
+| `/api/epgs` | POST | EPGs | Create EPG source |
+| `/api/epgs/{id}` | PUT | EPGs | Update EPG source |
+| `/api/epgs/{id}` | DELETE | EPGs | Delete EPG source |
+
+### Schedules Direct
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|-----------|-------------|
+| `/api/sd-accounts` | GET | SD | List SD accounts |
+| `/api/sd-accounts` | POST | SD | Create SD account |
+| `/api/sd-accounts/{id}` | PUT | SD | Update SD account |
+| `/api/sd-accounts/{id}` | DELETE | SD | Delete SD account |
+| `/api/sd/discover` | POST | SD | Discover SD lineups |
+
+### Xtream Codes Output
+
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/config` | Get current configuration |
-| `POST /api/config` | Update configuration |
-| `GET /api/stats` | System statistics |
-| `GET /api/channels` | All channels |
-| `GET /api/channels/active` | Active channels only |
-| `GET /api/channels/{channel}/streams` | Get available streams for channel |
-| `POST /api/channels/{channel}/stream` | Set active stream for channel |
-| `POST /api/channels/{channel}/kill-stream` | Mark stream as dead |
-| `POST /api/channels/{channel}/revive-stream` | Revive dead stream |
-| `GET /api/logs` | Application logs |
-| `DELETE /api/logs` | Clear logs |
-| `POST /api/restart` | Graceful restart |
-| `POST /api/watcher/toggle` | Enable/disable stream watcher |
+| `GET /player_api.php` | Main XC API endpoint |
+| `GET /get.php` | M3U playlist export |
+| `GET /xmltv.php` | EPG data |
+| `GET /live/{user}/{pass}/{id}` | Live stream |
+| `GET /movie/{user}/{pass}/{id}` | VOD stream |
+| `GET /series/{user}/{pass}/{id}` | Series stream |
+
+### HDHomeRun (Local Network Only)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /discover.json` | Device discovery |
+| `GET /device.xml` | UPnP device descriptor |
+| `GET /lineup_status.json` | Lineup status |
+| `GET /lineup.json` | Channel lineup |
+
+> **Note**: HDHomeRun endpoints are restricted to RFC1918 (local network) addresses only. Requests from public IPs will receive a 403 Forbidden response. If behind a reverse proxy, set `X-Forwarded-For` appropriately.
 
 ## Configuration Reference
 
@@ -589,24 +665,6 @@ The Stream Watcher runs as a background service monitoring active streams every 
 | `enableSeries` | No | Include series (default: false) |
 | `enableVOD` | No | Include VOD (default: false) |
 
-Example `xcOutputAccounts` config:
-
-```json
-{
-  "xcOutputAccounts": [
-    {
-      "name": "My Tivimate Account",
-      "username": "myuser",
-      "password": "mypassword",
-      "maxConnections": 4,
-      "enableLive": true,
-      "enableSeries": false,
-      "enableVOD": false
-    }
-  ]
-}
-```
-
 ## Monitoring & Troubleshooting
 
 ### Health Monitoring
@@ -635,11 +693,21 @@ docker-compose logs kptv-proxy | grep WATCHER
 
 ### Common Issues & Solutions
 
+**Problem**: Can't access admin interface
+
+- ✅ On first run, navigate to `/register` to create your admin account
+- ✅ If you have an account, navigate to `/login`
+- ✅ Check that cookies are enabled in your browser
+
+**Problem**: API token not working
+
+- ✅ Ensure the `Authorization: Bearer TOKEN` header is set correctly
+- ✅ Verify the token has the required permission for the endpoint
+- ✅ Token is shown only once at creation — regenerate if lost by deleting and creating a new one
+
 **Problem**: Configuration not loading
 
 - ✅ Use the web admin interface to edit configuration
-- ✅ Check JSON syntax: `cat settings/config.json | jq .`
-- ✅ Verify file permissions: `ls -la settings/`
 - ✅ Check logs in admin interface or container logs
 
 **Problem**: FFmpeg not working
@@ -678,25 +746,31 @@ docker-compose logs kptv-proxy | grep WATCHER
 - ✅ Add `-fflags +genpts+discardcorrupt+igndts` to pre-input args
 - ✅ The stream watcher will detect and recover from prolonged stalls automatically
 
+**Problem**: HDHomeRun not discovered by Plex/Emby
+
+- ✅ Ensure your media server is on the same local network as KPTV Proxy
+- ✅ HDHomeRun endpoints are restricted to RFC1918 addresses — public IPs are blocked
+- ✅ If behind a reverse proxy, ensure `X-Forwarded-For` is set to the client's real IP
+
 ## Client Configuration Examples
 
 ### VLC Media Player
 
 ```
-Network → Open Network Stream → http://your-server:9500/pl
+Network → Open Network Stream → http://your-server:PORT/pl/USERNAME/PASSWORD
 ```
 
 ### Kodi/LibreELEC
 
 ```
 Add-ons → PVR IPTV Simple Client
-M3U Play List URL: http://your-server:9500/pl
+M3U Play List URL: http://your-server:PORT/pl/USERNAME/PASSWORD
 ```
 
 ### Tivimate / IPTV Smarters (Xtream Codes)
 
 ```
-Server URL:  http://your-server:9500
+Server URL:  http://your-server:PORT
 Username:    your-xc-account-username
 Password:    your-xc-account-password
 ```
@@ -704,19 +778,19 @@ Password:    your-xc-account-password
 ### Android/iOS IPTV Apps
 
 ```
-Playlist URL: http://your-server:9500/pl
+Playlist URL: http://your-server:PORT/pl/USERNAME/PASSWORD
 Format: M3U8/HLS
 ```
 
 ## Security Considerations
 
+- **Admin Interface**: Protected by Argon2id-hashed credentials and secure session cookies
+- **API Tokens**: Stored as Argon2id hashes, shown only once, with granular permissions
 - **Network Security**: Run behind reverse proxy (nginx/Cloudflare) for production
-- **Admin Interface Security**: Consider adding authentication for admin interface in production
-- **Access Control**: Restrict admin interface access to trusted networks
+- **HDHomeRun**: Restricted to local network (RFC1918) only
 - **Source Privacy**: Enable `obfuscateUrls` to hide provider URLs in logs
 - **Container Security**: Runs as non-root user (UID 1000)
 - **Custom CSS**: Validate custom CSS to prevent XSS attacks
-- **File Permissions**: Protect configuration files with appropriate permissions
 - **XC Passwords**: Use the built-in password generator for strong account credentials
 
 ## Performance Optimization
