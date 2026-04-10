@@ -26,7 +26,7 @@ func RegisterRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/pl/{username}/{password}/{group}", handlers.HandleGroupPlaylist(sp)).Methods("GET")
 	router.HandleFunc("/playlist/{username}/{password}/{group}", handlers.HandleGroupPlaylist(sp)).Methods("GET")
 
-	// Stream proxy endpoint — XC auth (handled later)
+	// Stream proxy endpoint
 	router.HandleFunc("/s/{username}/{password}/{channel}", handlers.HandleStream(sp)).Methods("GET")
 
 	// Xtream Codes endpoints — self-authenticating via XC accounts (handled later)
@@ -37,7 +37,7 @@ func RegisterRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/movie/{username}/{password}/{id}", handlers.HandleXCStream(sp)).Methods("GET")
 	router.HandleFunc("/series/{username}/{password}/{id}", handlers.HandleXCStream(sp)).Methods("GET")
 
-	// EPG endpoints — XC auth (handled later)
+	// EPG endpoints
 	router.HandleFunc("/epg/{username}/{password}", handlers.HandleEPG(sp)).Methods("GET")
 	router.HandleFunc("/epg.xml/{username}/{password}", handlers.HandleEPG(sp)).Methods("GET")
 
@@ -47,6 +47,6 @@ func RegisterRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	// Web admin interface and REST API — admin auth applied inside SetupAdminRoutes
 	admin.SetupAdminRoutes(router, sp)
 
-	// HDHomeRun emulation — XC auth (handled later)
+	// HDHomeRun emulation
 	handlers.SetupHDHRRoutes(router, sp)
 }

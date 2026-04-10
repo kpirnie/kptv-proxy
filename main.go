@@ -7,7 +7,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"kptv-proxy/app"
+	"kptv-proxy/work/app"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
@@ -44,12 +44,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// create the proxy instance before starting any background loops so they can access it for necessary functions like stream importing and restream cleanup
 	proxyInstance := a.Proxy
 
 	// Start background maintenance loops
 	go proxyInstance.RestreamCleanup()    // Cleans up inactive restreamers and disconnected clients
 	go proxyInstance.StartImportRefresh() // Periodically re-imports source playlists on configured interval
-	proxyInstance.StartEPGWarmup()        // Pre-warms the EPG disk cache on startup
+	go proxyInstance.StartEPGWarmup()     // Pre-warms the EPG disk cache on startup
 
 	// Start stream watcher if enabled in config
 	if cfg.WatcherEnabled {
@@ -63,6 +64,7 @@ func main() {
 	router := mux.NewRouter()
 	app.RegisterRoutes(router, proxyInstance)
 
+	// set the application address and port
 	addr := fmt.Sprintf(":%d", 8080)
 
 	// Log startup summary
