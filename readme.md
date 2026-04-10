@@ -14,8 +14,6 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 
 ## Screenshots
 
-## Screenshots
-
 <p align="center">
   <img src="screenshots/login.png" alt="Login" width="30%">
   &nbsp;&nbsp;
