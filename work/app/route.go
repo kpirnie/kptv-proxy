@@ -5,6 +5,7 @@ import (
 	"kptv-proxy/work/handlers"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/users"
+	"net/http"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -17,6 +18,12 @@ func RegisterRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 
 	// User auth routes — public, must be first
 	users.SetupUserRoutes(router)
+
+	// we need a dummy route for the container health check, but it has to be defined before the auth middleware is applied to avoid requiring auth for the health check
+	router.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("PONG"))
+	}).Methods("GET")
 
 	// M3U8 playlist endpoints
 	router.HandleFunc("/pl/{username}/{password}", handlers.HandlePlaylist(sp)).Methods("GET")
