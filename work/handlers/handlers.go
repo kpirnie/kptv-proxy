@@ -88,8 +88,9 @@ func HandleStream(sp *proxy.StreamProxy) http.HandlerFunc {
 // so downstream players (Emby/Plex/Channels) cache appropriately.
 func HandleEPG(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		username := r.URL.Query().Get("username")
-		password := r.URL.Query().Get("password")
+		vars := mux.Vars(r)
+		username := vars["username"]
+		password := vars["password"]
 
 		if findXCAccount(sp.Config, username, password) == nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
