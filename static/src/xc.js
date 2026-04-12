@@ -71,7 +71,7 @@ function renderXCAccounts(accounts) {
                             title="Copy all playlist URL"
                             onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}' + '/pl/${escapeHtml(account.username)}/${account.password}', 'All playlist URL copied')">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
                             All
                         </button>
@@ -79,7 +79,7 @@ function renderXCAccounts(accounts) {
                             title="Copy live playlist URL"
                             onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}' + '/pl/${escapeHtml(account.username)}/${account.password}/live', 'Live playlist URL copied')">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
                             Live
                         </button>
@@ -87,7 +87,7 @@ function renderXCAccounts(accounts) {
                             title="Copy series playlist URL"
                             onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}' + '/pl/${escapeHtml(account.username)}/${account.password}/series', 'Series playlist URL copied')">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
                             Series
                         </button>
@@ -95,9 +95,17 @@ function renderXCAccounts(accounts) {
                             title="Copy VOD playlist URL"
                             onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}' + '/pl/${escapeHtml(account.username)}/${account.password}/vod', 'VOD playlist URL copied')">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
                             VOD
+                        </button>
+                        <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
+                            title="Copy EPG playlist URL"
+                            onclick="copyToClipboard('${(adminConfig?.baseURL || '').replace(/'/g, "\\'")}' + '/epg/${escapeHtml(account.username)}/${account.password}', 'EPG playlist URL copied')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                            </svg>
+                            EPG
                         </button>
                     </div>
                 </div>
