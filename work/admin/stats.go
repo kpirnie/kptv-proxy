@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"kptv-proxy/work/metrics"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
@@ -70,7 +71,7 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			CacheStatus:         cacheStatus,
 			WorkerThreads:       sp.Config.WorkerThreads,
 			TotalConnections:    connectedClients,
-			BytesTransferred:    utils.FormatBytes(int64(m.TotalAlloc)),
+			BytesTransferred:    utils.FormatBytes(metrics.TotalBytesTransferred.Load()),
 			ActiveRestreamers:   activeRestreamers,
 			StreamErrors:        0,
 			ResponseTime:        "< 1ms",

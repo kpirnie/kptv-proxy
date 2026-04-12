@@ -1,9 +1,14 @@
 package metrics
 
 import (
+	"sync/atomic"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+// TotalBytesTransferred tracks cumulative bytes sent to all clients for admin stats display
+var TotalBytesTransferred atomic.Int64
 
 // ActiveConnections tracks the current number of active connections per channel.
 // This metric is a gauge, meaning it can go up and down as clients connect and disconnect.

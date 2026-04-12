@@ -211,6 +211,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 			// Update Prometheus metrics every 10 seconds
 			if now.Sub(lastMetricUpdate) > 10*time.Second {
 				metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
+				metrics.TotalBytesTransferred.Add(int64(n))
 				lastMetricUpdate = now
 			}
 
