@@ -117,10 +117,10 @@ func (r *Restream) collectStreamStats() {
  *
  * @return StreamStats structure with validity flag indicating successful analysis
  */
-func (r *Restream) analyzeStreamStats() types.StreamStats {
+func (r *Restream) analyzeStreamStats() *types.StreamStats {
 	logger.Debug("{restream/stats - analyzeStreamStats} Starting stream analysis for channel %s", r.Channel.Name)
 
-	stats := types.StreamStats{}
+	stats := &types.StreamStats{}
 
 	// Verify buffer is available and valid
 	if r.Buffer == nil || r.Buffer.IsDestroyed() {
