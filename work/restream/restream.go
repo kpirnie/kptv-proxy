@@ -908,6 +908,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			}
 
 			totalBytes += int64(n)
+			metrics.TotalBytesTransferred.Add(int64(n))
 
 			now := time.Now()
 			if now.Sub(lastActivityUpdate) > 1*time.Second {
@@ -918,7 +919,6 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			if now.Sub(lastMetricUpdate) > 10*time.Second {
 				metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
 				metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(float64(activeClients))
-				metrics.TotalBytesTransferred.Add(int64(n))
 				lastMetricUpdate = now
 			}
 		}
