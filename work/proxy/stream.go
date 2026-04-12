@@ -233,6 +233,12 @@ func (sp *StreamProxy) ImportStreams() {
 		logger.Warn("{proxy/stream - ImportStreams} Global timeout reached (2 minutes), some sources may not have completed")
 	}
 
+	// Zero out ActiveConns for all sources — import connections are
+	// short-lived and must not bleed into the streaming phase
+	for i := range sp.Config.Sources {
+		sp.Config.Sources[i].ActiveConns.Store(0)
+	}
+
 	allOverrides, err := db.GetAllStreamOverrides()
 	if err != nil {
 		logger.Warn("{proxy/stream - ImportStreams} Failed to load stream overrides: %v", err)
