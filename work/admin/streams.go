@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/db"
 	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
@@ -90,7 +91,7 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		// Apply the new order immediately without restart
 		channel.Mu.Lock()
-		parser.SortStreams(channel.Streams, sp.Config, channelName)
+		parser.SortStreams(channel.Streams, sp.Config, channelName, map[string]map[string]db.StreamOverride{})
 		atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
 
 		// If a restreamer is active, force it to switch to the new first stream

@@ -9,6 +9,7 @@ import (
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/types"
@@ -502,7 +503,7 @@ func ParseEXTINF(line string) map[string]string {
 //   - streams: slice of Stream objects to sort in-place
 //   - cfg: application configuration containing sort field and direction preferences
 //   - channelName: channel name for debug logging context
-func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string) {
+func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string, allOverrides map[string]map[string]db.StreamOverride) {
 	if len(streams) <= 1 {
 		return
 	}
@@ -521,9 +522,16 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 		return v1 < v2
 	})
 
-	// Apply custom order if one exists
-	customOrder, err := streamorder.GetChannelStreamOrder(channelName)
-	if err != nil || len(customOrder) == 0 {
+	// Apply custom order if one exists for this channel
+	channelOverrides := allOverrides[channelName]
+	entries := make([]streamorder.StreamOrderEntry, 0, len(channelOverrides))
+	for hash, o := range channelOverrides {
+		if o.SOrder >= 0 {
+			entries = append(entries, streamorder.StreamOrderEntry{Index: o.SOrder, Hash: hash})
+		}
+	}
+
+	if len(entries) == 0 {
 		return
 	}
 
@@ -534,8 +542,6 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 	}
 
 	// Sort entries by their stored index
-	entries := make([]streamorder.StreamOrderEntry, len(customOrder))
-	copy(entries, customOrder)
 	sort.SliceStable(entries, func(i, j int) bool {
 		return entries[i].Index < entries[j].Index
 	})
