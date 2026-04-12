@@ -200,6 +200,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 			}
 
 			totalBytes += int64(n)
+			metrics.TotalBytesTransferred.Add(int64(n))
 
 			// Update activity timestamp every 5 seconds
 			now := time.Now()

@@ -908,6 +908,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			}
 
 			totalBytes += int64(n)
+			metrics.TotalBytesTransferred.Add(int64(n))
 
 			now := time.Now()
 			if now.Sub(lastActivityUpdate) > 1*time.Second {

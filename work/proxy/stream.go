@@ -6,6 +6,7 @@ import (
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/db"
 	"kptv-proxy/work/filter"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/parser"
@@ -232,6 +233,12 @@ func (sp *StreamProxy) ImportStreams() {
 		logger.Warn("{proxy/stream - ImportStreams} Global timeout reached (2 minutes), some sources may not have completed")
 	}
 
+	allOverrides, err := db.GetAllStreamOverrides()
+	if err != nil {
+		logger.Warn("{proxy/stream - ImportStreams} Failed to load stream overrides: %v", err)
+		allOverrides = make(map[string]map[string]db.StreamOverride)
+	}
+
 	count := 0
 	newChannels.Range(func(key string, value *types.Channel) bool {
 		channelName := key
@@ -243,7 +250,7 @@ func (sp *StreamProxy) ImportStreams() {
 		}
 
 		// SortStreams handles both global sort and custom ordering internally.
-		parser.SortStreams(channel.Streams, sp.Config, channelName)
+		parser.SortStreams(channel.Streams, sp.Config, channelName, allOverrides)
 
 		// Preserve the existing preferred stream index across import cycles.
 		if existingChannel, exists := sp.Channels.Load(channelName); exists {

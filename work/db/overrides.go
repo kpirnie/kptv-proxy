@@ -118,3 +118,27 @@ func DeleteStreamOverride(channelName, hash string) error {
 	}
 	return err
 }
+
+// GetAllStreamOverrides returns all override rows grouped by channel name.
+func GetAllStreamOverrides() (map[string]map[string]StreamOverride, error) {
+	rows, err := Get().Query(`SELECT channel, s_hash, s_status, s_order, dead_reason FROM kp_stream_overrides`)
+	if err != nil {
+		logger.Error("{db/overrides - GetAllStreamOverrides} %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]map[string]StreamOverride)
+	for rows.Next() {
+		var channel string
+		var o StreamOverride
+		if err := rows.Scan(&channel, &o.Hash, &o.SStatus, &o.SOrder, &o.DeadReason); err != nil {
+			return nil, err
+		}
+		if result[channel] == nil {
+			result[channel] = make(map[string]StreamOverride)
+		}
+		result[channel][o.Hash] = o
+	}
+	return result, rows.Err()
+}
