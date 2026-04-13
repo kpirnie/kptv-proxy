@@ -100,7 +100,7 @@ func (sp *StreamProxy) initializeRateLimiters() {
 		source := &sp.Config.Sources[i]
 		rateLimit := source.MaxConnections
 		if rateLimit <= 0 {
-			rateLimit = 5
+			rateLimit = constants.Internal.SourceDefaultRateLimit
 			logger.Debug("{proxy/stream - initializeRateLimiters} No max connections set for %s, defaulting to %d req/sec", source.Name, rateLimit)
 		}
 		limiter := ratelimit.New(rateLimit)
@@ -730,7 +730,7 @@ func (sp *StreamProxy) ShouldCheckForMasterPlaylist(resp *http.Response) bool {
 
 	if contentLength != "" {
 		if length, err := strconv.ParseInt(contentLength, 10, 64); err == nil {
-			if length > 0 && length < 100*1024 {
+			if length > 0 && length < constants.Internal.MasterPlaylistSizeThreshold {
 				logger.Debug("{proxy/stream - ShouldCheckForMasterPlaylist} Small content length detected (%d bytes), may be a playlist", length)
 				return true
 			}
@@ -775,7 +775,7 @@ func (sp *StreamProxy) getRateLimiterForSource(source *config.SourceConfig) rate
 
 	rateLimit := source.MaxConnections
 	if rateLimit <= 0 {
-		rateLimit = 5
+		rateLimit = constants.Internal.SourceDefaultRateLimit
 	}
 
 	limiter = ratelimit.New(rateLimit)

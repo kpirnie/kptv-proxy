@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/metrics"
 	"kptv-proxy/work/types"
@@ -139,7 +140,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	lastActivityUpdate := time.Now()
 	lastMetricUpdate := time.Now()
 	consecutiveErrors := 0
-	maxConsecutiveErrors := 10
+	maxConsecutiveErrors := constants.Internal.FFmpegMaxConsecutiveErrors
 
 	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Starting stream loop for channel %s", r.Channel.Name)
 
@@ -153,7 +154,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 			if r.ManualSwitch.Load() {
 				return true, totalBytes
 			}
-			return totalBytes > 1024*1024, totalBytes
+			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 		default:
 		}
 
@@ -167,7 +168,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 		if clientCount == 0 {
 			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} No clients remaining for channel %s, stopping (total bytes: %d)",
 				r.Channel.Name, totalBytes)
-			return totalBytes > 1024*1024, totalBytes
+			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 		}
 
 		// Read data from FFmpeg stdout
@@ -196,7 +197,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 			activeClients := r.DistributeToClients(data)
 			if activeClients == 0 {
 				logger.Debug("{restream/ffmpeg - streamWithFFmpeg} No active clients after distribution for channel %s", r.Channel.Name)
-				return totalBytes > 1024*1024, totalBytes
+				return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 			}
 
 			totalBytes += int64(n)
@@ -204,19 +205,19 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 
 			// Update activity timestamp every 5 seconds
 			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 5*time.Second {
+			if now.Sub(lastActivityUpdate) > constants.Internal.FFmpegActivityUpdateInterval {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
 			}
 
 			// Update Prometheus metrics every 10 seconds
-			if now.Sub(lastMetricUpdate) > 10*time.Second {
+			if now.Sub(lastMetricUpdate) > constants.Internal.FFmpegMetricUpdateInterval {
 				metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
 				lastMetricUpdate = now
 			}
 
 			// Log progress every 20MB transferred
-			if totalBytes%(20*1024*1024) < int64(n) {
+			if totalBytes%(constants.Internal.FFmpegLogProgressInterval) < int64(n) {
 				logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Channel %s: Streamed %d MB (clients: %d)",
 					r.Channel.Name, totalBytes/(1024*1024), activeClients)
 			}
@@ -226,7 +227,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 		if err != nil {
 			if err == io.EOF {
 				// Stream ended normally
-				success := totalBytes > 1024*1024
+				success := totalBytes > constants.Internal.StreamMinViableBytes
 				logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Stream ended for channel %s: %d bytes transferred (success: %v)",
 					r.Channel.Name, totalBytes, success)
 				return success, totalBytes

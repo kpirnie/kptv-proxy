@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"time"
 )
@@ -57,7 +58,7 @@ func FetchAccount(ctx context.Context, account config.SDAccount) (*AccountData, 
 	// Step 4 — fetch configured schedules for all stations
 	days := account.DaysToFetch
 	if days <= 0 {
-		days = 7
+		days = constants.Internal.SDDefaultDaysToFetch
 	}
 	schedule, err := fetchSchedules(ctx, client, stations, days)
 

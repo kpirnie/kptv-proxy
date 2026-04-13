@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
@@ -248,7 +249,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			select {
 			case <-r.Ctx.Done():
 				logger.Debug("{restream/hls - streamHLSSegments} Context cancelled during segment processing for channel %s", r.Channel.Name)
-				return totalBytes > 1024*1024, totalBytes
+				return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 			default:
 			}
 
@@ -263,7 +264,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 					r.Channel.Name, err, segmentErrors)
 
 				// Too many errors indicates serious problem - abort streaming
-				if segmentErrors > 5 {
+				if segmentErrors > constants.Internal.HLSMaxSegmentErrors {
 					logger.Error("{restream/hls - streamHLSSegments} Too many segment errors for channel %s, aborting", r.Channel.Name)
 					return false, totalBytes
 				}
@@ -311,7 +312,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		select {
 		case <-r.Ctx.Done():
 			logger.Debug("{restream/hls - streamHLSSegments} Context cancelled during refresh wait for channel %s", r.Channel.Name)
-			return totalBytes > 1024*1024, totalBytes
+			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 		case <-time.After(2 * time.Second):
 			continue
 		}
@@ -601,7 +602,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	totalBytes := int64(0)
 	lastActivityUpdate := time.Now()
 	consecutiveErrors := 0
-	maxConsecutiveErrors := 5
+	maxConsecutiveErrors := constants.Internal.HLSMaxConsecutiveSegmentErrors
 
 	// Stream segment data to clients in chunks
 	for {
@@ -636,7 +637,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 
 			// Update activity timestamp periodically
 			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 5*time.Second {
+			if now.Sub(lastActivityUpdate) > constants.Internal.HLSSegmentActivityUpdateInterval {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
 				logger.Debug("{restream/hls - streamSegment} Streaming segment for channel %s: %d bytes transferred to %d clients",
