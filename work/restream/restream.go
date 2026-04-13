@@ -1118,6 +1118,12 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 
 	logger.Debug("{restream/restream - ForceStreamSwitch} Channel %s: Forcing switch to stream %d with %d clients", r.Channel.Name, newIndex, clientCount)
 
+	// create new context before cancelling old one to eliminate the gap
+	// where Ctx is cancelled but no replacement exists yet
+	newCtx, newCancel := context.WithCancel(context.Background())
+	r.Ctx = newCtx
+	r.Cancel = newCancel
+
 	// Cancel context first to stop the streaming loop before touching the buffer
 	r.Cancel()
 
