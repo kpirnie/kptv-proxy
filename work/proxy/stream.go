@@ -230,8 +230,8 @@ func (sp *StreamProxy) ImportStreams() {
 	select {
 	case <-done:
 		logger.Debug("{proxy/stream - ImportStreams} All source imports completed successfully")
-	case <-time.After(2 * time.Minute):
-		logger.Warn("{proxy/stream - ImportStreams} Global timeout reached (2 minutes), some sources may not have completed")
+	case <-time.After(constants.Internal.ImportGlobalTimeout):
+		logger.Warn("{proxy/stream - ImportStreams} Global timeout reached (%v), some sources may not have completed", constants.Internal.ImportGlobalTimeout)
 	}
 
 	// Zero out ActiveConns for all sources — import connections are
@@ -458,7 +458,7 @@ func (sp *StreamProxy) StopImportRefresh() {
 func (sp *StreamProxy) RestreamCleanup() {
 	logger.Debug("{proxy/stream - RestreamCleanup} Starting restream cleanup loop (interval: 10s)")
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(constants.Internal.ProxyCleanupTickerInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -471,11 +471,11 @@ func (sp *StreamProxy) RestreamCleanup() {
 				if !channel.Restreamer.Running.Load() {
 					lastActivity := channel.Restreamer.LastActivity.Load()
 
-					if now-lastActivity > 30 {
+					if now-lastActivity > constants.Internal.ProxyInactiveRestreamerTimeout {
 						select {
 						case <-channel.Restreamer.Ctx.Done():
 							// context already cancelled, force clean after 60 seconds
-							if now-lastActivity > 60 {
+							if now-lastActivity > constants.Internal.ProxyForceCleanTimeout {
 								logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Force cleaning cancelled context after 60s", channel.Name)
 
 								if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
@@ -509,7 +509,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 						client := cvalue
 						lastSeen := client.LastSeen.Load()
 
-						if now-lastSeen > 120 {
+						if now-lastSeen > constants.Internal.ProxyClientInactivityTimeout {
 							logger.Debug("{proxy/stream - RestreamCleanup} Removing inactive client: %s (last seen %ds ago)", ckey, now-lastSeen)
 							channel.Restreamer.Clients.Delete(ckey)
 
@@ -527,7 +527,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 					// stop the restreamer entirely if no active clients remain
 					if clientCount == 0 && channel.Restreamer.Running.Load() {
 						lastActivity := channel.Restreamer.LastActivity.Load()
-						if now-lastActivity > 120 {
+						if now-lastActivity > constants.Internal.ProxyClientInactivityTimeout {
 							logger.Debug("{proxy/stream - RestreamCleanup} No active clients for channel %s (idle %ds), stopping restreamer", channel.Name, now-lastActivity)
 							channel.Restreamer.Cancel()
 							channel.Restreamer.Running.Store(false)

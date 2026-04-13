@@ -6,20 +6,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"kptv-proxy/work/constants"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
 )
 
-// Argon2id parameters — tuned for security without being punishing on modest hardware
-const (
-	argonMemory      = 64 * 1024 // 64MB
-	argonIterations  = 3
-	argonParallelism = 2
-	argonSaltLength  = 16
-	argonKeyLength   = 32
-)
-
+// Argon2id parameters
 var (
 	ErrInvalidHash         = errors.New("invalid hash format")
 	ErrIncompatibleVersion = errors.New("incompatible argon2 version")
@@ -27,19 +20,20 @@ var (
 
 // HashPassword generates an Argon2id hash of the provided password.
 func HashPassword(password string) (string, error) {
-	salt := make([]byte, argonSaltLength)
+	salt := make([]byte, constants.Internal.Argon2SaltLength)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generating salt: %w", err)
 	}
 
 	hash := argon2.IDKey([]byte(password), salt,
-		argonIterations, argonMemory, argonParallelism, argonKeyLength)
+		constants.Internal.Argon2Iterations, constants.Internal.Argon2Memory,
+		constants.Internal.Argon2Parallelism, constants.Internal.Argon2KeyLength)
 
 	encoded := fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version,
-		argonMemory,
-		argonIterations,
-		argonParallelism,
+		constants.Internal.Argon2Memory,
+		constants.Internal.Argon2Iterations,
+		constants.Internal.Argon2Parallelism,
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(hash),
 	)

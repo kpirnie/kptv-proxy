@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/schedulesdirect"
 	"net/http"
@@ -83,12 +84,12 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 			req.Header.Set("Connection", "close")
 
 			var resp *http.Response
-			maxRetries := 5
+			maxRetries := constants.Internal.EPGMaxRetries
 			for attempt := 1; attempt <= maxRetries; attempt++ {
 				resp, err = sp.HttpClient.Do(req)
 				if err != nil {
 					logger.Warn("{proxy/epg - FetchEPGData} Attempt %d/%d failed for %s: %v", attempt, maxRetries, source.name, err)
-					time.Sleep(time.Duration(attempt*10) * time.Second)
+					time.Sleep(constants.Internal.EPGRetryBaseDelay)
 					req, _ = http.NewRequest("GET", source.url, nil)
 					req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
 					req.Header.Set("Accept-Encoding", "identity")
@@ -101,7 +102,7 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource) ([]string, []string) {
 				logger.Warn("{proxy/epg - FetchEPGData} Attempt %d/%d HTTP %d from %s", attempt, maxRetries, resp.StatusCode, source.name)
 				resp.Body.Close()
 				if attempt < maxRetries {
-					time.Sleep(time.Duration(attempt*10) * time.Second)
+					time.Sleep(constants.Internal.EPGRetryBaseDelay)
 					req, _ = http.NewRequest("GET", source.url, nil)
 					req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
 					req.Header.Set("Accept-Encoding", "identity")
@@ -337,7 +338,7 @@ func (sp *StreamProxy) StartEPGWarmup() {
 	logger.Debug("{proxy/epg - StartEPGWarmup} Initial warmup complete, scheduling 12-hour refresh cycle")
 
 	// schedule periodic background refreshes every 12 hours
-	ticker := time.NewTicker(12 * time.Hour)
+	ticker := time.NewTicker(constants.Internal.EPGRefreshInterval)
 	go func() {
 		defer ticker.Stop()
 		for range ticker.C {

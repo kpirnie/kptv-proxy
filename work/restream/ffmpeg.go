@@ -112,7 +112,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 			select {
 			case <-done:
 				// Process exited gracefully
-			case <-time.After(3 * time.Second):
+			case <-time.After(constants.Internal.FFmpegGracefulTermTimeout):
 				// Timeout - force kill
 				syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 				cmd.Wait()

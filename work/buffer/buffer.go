@@ -2,6 +2,7 @@ package buffer
 
 // package imports
 import (
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"sync"
 	"sync/atomic"
@@ -139,7 +140,7 @@ func (bp *BufferPool) Put(buf *ByteBuffer) {
 
 	// Discard oversized buffers to prevent memory bloat from accumulating
 	// in the pool during long-running streaming sessions
-	if cap(buf.B) > bp.bufferSize*4 {
+	if cap(buf.B) > bp.bufferSize*constants.Internal.OversizedBufferMultiplier {
 		return
 	}
 

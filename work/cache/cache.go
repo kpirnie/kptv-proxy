@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"os"
 	"path/filepath"
@@ -209,12 +210,12 @@ func NewCache(duration time.Duration) (*Cache, error) {
 
 	// create the otter cache with write-based expiry
 	c := otter.Must(&otter.Options[string, string]{
-		MaximumSize:      10_000,
+		MaximumSize:      constants.Internal.CacheMaxSize,
 		ExpiryCalculator: otter.ExpiryWriting[string, string](duration),
 	})
 
 	// create the disk-backed EPG store
-	epg, err := newEPGStore("/tmp/kptv-epg", 12*time.Hour)
+	epg, err := newEPGStore("/tmp/kptv-epg", constants.Internal.EPGDiskTTL)
 	if err != nil {
 		logger.Error("{cache - NewCache} failed to create EPG store: %v", err)
 		return nil, err

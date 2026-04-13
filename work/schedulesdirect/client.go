@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"net/http"
 	"time"
@@ -35,7 +36,7 @@ func newClient(username, password string) (*sdClient, error) {
 // get performs an authenticated GET request to the given SD API path
 // and decodes the JSON response into dest.
 func (c *sdClient) get(ctx context.Context, path string, dest interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", sdBaseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", constants.Internal.SDBaseUrl+path, nil)
 	if err != nil {
 		return fmt.Errorf("create GET request for %s: %w", path, err)
 	}
@@ -68,7 +69,7 @@ func (c *sdClient) post(ctx context.Context, path string, payload interface{}, d
 		return fmt.Errorf("marshal POST payload for %s: %w", path, err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", sdBaseURL+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", constants.Internal.SDBaseUrl+path, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create POST request for %s: %w", path, err)
 	}

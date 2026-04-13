@@ -15,7 +15,7 @@ var registerLimiter = struct {
 	mu       sync.Mutex
 	attempts int
 	resetAt  time.Time
-}{resetAt: time.Now().Add(time.Hour)}
+}{resetAt: time.Now().Add(constants.Internal.RegistrationWindow)}
 
 // HandleRegisterPage serves the registration form.
 func HandleRegisterPage(w http.ResponseWriter, r *http.Request) {
@@ -39,13 +39,13 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 	registerLimiter.mu.Lock()
 	if time.Now().After(registerLimiter.resetAt) {
 		registerLimiter.attempts = 0
-		registerLimiter.resetAt = time.Now().Add(time.Hour)
+		registerLimiter.resetAt = time.Now().Add(constants.Internal.RegistrationWindow)
 	}
 	registerLimiter.attempts++
 	attempts := registerLimiter.attempts
 	registerLimiter.mu.Unlock()
 
-	if attempts > 5 {
+	if attempts > constants.Internal.RegistrationMaxAttempts {
 		http.Error(w, "Too many registration attempts", http.StatusTooManyRequests)
 		return
 	}
@@ -67,7 +67,7 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(password) < constants.Internal.PasswordMinLength {
-		http.Redirect(w, r, "/register?error=Password+must+be+at+least+8+characters", http.StatusFound)
+		http.Redirect(w, r, "/register?error=Password+must+be+at+least+"+strconv.Itoa(constants.Internal.PasswordMinLength)+"+characters", http.StatusFound)
 		return
 	}
 
@@ -139,7 +139,7 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	maxAge := 0
 	if rememberMe {
-		maxAge = int(sessionTTLExtended.Seconds())
+		maxAge = int(constants.Internal.SessionTTLExtended.Seconds())
 	}
 
 	http.SetCookie(w, &http.Cookie{
