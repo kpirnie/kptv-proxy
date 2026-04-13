@@ -3,13 +3,12 @@ package db
 
 import (
 	"database/sql"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"sync"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 )
-
-const dbPath = "/settings/kptv.db"
 
 var (
 	instance *sql.DB
@@ -22,7 +21,7 @@ var (
 func Get() *sql.DB {
 	once.Do(func() {
 		var err error
-		instance, err = sql.Open("sqlite3", dbPath)
+		instance, err = sql.Open("sqlite3", constants.Internal.DatabasePath)
 		if err != nil {
 			logger.Error("{db - Get} Failed to open database: %v", err)
 			panic(err)

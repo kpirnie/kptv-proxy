@@ -7,6 +7,7 @@ import (
 	bbuffer "kptv-proxy/work/buffer"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/metrics"
@@ -40,7 +41,7 @@ var (
 // buffers for each read operation.
 var streamBufferPool = sync.Pool{
 	New: func() interface{} {
-		buf := make([]byte, 32*1024)
+		buf := make([]byte, constants.Internal.StreamBufferSize)
 		return &buf
 	},
 }
@@ -139,7 +140,7 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 
 		// Brief delay to allow buffer to pre-warm before client writes
 		logger.Debug("{restream/restream - AddClient} Channel %s: Starting buffer warmup delay", r.Channel.Name)
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(constants.Internal.BufferWarmupDelay)
 	}
 }
 
@@ -307,7 +308,7 @@ func (r *Restream) Stream() {
 				r.Running.Store(false)
 
 				// Brief pause to allow cleanup
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(constants.Internal.RetryDelay)
 
 				// Set running again and continue the outer loop
 				r.Running.Store(true)
@@ -373,12 +374,13 @@ func (r *Restream) Stream() {
 		if success {
 
 			// Check if this was a very brief success (likely a failure)
-			if bytesTransferred < 64*1024 { // Less than 64K suggests very brief connection
+			if bytesTransferred < constants.Internal.BriefSuccessThreshold { // Less than 64K suggests very brief connection
 				consecutiveFailures[currentIdx]++
 				logger.Debug("{restream/restream - Stream} Channel %s: Stream %d succeeded briefly (%d bytes), treating as failure", r.Channel.Name, currentIdx, bytesTransferred)
 
 				// Don't return, continue to try next stream
 			} else {
+
 				// Reset failure count for substantial success
 				consecutiveFailures[currentIdx] = 0
 				logger.Debug("{restream/restream - Stream} Channel %s: Stream %d succeeded with %d bytes, resetting failure count", r.Channel.Name, currentIdx, bytesTransferred)
@@ -407,7 +409,7 @@ func (r *Restream) Stream() {
 						r.ManualSwitch.Store(false)
 
 						select {
-						case <-time.After(100 * time.Millisecond):
+						case <-time.After(constants.Internal.RetryDelay):
 						case <-r.Ctx.Done():
 							return
 						}
@@ -416,9 +418,25 @@ func (r *Restream) Stream() {
 					}
 				}
 
-				// Only return (exit) for substantial successes
-				return
+				// check if clients are still connected before deciding to loop or exit
+				clientCount := 0
+				r.Clients.Range(func(key string, value *types.RestreamClient) bool {
+					clientCount++
+					return true
+				})
+
+				if clientCount == 0 {
+					// no clients, legitimate stop
+					return
+				}
+
+				// clients still connected — segment boundary, reconnect immediately
+				totalAttempts = 0
+				consecutiveFailures = make(map[int]int)
+				triedPreferred = false
+				continue
 			}
+
 		}
 
 		// If we reach here, either it was a failure or brief success - continue to next stream
@@ -497,7 +515,7 @@ func (r *Restream) Stream() {
 				}
 
 				// Brief pause then continue
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(constants.Internal.RetryDelay)
 				continue
 			}
 
@@ -896,7 +914,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 					logger.Error("{restream/restream - streamFromURL} Channel %s: Buffer write failed %d times", r.Channel.Name, consecutiveErrors)
 					return false, totalBytes
 				}
-				time.Sleep(10 * time.Millisecond)
+				time.Sleep(constants.Internal.BufferWriteRetryDelay)
 				continue
 			}
 
@@ -925,7 +943,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 
 		if err != nil {
 			if err == io.EOF {
-				success := totalBytes > 2*1024*1024
+				success := totalBytes > constants.Internal.EOFSuccessThreshold
 				status := "insufficient"
 				if success {
 					status = "success"
@@ -945,7 +963,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 				return false, totalBytes
 			}
 
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(constants.Internal.RetryDelay)
 			continue
 		}
 
@@ -1157,7 +1175,7 @@ func (r *Restream) resetBufferSafely() {
 			r.Clients.Range(func(_ string, _ *types.RestreamClient) bool { count++; return true })
 			return count
 		}())
-	} else if r.Buffer == nil {
+	} else if r.Buffer == nil || r.Buffer.IsDestroyed() {
 
 		// Only create new buffer if none exists
 		bufferSize := r.Config.BufferSizePerStream * 1024 * 1024
@@ -1180,6 +1198,14 @@ func (r *Restream) streamFallbackVideo() {
 	fallbackPath := "/static/loading.ts"
 
 	logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: Starting fallback video loop", r.Channel.Name)
+
+	// ensure buffer is valid before attempting fallback streaming —
+	// it may have been destroyed by a prior ForceStreamSwitch
+	if r.Buffer == nil || r.Buffer.IsDestroyed() {
+		bufferSize := r.Config.BufferSizePerStream * 1024 * 1024
+		r.Buffer = bbuffer.NewRingBuffer(bufferSize)
+		logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: Recreated destroyed buffer for fallback", r.Channel.Name)
+	}
 
 	for {
 		select {
