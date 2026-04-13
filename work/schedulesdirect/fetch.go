@@ -9,10 +9,6 @@ import (
 	"time"
 )
 
-const (
-	batchSize = 1000
-)
-
 // AccountData holds all fetched data for a single SD account,
 // ready for XMLTV conversion.
 type AccountData struct {
@@ -204,8 +200,8 @@ func fetchSchedules(ctx context.Context, client *sdClient, stations []SDStation,
 	schedule := make(map[string][]SDAiring)
 
 	// Process in batches of 1000
-	for start := 0; start < len(requests); start += batchSize {
-		end := start + batchSize
+	for start := 0; start < len(requests); start += constants.Internal.SDBatchSize {
+		end := start + constants.Internal.SDBatchSize
 		if end > len(requests) {
 			end = len(requests)
 		}
@@ -259,8 +255,8 @@ func fetchPrograms(ctx context.Context, client *sdClient, schedule map[string][]
 	programs := make(map[string]SDProgram, len(programIDs))
 
 	// Process in batches of 1000
-	for start := 0; start < len(programIDs); start += batchSize {
-		end := start + batchSize
+	for start := 0; start < len(programIDs); start += constants.Internal.SDBatchSize {
+		end := start + constants.Internal.SDBatchSize
 		if end > len(programIDs) {
 			end = len(programIDs)
 		}

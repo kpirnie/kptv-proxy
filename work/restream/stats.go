@@ -14,7 +14,7 @@ import (
 )
 
 // limits concurrent FFprobe analysis processes across all channels
-var ffprobeSemaphore = make(chan struct{}, 4)
+var ffprobeSemaphore = make(chan struct{}, constants.Internal.FFprobeSemaphoreLimit)
 
 // StartStatsCollection initiates background statistics gathering for the active stream,
 // launching a goroutine that performs periodic FFprobe analysis to collect codec information,
@@ -50,9 +50,9 @@ func (r *Restream) collectStreamStats() {
 
 	}
 
-	interval := 5 * time.Minute // Default to 5 minutes
+	interval := constants.Internal.StatsCollectionInterval // Default to 5 minutes
 	if r.Config.Debug {
-		interval = 1 * time.Minute // Only 1 min in debug
+		interval = constants.Internal.StatsDebugInterval // Only 1 min in debug
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -132,7 +132,7 @@ func (r *Restream) analyzeStreamStats() *types.StreamStats {
 	}
 
 	// Extract recent stream data for analysis (3MB sample)
-	streamData := r.Buffer.PeekRecentData(3 * 1024 * 1024)
+	streamData := r.Buffer.PeekRecentData(constants.Internal.StatsBufferPeekSize)
 	if len(streamData) == 0 {
 		logger.Warn("{restream/stats - analyzeStreamStats} No stream data available in buffer for channel %s", r.Channel.Name)
 		return stats
@@ -141,7 +141,7 @@ func (r *Restream) analyzeStreamStats() *types.StreamStats {
 	logger.Debug("{restream/stats - analyzeStreamStats} Extracted %d bytes from buffer for channel %s", len(streamData), r.Channel.Name)
 
 	// Create timeout context to prevent FFprobe from hanging
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), constants.Internal.StatsFFprobeTimeout)
 	defer cancel()
 
 	// ffprobe semaphore to lock when necessary
@@ -178,7 +178,7 @@ func (r *Restream) analyzeStreamStats() *types.StreamStats {
 	// Goroutine to write stream data to FFprobe stdin
 	go func() {
 		defer stdin.Close()
-		maxData := 2 * 1024 * 1024 // Limit to 2MB for faster analysis
+		maxData := constants.Internal.StatsFFprobeMaxData // Limit to 2MB for faster analysis
 		if len(streamData) > maxData {
 			logger.Debug("{restream/stats - analyzeStreamStats} Writing %d bytes (truncated) to FFprobe for channel %s", maxData, r.Channel.Name)
 			stdin.Write(streamData[:maxData])

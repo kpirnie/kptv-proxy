@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"net/http"
 	"time"
@@ -12,7 +13,7 @@ var (
 	// logEntries maintains a circular buffer of recent log entries with a 1000 entry limit,
 	// providing real-time debugging information through the admin interface without
 	// unbounded memory growth during long-running operations.
-	logEntries = make([]LogEntry, 0, 1000)
+	logEntries = make([]LogEntry, 0, constants.Internal.AdminMaxLogEntries)
 )
 
 // LogEntry represents individual log entries captured by the admin interface for
@@ -35,8 +36,8 @@ func addLogEntry(level, message string) {
 	logEntries = append(logEntries, entry)
 
 	// Maintain circular buffer with 1000 entry limit
-	if len(logEntries) > 1000 {
-		logEntries = logEntries[len(logEntries)-1000:]
+	if len(logEntries) > constants.Internal.AdminMaxLogEntries {
+		logEntries = logEntries[len(logEntries)-constants.Internal.AdminMaxLogEntries:]
 	}
 }
 

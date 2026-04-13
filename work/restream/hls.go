@@ -190,10 +190,10 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 
 	// Initialize streaming state
 	totalBytes := int64(0)
-	segmentTracker := NewSegmentTracker(20) // Track last 20 segments to prevent duplicates
+	segmentTracker := NewSegmentTracker(constants.Internal.HLSSegmentTrackerSize) // Track last 20 segments to prevent duplicates
 	defer segmentTracker.Clear()
 	consecutiveEmptyRefresh := 0
-	maxEmptyRefresh := 10
+	maxEmptyRefresh := constants.Internal.HLSMaxEmptyRefreshes
 	lastSuccessfulSegment := time.Now()
 
 	logger.Debug("{restream/hls - streamHLSSegments} Initialized segment tracker for channel %s (max size: 20)", r.Channel.Name)
@@ -203,7 +203,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		// Check if context was cancelled (shutdown or manual switch)
 		select {
 		case <-r.Ctx.Done():
-			success := totalBytes > 1024*1024
+			success := totalBytes > constants.Internal.StreamMinViableBytes
 			logger.Debug("{restream/hls - streamHLSSegments} Context cancelled for channel %s (total bytes: %d, success: %v)",
 				r.Channel.Name, totalBytes, success)
 			return success, totalBytes
@@ -220,7 +220,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		if clientCount == 0 {
 			logger.Debug("{restream/hls - streamHLSSegments} No clients remaining for channel %s, stopping (total bytes: %d)",
 				r.Channel.Name, totalBytes)
-			return totalBytes > 1024*1024, totalBytes
+			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 		}
 
 		// Fetch current playlist and extract segment URLs
@@ -279,7 +279,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			consecutiveEmptyRefresh = 0
 
 			logger.Debug("{restream/hls - streamHLSSegments} Successfully streamed segment for channel %s: %d bytes (total: %d MB)",
-				r.Channel.Name, segmentBytes, totalBytes/(1024*1024))
+				r.Channel.Name, segmentBytes, totalBytes/(constants.Internal.StreamMinViableBytes))
 		}
 
 		// Track empty refreshes to detect stalled streams
@@ -291,7 +291,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			// After max empty refreshes, check if stream is truly stalled
 			if consecutiveEmptyRefresh >= maxEmptyRefresh {
 				timeSinceSuccess := time.Since(lastSuccessfulSegment)
-				if timeSinceSuccess > 30*time.Second {
+				if timeSinceSuccess > constants.Internal.HLSStallThreshold {
 					logger.Warn("{restream/hls - streamHLSSegments} Stream stalled for channel %s: no new segments for %v",
 						r.Channel.Name, timeSinceSuccess)
 					return false, totalBytes
@@ -305,7 +305,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		// Log batch processing results
 		if newSegmentCount > 0 {
 			logger.Debug("{restream/hls - streamHLSSegments} Processed batch for channel %s: %d new segments, tracker size: %d, total: %d MB",
-				r.Channel.Name, newSegmentCount, segmentTracker.Size(), totalBytes/(1024*1024))
+				r.Channel.Name, newSegmentCount, segmentTracker.Size(), totalBytes/(constants.Internal.StreamMinViableBytes))
 		}
 
 		// Wait before next playlist refresh (HLS standard is typically 1-3 seconds)
@@ -313,7 +313,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		case <-r.Ctx.Done():
 			logger.Debug("{restream/hls - streamHLSSegments} Context cancelled during refresh wait for channel %s", r.Channel.Name)
 			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
-		case <-time.After(2 * time.Second):
+		case <-time.After(constants.Internal.HLSPlaylistRefreshInterval):
 			continue
 		}
 	}
@@ -363,7 +363,7 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	}
 
 	// Create context with timeout to prevent hanging on slow/dead servers
-	ctx, cancel := context.WithTimeout(r.Ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Ctx, constants.Internal.HLSPlaylistFetchTimeout)
 	defer cancel()
 	req = req.WithContext(ctx)
 
@@ -565,7 +565,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	}
 
 	// Create context with timeout to prevent hanging on slow segments
-	ctx, cancel := context.WithTimeout(r.Ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Ctx, constants.Internal.HLSStallThreshold)
 	defer cancel()
 	req = req.WithContext(ctx)
 
@@ -621,7 +621,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 					logger.Error("{restream/hls - streamSegment} Max buffer write errors for channel %s", r.Channel.Name)
 					return totalBytes, fmt.Errorf("buffer write failed")
 				}
-				time.Sleep(10 * time.Millisecond)
+				time.Sleep(constants.Internal.BufferWriteRetryDelay)
 				continue
 			}
 
@@ -664,7 +664,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 
 			logger.Warn("{restream/hls - streamSegment} Read error for channel %s: %v (consecutive: %d, retrying...)",
 				r.Channel.Name, err, consecutiveErrors)
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(constants.Internal.BufferWriteRetryDelay)
 			continue
 		}
 

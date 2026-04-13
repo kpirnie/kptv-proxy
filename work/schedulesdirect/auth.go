@@ -6,17 +6,12 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"net/http"
 	"sync"
 	"time"
-)
-
-const (
-	sdBaseURL        = "https://json.schedulesdirect.org/20141201"
-	tokenValidHours  = 24
-	refreshThreshold = 12 * time.Hour
 )
 
 // tokenCacheEntry holds the cached token data for a single SD account.
@@ -62,14 +57,14 @@ func GetToken(username, password string) (string, error) {
 	tokenAge := now.Sub(entry.ObtainedAt)
 
 	// Token still valid — return immediately
-	if tokenAge < tokenValidHours*time.Hour {
+	if tokenAge < constants.Internal.SDTokenValidDuration {
 		logger.Debug("{schedulesdirect/auth - GetToken} Cached token for %s is valid (%v old)", username, tokenAge.Round(time.Minute))
 		return entry.Token, nil
 	}
 
 	// Token stale — check refresh throttle
 	timeSinceLastAttempt := now.Sub(entry.LastRefreshAttempt)
-	if timeSinceLastAttempt < refreshThreshold {
+	if timeSinceLastAttempt < constants.Internal.SDRefreshThreshold {
 		logger.Warn("{schedulesdirect/auth - GetToken} Token for %s is stale but refresh throttled (last attempt %v ago), using stale token",
 			username, timeSinceLastAttempt.Round(time.Minute))
 		return entry.Token, nil
@@ -99,10 +94,10 @@ func doLogin(cache *tokenCacheFile, username, password string, now time.Time) (s
 		return "", fmt.Errorf("marshal login payload: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), constants.Internal.SDLoginTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", sdBaseURL+"/token", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", constants.Internal.SDBaseUrl+"/token", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("create login request: %w", err)
 	}

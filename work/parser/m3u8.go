@@ -9,6 +9,7 @@ import (
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/streamorder"
@@ -17,7 +18,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/grafov/m3u8"
 	"go.uber.org/ratelimit"
@@ -101,7 +101,7 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, cfg *config.Config, sourc
 	}
 
 	// setup a cancellation
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), constants.Internal.HLSSegmentFetchTimeout)
 	defer cancel()
 
 	req, err := http.NewRequest("GET", source.URL, nil)

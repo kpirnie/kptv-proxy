@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/proxy"
 	"net/http"
 	"time"
@@ -35,7 +36,7 @@ func handleRestart(w http.ResponseWriter, r *http.Request) {
 
 	// Trigger restart signal after brief delay to allow response to flush
 	go func() {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(constants.Internal.AdminRestartDelay)
 		restartChan <- true
 	}()
 }

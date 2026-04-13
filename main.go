@@ -9,6 +9,7 @@ import (
 
 	"kptv-proxy/work/app"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/users"
@@ -65,7 +66,7 @@ func main() {
 	app.RegisterRoutes(router, proxyInstance)
 
 	// set the application address and port
-	addr := fmt.Sprintf(":%d", 8080)
+	addr := fmt.Sprintf(":%d", constants.Internal.ServerPort)
 
 	// Log startup summary
 	logger.Info("Starting KPTV Proxy %s", app.VersionString())

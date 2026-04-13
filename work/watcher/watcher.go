@@ -17,7 +17,7 @@ import (
 
 // semaphore to limit concurrent watchers system-wide
 var (
-	watcherSemaphore = make(chan struct{}, 100) // Max 100 concurrent watchers
+	watcherSemaphore = make(chan struct{}, constants.Internal.WatcherMaxConcurrent) // Max 100 concurrent watchers
 )
 
 /**
@@ -243,7 +243,7 @@ func (wm *WatcherManager) cleanupRoutine() {
 	logger.Debug("{watcher - cleanupRoutine} Starting cleanup routine")
 
 	// Create ticker for periodic cleanup operations (30-second intervals)
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(constants.Internal.WatcherCleanupInterval)
 	defer ticker.Stop()
 
 	// Continue cleanup operations until manager shutdown signal
@@ -297,11 +297,11 @@ func (sw *StreamWatcher) Watch() {
 	}()
 
 	// Configure monitoring interval with debug mode optimization
-	interval := 30 * time.Second // Standard interval for production monitoring
+	interval := constants.Internal.WatcherCheckInterval // Standard interval for production monitoring
 
 	// Use more frequent checks in debug mode for development and troubleshooting
 	if sw.restreamer.Config.Debug {
-		interval = 15 * time.Second
+		interval = constants.Internal.WatcherDebugCheckInterval
 		logger.Debug("{watcher - Watch} Debug mode enabled, using %v interval for channel: %s", interval, sw.channelName)
 	}
 
@@ -370,7 +370,7 @@ func (sw *StreamWatcher) checkStreamHealth() {
 			sw.channelName, consecutiveFailures, totalFailures)
 
 		// trigger on total failures alone - consecutive resets too easily on bursty streams
-		if totalFailures >= 3 {
+		if totalFailures >= constants.Internal.WatcherFailureThreshold {
 			logger.Warn("{watcher - checkStreamHealth} Channel %s: Failure threshold exceeded, triggering stream switch", sw.channelName)
 			sw.triggerStreamSwitch("persistent_failures")
 			atomic.StoreInt32(&sw.consecutiveFailures, 0)
@@ -388,7 +388,7 @@ func (sw *StreamWatcher) checkStreamHealth() {
 			}
 		}
 
-		if time.Since(sw.lastFailureReset) > 15*time.Minute {
+		if time.Since(sw.lastFailureReset) > constants.Internal.WatcherFailureResetWindow {
 			oldTotalFailures := atomic.SwapInt32(&sw.totalFailures, 0)
 			sw.lastFailureReset = time.Now()
 			if oldTotalFailures > 0 {
@@ -417,7 +417,7 @@ func (sw *StreamWatcher) checkStreamHealth() {
 func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 
 	// Grace period for newly started streams
-	if time.Since(sw.lastStreamStart) < 30*time.Second {
+	if time.Since(sw.lastStreamStart) < constants.Internal.WatcherGracePeriod {
 		logger.Debug("{watcher - evaluateStreamHealthFromState} Channel %s: In grace period (%v elapsed), skipping health check",
 			sw.channelName, time.Since(sw.lastStreamStart))
 		return false
@@ -450,7 +450,7 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	lastActivity := sw.restreamer.LastActivity.Load()
 	timeSinceActivity := time.Now().Unix() - lastActivity
 
-	if timeSinceActivity > 120 {
+	if timeSinceActivity > constants.Internal.WatcherActivityTimeout {
 		logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: No activity for %d seconds (threshold: 120s)",
 			sw.channelName, timeSinceActivity)
 		hasIssues = true
@@ -462,7 +462,7 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	if sw.restreamer.Running.Load() {
 		select {
 		case <-sw.restreamer.Ctx.Done():
-			if time.Since(sw.lastStreamStart) > 300*time.Second {
+			if time.Since(sw.lastStreamStart) > constants.Internal.WatcherContextStuckTimeout {
 				logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Context cancelled and stream has been running for >300s",
 					sw.channelName)
 				hasIssues = true
@@ -478,7 +478,7 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	sw.restreamer.Stats.Mu.RUnlock()
 
 	// If stats exist but haven't been updated in 10 minutes, treat as stale
-	if statsValid && time.Now().Unix()-statsUpdated > 600 {
+	if statsValid && time.Now().Unix()-statsUpdated > constants.Internal.WatcherStatsStaleTimeout {
 		logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Stream stats stale for >10 minutes", sw.channelName)
 		hasIssues = true
 	}
@@ -589,7 +589,7 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 	logger.Debug("{watcher - forceStreamRestart} Channel %s: Updated stream indices to %d", sw.channelName, newIndex)
 
 	// Gracefully terminate current streaming operations
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(constants.Internal.WatcherRestartDeadline)
 	for time.Now().Before(deadline) {
 		if !sw.restreamer.Running.Load() {
 			break

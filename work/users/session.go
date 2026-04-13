@@ -3,14 +3,9 @@ package users
 import (
 	"crypto/rand"
 	"fmt"
+	"kptv-proxy/work/constants"
 	"sync"
 	"time"
-)
-
-const (
-	sessionTTL         = 24 * time.Hour
-	sessionTTLExtended = 30 * 24 * time.Hour
-	sessionCleanupTick = 15 * time.Minute
 )
 
 // Session holds the data for an authenticated session.
@@ -42,9 +37,9 @@ func CreateSession(userID int64, username, name string, rememberMe bool) (string
 		return "", err
 	}
 
-	ttl := sessionTTL
+	ttl := constants.Internal.SessionTTL
 	if rememberMe {
-		ttl = sessionTTLExtended
+		ttl = constants.Internal.SessionTTLExtended
 	}
 
 	store.mu.Lock()
@@ -80,7 +75,7 @@ func DeleteSession(id string) {
 
 // cleanup periodically removes expired sessions.
 func (s *sessionStore) cleanup() {
-	ticker := time.NewTicker(sessionCleanupTick)
+	ticker := time.NewTicker(constants.Internal.SessionCleanupTick)
 	defer ticker.Stop()
 	for range ticker.C {
 		now := time.Now()
