@@ -1124,6 +1124,10 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 	r.Ctx = newCtx
 	r.Cancel = newCancel
 
+	// restart background monitors since they are tied to the previous context
+	// and will have exited when it was cancelled
+	go r.RestartMonitors()
+
 	// Cancel context first to stop the streaming loop before touching the buffer
 	r.Cancel()
 
