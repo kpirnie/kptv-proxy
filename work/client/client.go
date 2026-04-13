@@ -39,7 +39,7 @@ func NewHeaderSettingClient(responseHeaderTimeout time.Duration) *HeaderSettingC
 			ExpectContinueTimeout: 1 * time.Second,       // How long
 			DisableKeepAlives:     false,                 // Make sure we do not disable keep alives...
 			ResponseHeaderTimeout: responseHeaderTimeout, // Timeout for waiting for response headers
-			ForceAttemptHTTP2:     true,                  // Enable HTTP/2 where available
+			ForceAttemptHTTP2:     false,                 // Enable HTTP/2 where available
 			DisableCompression:    false,                 // Allow compression
 			WriteBufferSize:       64 * 1024,             // 32KB write buffer
 			ReadBufferSize:        64 * 1024,             // 32KB read buffer

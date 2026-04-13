@@ -6,6 +6,7 @@ import (
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/filter"
 	"kptv-proxy/work/logger"
@@ -280,13 +281,8 @@ func (sp *StreamProxy) ImportStreams() {
 // rendering. Each channel entry includes its stream attributes and a proxy URL pointing
 // back to this server for transparent stream proxying.
 func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, groupFilter string, account *config.XCOutputAccount) {
-	var seenClients sync.Map
-
-	clientKey := r.RemoteAddr + "-" + r.Header.Get("User-Agent")
-	if _, seen := seenClients.LoadOrStore(clientKey, true); !seen {
-		logger.Debug("{proxy/stream - GeneratePlaylist} New playlist client: %s (%s)",
-			r.RemoteAddr, r.Header.Get("User-Agent"))
-	}
+	logger.Debug("{proxy/stream - GeneratePlaylist} Playlist request from: %s (%s)",
+		r.RemoteAddr, r.Header.Get("User-Agent"))
 
 	// construct cache key per account with optional group filter suffix
 	cacheKey := fmt.Sprintf("playlist_%s", account.Username)
@@ -712,7 +708,7 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	select {
 	case <-done:
 		logger.Debug("{proxy/stream - HandleRestreamingClient} Client disconnected: %s (channel: %s)", clientID, channel.Name)
-	case <-time.After(24 * time.Hour):
+	case <-time.After(constants.Internal.MaxClientSessionDuration):
 		logger.Warn("{proxy/stream - HandleRestreamingClient} Client session timeout after 24h: %s (channel: %s)", clientID, channel.Name)
 	}
 }

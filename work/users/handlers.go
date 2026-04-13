@@ -5,7 +5,16 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
+
+// limits registration attempts to prevent hammering during the setup window
+var registerLimiter = struct {
+	mu       sync.Mutex
+	attempts int
+	resetAt  time.Time
+}{resetAt: time.Now().Add(time.Hour)}
 
 // HandleRegisterPage serves the registration form.
 func HandleRegisterPage(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +35,20 @@ func HandleRegisterPage(w http.ResponseWriter, r *http.Request) {
 
 // HandleRegister processes the registration form submission.
 func HandleRegister(w http.ResponseWriter, r *http.Request) {
+	registerLimiter.mu.Lock()
+	if time.Now().After(registerLimiter.resetAt) {
+		registerLimiter.attempts = 0
+		registerLimiter.resetAt = time.Now().Add(time.Hour)
+	}
+	registerLimiter.attempts++
+	attempts := registerLimiter.attempts
+	registerLimiter.mu.Unlock()
+
+	if attempts > 5 {
+		http.Error(w, "Too many registration attempts", http.StatusTooManyRequests)
+		return
+	}
+
 	count, err := UserCount()
 	if err != nil || count > 0 {
 		http.Redirect(w, r, "/login", http.StatusFound)

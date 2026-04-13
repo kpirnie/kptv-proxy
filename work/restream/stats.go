@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// limits concurrent FFprobe analysis processes across all channels
+var ffprobeSemaphore = make(chan struct{}, 4)
+
 // StartStatsCollection initiates background statistics gathering for the active stream,
 // launching a goroutine that performs periodic FFprobe analysis to collect codec information,
 // resolution, bitrate, and other stream characteristics for monitoring and display purposes.
@@ -140,6 +143,15 @@ func (r *Restream) analyzeStreamStats() *types.StreamStats {
 	// Create timeout context to prevent FFprobe from hanging
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+
+	// ffprobe semaphore to lock when necessary
+	select {
+	case ffprobeSemaphore <- struct{}{}:
+		defer func() { <-ffprobeSemaphore }()
+	default:
+		logger.Debug("{restream/stats - analyzeStreamStats} Channel %s: FFprobe semaphore full, skipping this cycle", r.Channel.Name)
+		return stats
+	}
 
 	// Build FFprobe command with JSON output and optimal probe settings
 	cmd := exec.CommandContext(ctx, "ffprobe",

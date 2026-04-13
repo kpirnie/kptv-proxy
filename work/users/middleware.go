@@ -84,21 +84,29 @@ func isAuthenticated(r *http.Request) bool {
 
 // checkTokenPermission verifies a raw token string has the given permission.
 func checkTokenPermission(rawToken string, perm int) bool {
-	// We need to find the token by iterating and verifying — tokens are hashed
 	tokens, err := GetAllTokens()
 	if err != nil {
 		return false
 	}
 
+	// always iterate all tokens to prevent timing oracle on match position
+	matched := false
+	matchedPerms := 0
 	for _, t := range tokens {
 		match, err := VerifyPassword(rawToken, t.TokenHash)
-		if err != nil || !match {
+		if err != nil {
 			continue
 		}
-		return HasPermission(t.Permissions, perm)
+		if match {
+			matched = true
+			matchedPerms = t.Permissions
+		}
 	}
 
-	return false
+	if !matched {
+		return false
+	}
+	return HasPermission(matchedPerms, perm)
 }
 
 // extractBearerToken pulls the token from the Authorization header.
