@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"context"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
@@ -309,7 +310,7 @@ func (sw *StreamWatcher) Watch() {
 		select {
 		case <-sw.ctx.Done():
 			return
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(constants.Internal.WatcherPollingInterval):
 		}
 	}
 	sw.lastStreamStart = time.Now()
@@ -436,7 +437,7 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 			sw.lastWritePos = currentWritePos
 		} else if currentWritePos >= sw.lastWritePos {
 			bytesSinceLastCheck := currentWritePos - sw.lastWritePos
-			if bytesSinceLastCheck < 50*1024 {
+			if bytesSinceLastCheck < constants.Internal.WatcherLowThroughputBytes {
 				logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Throughput too low (%d KB since last check), stream likely stalled",
 					sw.channelName, bytesSinceLastCheck/1024)
 				hasIssues = true
@@ -593,7 +594,7 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 		if !sw.restreamer.Running.Load() {
 			break
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(constants.Internal.WatcherRestartPollInterval)
 	}
 
 	// Create fresh context for new streaming session

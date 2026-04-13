@@ -34,12 +34,13 @@ type InternalConstants struct {
 	StatsDebugInterval      time.Duration
 
 	// work/restream/hls.go - streamHLS()
-	HLSSegmentTrackerSize      int
-	HLSMaxEmptyRefreshes       int
-	HLSStallThreshold          time.Duration
-	HLSPlaylistRefreshInterval time.Duration
-	HLSPlaylistFetchTimeout    time.Duration
-	HLSSegmentFetchTimeout     time.Duration
+	HLSSegmentTrackerSize       int
+	HLSMaxEmptyRefreshes        int
+	HLSStallThreshold           time.Duration
+	HLSPlaylistRefreshInterval  time.Duration
+	HLSPlaylistFetchTimeout     time.Duration
+	HLSSegmentFetchTimeout      time.Duration
+	MasterPlaylistSizeThreshold int64
 
 	// work/restream/ffmpeg.go - stopFFmpeg()
 	FFmpegGracefulTermTimeout time.Duration
@@ -67,8 +68,8 @@ type InternalConstants struct {
 	WatcherFailureResetWindow time.Duration
 
 	// work/proxy/stream.go - ImportStreams()
-	ImportGlobalTimeout time.Duration
-
+	ImportGlobalTimeout      time.Duration
+	StreamDefaultMaxFailures int32
 	// work/proxy/stream.go - RestreamCleanup()
 	ProxyCleanupTickerInterval     time.Duration
 	ProxyInactiveRestreamerTimeout time.Duration
@@ -109,6 +110,7 @@ type InternalConstants struct {
 	// work/schedulesdirect/auth.go - IsTokenValid()
 	SDTokenValidDuration time.Duration
 	SDRefreshThreshold   time.Duration
+	SDDefaultDaysToFetch int
 
 	// work/schedulesdirect/auth.go - Login()
 	SDLoginTimeout time.Duration
@@ -128,17 +130,23 @@ type InternalConstants struct {
 	// work/db/db.go - initDB()
 	DatabasePath string
 
+	StreamMaxAttemptsMultiplier       int
+	StreamConsecutiveFailureThreshold int
+
 	// work/restream/ffmpeg.go - streamWithFFmpeg()
 	FFmpegActivityUpdateInterval time.Duration
 	FFmpegMetricUpdateInterval   time.Duration
 	FFmpegMaxConsecutiveErrors   int
 	FFmpegLogProgressInterval    int64
+	StreamMinViableBytes         int64
+	PasswordMinLength            int
 
 	// work/restream/hls.go - streamHLSSegments()
 	HLSMaxSegmentErrors int
 
 	// work/restream/hls.go - streamSegment()
-	HLSMaxConsecutiveSegmentErrors int
+	HLSMaxConsecutiveSegmentErrors   int
+	HLSSegmentActivityUpdateInterval time.Duration
 
 	// work/restream/restream.go - testAndStreamVariant()
 	StreamTestBufferSize int
@@ -149,8 +157,9 @@ type InternalConstants struct {
 	StreamMaxConsecutiveErrors   int
 
 	// work/restream/restream.go - Stream()
-	StreamJitterMin time.Duration
-	StreamJitterMax time.Duration
+	StreamJitterMinMs      int64
+	StreamJitterRangeMs    int64
+	SourceDefaultRateLimit int
 
 	// work/restream/restream.go - monitorClientHealth()
 	ClientHealthCheckInterval time.Duration
@@ -171,6 +180,12 @@ type InternalConstants struct {
 
 	// work/watcher/watcher.go - evaluateStreamHealthFromState()
 	WatcherLowThroughputBytes int64
+
+	// work/restream/restream.go - getStreamVariants()
+	StreamVariantFetchTimeout time.Duration
+
+	// work/restream/restream.go - testAndStreamVariant()
+	StreamVariantTestTimeout time.Duration
 }
 
 // Internal holds all hardcoded operational values for the application.
@@ -205,13 +220,19 @@ var Internal = InternalConstants{
 	StatsCollectionInterval: 5 * time.Minute,
 	StatsDebugInterval:      1 * time.Minute,
 
+	SourceDefaultRateLimit:   5,
+	StreamDefaultMaxFailures: 5,
+
 	// work/restream/hls.go - streamHLS()
-	HLSSegmentTrackerSize:      20,
-	HLSMaxEmptyRefreshes:       10,
-	HLSStallThreshold:          30 * time.Second,
-	HLSPlaylistRefreshInterval: 2 * time.Second,
-	HLSPlaylistFetchTimeout:    10 * time.Second,
-	HLSSegmentFetchTimeout:     30 * time.Second,
+	HLSSegmentTrackerSize:             20,
+	HLSMaxEmptyRefreshes:              10,
+	HLSStallThreshold:                 30 * time.Second,
+	HLSPlaylistRefreshInterval:        2 * time.Second,
+	HLSPlaylistFetchTimeout:           10 * time.Second,
+	HLSSegmentFetchTimeout:            30 * time.Second,
+	MasterPlaylistSizeThreshold:       100 * 1024, // 100 KB
+	StreamMaxAttemptsMultiplier:       2,
+	StreamConsecutiveFailureThreshold: 2,
 
 	// work/restream/ffmpeg.go - stopFFmpeg()
 	FFmpegGracefulTermTimeout: 3 * time.Second,
@@ -281,6 +302,7 @@ var Internal = InternalConstants{
 	// work/schedulesdirect/auth.go - IsTokenValid()
 	SDTokenValidDuration: 24 * time.Hour,
 	SDRefreshThreshold:   12 * time.Hour,
+	SDDefaultDaysToFetch: 7,
 
 	// work/schedulesdirect/auth.go - Login()
 	SDLoginTimeout: 15 * time.Second,
@@ -295,7 +317,8 @@ var Internal = InternalConstants{
 	AdminRestartDelay: 500 * time.Millisecond,
 
 	// main.go
-	ServerPort: 8080,
+	ServerPort:        8080,
+	PasswordMinLength: 12,
 
 	// work/db/db.go - initDB()
 	DatabasePath: "/settings/kptv.db",
@@ -305,12 +328,14 @@ var Internal = InternalConstants{
 	FFmpegMetricUpdateInterval:   10 * time.Second,
 	FFmpegMaxConsecutiveErrors:   10,
 	FFmpegLogProgressInterval:    20 * 1024 * 1024,
+	StreamMinViableBytes:         1024 * 1024,
 
 	// work/restream/hls.go - streamHLSSegments()
 	HLSMaxSegmentErrors: 5,
 
 	// work/restream/hls.go - streamSegment()
-	HLSMaxConsecutiveSegmentErrors: 5,
+	HLSMaxConsecutiveSegmentErrors:   5,
+	HLSSegmentActivityUpdateInterval: 5 * time.Second,
 
 	// work/restream/restream.go - testAndStreamVariant()
 	StreamTestBufferSize: 512,
@@ -321,8 +346,12 @@ var Internal = InternalConstants{
 	StreamMaxConsecutiveErrors:   5,
 
 	// work/restream/restream.go - Stream()
-	StreamJitterMin: 50 * time.Millisecond,
-	StreamJitterMax: 500 * time.Millisecond,
+	StreamJitterMinMs:   50,
+	StreamJitterRangeMs: 450,
+
+	// stream variant timeouts
+	StreamVariantFetchTimeout: 15 * time.Second,
+	StreamVariantTestTimeout:  10 * time.Second,
 
 	// work/restream/restream.go - monitorClientHealth()
 	ClientHealthCheckInterval: 10 * time.Second,
@@ -342,5 +371,5 @@ var Internal = InternalConstants{
 	WatcherRestartPollInterval: 50 * time.Millisecond,
 
 	// work/watcher/watcher.go - evaluateStreamHealthFromState()
-	WatcherLowThroughputBytes: 200 * 1024,
+	WatcherLowThroughputBytes: 50 * 1024,
 }

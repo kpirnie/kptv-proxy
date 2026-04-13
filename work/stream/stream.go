@@ -2,6 +2,7 @@ package stream
 
 import (
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
@@ -62,7 +63,7 @@ func HandleStreamFailure(stream *types.Stream, cfg *config.Config, channelName s
 	// Determine failure threshold based on source-specific configuration
 	// Each source can have different reliability expectations and failure tolerances
 	source := cfg.GetSourceByURL(stream.Source.URL)
-	maxFailures := int32(5) // Conservative default threshold for unknown sources
+	maxFailures := constants.Internal.StreamDefaultMaxFailures // Conservative default threshold for unknown sources
 	if source != nil {
 		logger.Debug("{stream/stream - HandleStreamFailure} Found source config for channel %s, stream %d: %s (max failures: %d)",
 			channelName, streamIndex, source.Name, source.MaxFailuresBeforeBlock)

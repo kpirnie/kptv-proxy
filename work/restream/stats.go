@@ -3,9 +3,9 @@ package restream
 import (
 	"context"
 	"encoding/json"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
-	"math/rand"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -58,7 +58,7 @@ func (r *Restream) collectStreamStats() {
 	defer ticker.Stop()
 
 	// Add jitter to prevent thundering herd
-	jitter := time.Duration(rand.Intn(30)) * time.Second
+	jitter := time.Duration(constants.Internal.StatsJitterMaxSeconds) * time.Second
 	time.Sleep(jitter)
 
 	for {

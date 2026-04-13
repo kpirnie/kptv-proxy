@@ -2,6 +2,7 @@ package users
 
 import (
 	"encoding/json"
+	"kptv-proxy/work/constants"
 	"net/http"
 	"strconv"
 	"strings"
@@ -65,7 +66,7 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(password) < 8 {
+	if len(password) < constants.Internal.PasswordMinLength {
 		http.Redirect(w, r, "/register?error=Password+must+be+at+least+8+characters", http.StatusFound)
 		return
 	}

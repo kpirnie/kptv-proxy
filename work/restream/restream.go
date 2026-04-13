@@ -269,10 +269,10 @@ func (r *Restream) Stream() {
 	atomic.StoreInt32(&r.CurrentIndex, int32(startingIndex))
 
 	// Retry configuration
-	maxTotalAttempts := streamCount * 2      // maximum attempts across streams
-	totalAttempts := 0                       // attempts counter
-	triedPreferred := false                  // whether the preferred was tried
-	consecutiveFailures := make(map[int]int) // map of stream index → consecutive failures
+	maxTotalAttempts := streamCount * constants.Internal.StreamMaxAttemptsMultiplier // maximum attempts across streams
+	totalAttempts := 0                                                               // attempts counter
+	triedPreferred := false                                                          // whether the preferred was tried
+	consecutiveFailures := make(map[int]int)                                         // map of stream index → consecutive failures
 
 	// Loop until all attempts exhausted
 	for totalAttempts < maxTotalAttempts {
@@ -448,7 +448,7 @@ func (r *Restream) Stream() {
 			r.Channel.Name, currentIdx, consecutiveFailures[currentIdx])
 
 		// Handle multiple failures → mark stream as bad
-		if consecutiveFailures[currentIdx] >= 2 {
+		if consecutiveFailures[currentIdx] >= constants.Internal.StreamConsecutiveFailureThreshold {
 			r.Channel.Mu.RLock()
 			if currentIdx < len(r.Channel.Streams) {
 				currentStream := r.Channel.Streams[currentIdx]
@@ -482,7 +482,7 @@ func (r *Restream) Stream() {
 		}
 
 		// Add jitter to prevent thundering herd when multiple channels fail simultaneously
-		jitter := time.Duration(50+(time.Now().UnixNano()%450)) * time.Millisecond // 50-500ms jitter
+		jitter := time.Duration(constants.Internal.StreamJitterMinMs+(time.Now().UnixNano()%constants.Internal.StreamJitterRangeMs)) * time.Millisecond
 
 		// Sleep briefly before retry
 		select {
@@ -684,7 +684,7 @@ func (r *Restream) getStreamVariants(url string, source *config.SourceConfig) ([
 	}
 
 	// Apply a timeout context for safety (15s)
-	checkCtx, cancel := context.WithTimeout(r.Ctx, 15*time.Second)
+	checkCtx, cancel := context.WithTimeout(r.Ctx, constants.Internal.StreamVariantFetchTimeout)
 	defer cancel()
 	req = req.WithContext(checkCtx)
 
@@ -746,7 +746,7 @@ func (r *Restream) testAndStreamVariant(variant parser.StreamVariant, source *co
 	}
 
 	// Apply 10-second timeout for initial validation
-	testCtx, cancel := context.WithTimeout(r.Ctx, 10*time.Second)
+	testCtx, cancel := context.WithTimeout(r.Ctx, constants.Internal.StreamVariantTestTimeout)
 	defer cancel()
 	testReq = testReq.WithContext(testCtx)
 
@@ -785,7 +785,7 @@ func (r *Restream) testAndStreamVariant(variant parser.StreamVariant, source *co
 	}
 
 	// Content-Type ambiguous or missing - need to peek at content
-	testBuffer := make([]byte, 512) // Reduced from 8KB - only need first few bytes
+	testBuffer := make([]byte, constants.Internal.StreamTestBufferSize) // Reduced from 8KB - only need first few bytes
 	n, err := resp.Body.Read(testBuffer)
 	if err != nil && err != io.EOF {
 		logger.Warn("{restream/restream - testAndStreamVariant} Failed to read test buffer for channel %s: %v", r.Channel.Name, err)
@@ -834,7 +834,7 @@ func (r *Restream) shouldCheckForMasterPlaylist(resp *http.Response) bool {
 	// If length is very small, it's likely a playlist
 	if contentLength != "" {
 		if length, err := strconv.ParseInt(contentLength, 10, 64); err == nil {
-			if length > 0 && length < 100*1024 { // under 100 KB
+			if length > 0 && length < constants.Internal.MasterPlaylistSizeThreshold { // under 100 KB
 				logger.Debug("{restream/restream - shouldCheckForMasterPlaylist} Master playlist detected by content-length for channel %s: %d bytes", r.Channel.Name, length)
 				return true
 			}
@@ -891,7 +891,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 	lastActivityUpdate := time.Now()
 	lastMetricUpdate := time.Now()
 	consecutiveErrors := 0
-	maxConsecutiveErrors := 5
+	maxConsecutiveErrors := constants.Internal.StreamMaxConsecutiveErrors
 
 	for {
 		select {
@@ -900,7 +900,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 				logger.Debug("{restream/restream - streamFromURL} Channel %s: Graceful switch", r.Channel.Name)
 				return true, totalBytes
 			}
-			return totalBytes > 1024*1024, totalBytes
+			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 		default:
 		}
 
@@ -922,19 +922,19 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			activeClients := r.DistributeToClients(chunk)
 			if activeClients == 0 {
 				logger.Debug("{restream/restream - streamFromURL} Channel %s: No active clients", r.Channel.Name)
-				return totalBytes > 1024*1024, totalBytes
+				return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 			}
 
 			totalBytes += int64(n)
 			metrics.TotalBytesTransferred.Add(int64(n))
 
 			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 1*time.Second {
+			if now.Sub(lastActivityUpdate) > constants.Internal.StreamActivityUpdateInterval {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
 			}
 
-			if now.Sub(lastMetricUpdate) > 10*time.Second {
+			if now.Sub(lastMetricUpdate) > constants.Internal.StreamMetricUpdateInterval {
 				metrics.BytesTransferred.WithLabelValues(r.Channel.Name, "downstream").Add(float64(n))
 				metrics.ActiveConnections.WithLabelValues(r.Channel.Name).Set(float64(activeClients))
 				lastMetricUpdate = now
@@ -1056,7 +1056,7 @@ func (r *Restream) SafeBufferWrite(data []byte) bool {
 func (r *Restream) monitorClientHealth() {
 	logger.Debug("{restream/restream - monitorClientHealth} Starting health monitor for channel %s", r.Channel.Name)
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(constants.Internal.ClientHealthCheckInterval)
 	defer ticker.Stop()
 
 	for {
@@ -1077,7 +1077,7 @@ func (r *Restream) monitorClientHealth() {
 				client := value
 				lastSeen := client.LastSeen.Load()
 
-				if now-lastSeen > 120 {
+				if now-lastSeen > constants.Internal.ClientStaleTimeout {
 					staleClients = append(staleClients, key)
 				}
 				return true
@@ -1195,7 +1195,7 @@ func (r *Restream) trackStreamStart() time.Time {
 // streamFallbackVideo streams the offline video in a loop when all streams fail
 func (r *Restream) streamFallbackVideo() {
 	// Local path inside container - copy loading.ts here
-	fallbackPath := "/static/loading.ts"
+	fallbackPath := constants.Internal.FallbackVideoPath
 
 	logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: Starting fallback video loop", r.Channel.Name)
 
@@ -1238,7 +1238,7 @@ func (r *Restream) streamFallbackVideo() {
 		select {
 		case <-r.Ctx.Done():
 			return
-		case <-time.After(1 * time.Second):
+		case <-time.After(constants.Internal.FallbackVideoLoopDelay):
 			continue
 		}
 	}
@@ -1340,7 +1340,7 @@ func (r *Restream) streamLocalFallback(filePath string) {
 
 			// Update activity timestamp periodically
 			now := time.Now()
-			if now.Sub(lastActivityUpdate) > 1*time.Second {
+			if now.Sub(lastActivityUpdate) > constants.Internal.StreamActivityUpdateInterval {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
 			}
