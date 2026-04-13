@@ -431,16 +431,18 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	if buf != nil && !buf.IsDestroyed() {
 		currentWritePos := buf.GetWritePosition()
 
-		if sw.lastWritePos > 0 && currentWritePos >= sw.lastWritePos {
+		if sw.lastWritePos == 0 {
+			// first check after start, just record position and skip throughput evaluation
+			sw.lastWritePos = currentWritePos
+		} else if currentWritePos >= sw.lastWritePos {
 			bytesSinceLastCheck := currentWritePos - sw.lastWritePos
-			if bytesSinceLastCheck < 200*1024 {
+			if bytesSinceLastCheck < 50*1024 {
 				logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Throughput too low (%d KB since last check), stream likely stalled",
 					sw.channelName, bytesSinceLastCheck/1024)
 				hasIssues = true
 			}
+			sw.lastWritePos = currentWritePos
 		}
-
-		sw.lastWritePos = currentWritePos
 	}
 
 	// Check stream activity

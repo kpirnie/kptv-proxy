@@ -1095,6 +1095,9 @@ func (r *Restream) WatcherStream() {
 func (r *Restream) ForceStreamSwitch(newIndex int) {
 	logger.Debug("{restream/restream - ForceStreamSwitch} Channel %s: Switching to stream %d", r.Channel.Name, newIndex)
 
+	// Mark this as a manual switch so context cancellation won't be treated as failure
+	r.ManualSwitch.Store(true)
+
 	// Update preferred stream index on the channel
 	atomic.StoreInt32(&r.Channel.PreferredStreamIndex, int32(newIndex))
 
@@ -1115,9 +1118,6 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 
 	logger.Debug("{restream/restream - ForceStreamSwitch} Channel %s: Forcing switch to stream %d with %d clients", r.Channel.Name, newIndex, clientCount)
 
-	// Mark this as a manual switch so context cancellation won't be treated as failure
-	r.ManualSwitch.Store(true)
-
 	// Cancel context first to stop the streaming loop before touching the buffer
 	r.Cancel()
 
@@ -1130,26 +1130,32 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 
 // resetBufferSafely resets the buffer while preserving client connections
 func (r *Restream) resetBufferSafely() {
+
+	// if our buffer still exists
 	if r.Buffer != nil && !r.Buffer.IsDestroyed() {
 		r.Buffer.Reset()
+
 		// Zero out all client read positions so they don't stall waiting
 		// for a write position that no longer exists after the reset
 		r.Clients.Range(func(clientID string, _ *types.RestreamClient) bool {
-			r.Buffer.UpdateClientPosition(clientID, 0)
+			r.Buffer.UpdateClientPosition(clientID, r.Buffer.GetWritePosition())
 			return true
 		})
+
 		logger.Debug("{restream/restream - resetBufferSafely} Channel %s: Buffer reset, zeroed %d client positions", r.Channel.Name, func() int {
 			count := 0
 			r.Clients.Range(func(_ string, _ *types.RestreamClient) bool { count++; return true })
 			return count
 		}())
 	} else if r.Buffer == nil {
+
 		// Only create new buffer if none exists
 		bufferSize := r.Config.BufferSizePerStream * 1024 * 1024
 		r.Buffer = bbuffer.NewRingBuffer(bufferSize)
 		logger.Debug("{restream/restream - resetBufferSafely} Channel %s: New buffer created (%d MB)", r.Channel.Name, r.Config.BufferSizePerStream)
 
 	}
+
 	// If buffer is destroyed, don't recreate - let Stream() handle it
 }
 
