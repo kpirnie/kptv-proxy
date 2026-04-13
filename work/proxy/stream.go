@@ -280,13 +280,8 @@ func (sp *StreamProxy) ImportStreams() {
 // rendering. Each channel entry includes its stream attributes and a proxy URL pointing
 // back to this server for transparent stream proxying.
 func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, groupFilter string, account *config.XCOutputAccount) {
-	var seenClients sync.Map
-
-	clientKey := r.RemoteAddr + "-" + r.Header.Get("User-Agent")
-	if _, seen := seenClients.LoadOrStore(clientKey, true); !seen {
-		logger.Debug("{proxy/stream - GeneratePlaylist} New playlist client: %s (%s)",
-			r.RemoteAddr, r.Header.Get("User-Agent"))
-	}
+	logger.Debug("{proxy/stream - GeneratePlaylist} Playlist request from: %s (%s)",
+		r.RemoteAddr, r.Header.Get("User-Agent"))
 
 	// construct cache key per account with optional group filter suffix
 	cacheKey := fmt.Sprintf("playlist_%s", account.Username)
