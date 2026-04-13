@@ -2,7 +2,7 @@ package buffer
 
 // package imports
 import (
-	"runtime"
+	"kptv-proxy/work/logger"
 	"sync"
 	"sync/atomic"
 )
@@ -59,8 +59,10 @@ func (b *ByteBuffer) Write(p []byte) (int, error) {
 // that prevents excessively large buffers from being returned to the pool, maintaining
 // predictable memory usage patterns across long-running streaming sessions.
 type BufferPool struct {
-	pool       sync.Pool
-	bufferSize int
+	pool        sync.Pool
+	bufferSize  int
+	outstanding atomic.Int64 // tracks unreturned buffers
+
 }
 
 // NewBufferPool creates a new BufferPool that manages ByteBuffer instances of the specified
@@ -114,6 +116,9 @@ func (bp *BufferPool) Get() *ByteBuffer {
 		buf.B = make([]byte, 0, bp.bufferSize)
 	}
 
+	// leak tracker
+	bp.outstanding.Add(1)
+
 	// return the buffer
 	return buf
 }
@@ -138,20 +143,22 @@ func (bp *BufferPool) Put(buf *ByteBuffer) {
 		return
 	}
 
-	// Reset length and return to pool for reuse
+	// Reset length
 	buf.B = buf.B[:0]
+
+	// leak tracker
+	bp.outstanding.Add(-1)
+
+	// return to pool for reuse
 	bp.pool.Put(buf)
 }
 
-// Cleanup releases all pooled buffers by allowing the garbage collector to reclaim
-// idle pool entries on its next cycle. This method should be called during application
-// shutdown or when performing comprehensive resource cleanup to ensure all pooled
-// memory is properly released back to the system.
+// Cleanup logs a warning if any buffers were checked out but never returned.
+// Called during application shutdown to detect resource leaks.
 func (bp *BufferPool) Cleanup() {
-
-	// sync.Pool entries are automatically cleared between GC cycles;
-	// trigger collection to reclaim idle pool entries immediately
-	runtime.GC()
+	if n := bp.outstanding.Load(); n != 0 {
+		logger.Warn("{buffer - Cleanup} %d buffer(s) were never returned to the pool", n)
+	}
 }
 
 // RingBuffer is a thread-safe circular buffer that supports multiple concurrent readers.
@@ -335,9 +342,6 @@ func (rb *RingBuffer) Destroy() {
 
 	// Reset write position
 	rb.writePos.Store(0)
-
-	// Trigger garbage collection to reclaim released buffer memory immediately
-	runtime.GC()
 }
 
 // IsDestroyed returns true if the buffer has been destroyed and is no longer usable.
