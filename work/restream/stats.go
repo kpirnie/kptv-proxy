@@ -58,7 +58,7 @@ func (r *Restream) collectStreamStats() {
 	defer ticker.Stop()
 
 	// Add jitter to prevent thundering herd
-	jitter := time.Duration(constants.Internal.StatsJitterMaxSeconds) * time.Second
+	jitter := constants.Internal.StatsJitterMaxSeconds
 	time.Sleep(jitter)
 
 	for {

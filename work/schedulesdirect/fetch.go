@@ -54,7 +54,7 @@ func FetchAccount(ctx context.Context, account config.SDAccount) (*AccountData, 
 	// Step 4 — fetch configured schedules for all stations
 	days := account.DaysToFetch
 	if days <= 0 {
-		days = constants.Internal.SDDefaultDaysToFetch
+		days = int(constants.Internal.SDDefaultDaysToFetch)
 	}
 	schedule, err := fetchSchedules(ctx, client, stations, days)
 

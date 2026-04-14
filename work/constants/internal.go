@@ -16,8 +16,8 @@ type InternalConstants struct {
 	RetryDelay               time.Duration // Pause between retry attempts on transient errors
 	BufferWriteRetryDelay    time.Duration // Pause between ring-buffer write retries on back-pressure
 	MaxClientSessionDuration time.Duration // Hard cap on a single client streaming session
-	StreamJitterMinMs        int64         // Minimum jitter (ms) added before stream retry to prevent thundering herd
-	StreamJitterRangeMs      int64         // Random range (ms) added on top of the minimum jitter value
+	StreamJitterMinMs        time.Duration // Minimum jitter (ms) added before stream retry to prevent thundering herd
+	StreamJitterRangeMs      time.Duration // Random range (ms) added on top of the minimum jitter value
 
 	// -------------------------------------------------------------------------
 	// work/restream/restream.go — StreamFromSource() / stream loop
@@ -100,7 +100,7 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	StatsCollectionInterval time.Duration // Ticker interval for periodic stats collection in production
 	StatsDebugInterval      time.Duration // Ticker interval for periodic stats collection in debug mode
-	StatsJitterMaxSeconds   int           // Max random jitter (seconds) added before the first periodic stats collection
+	StatsJitterMaxSeconds   time.Duration // Max random jitter (seconds) added before the first periodic stats collection
 
 	// -------------------------------------------------------------------------
 	// work/proxy/stream.go — ImportStreams()
@@ -164,7 +164,7 @@ type InternalConstants struct {
 	WatcherGracePeriod         time.Duration // Grace period before health checks begin on a new stream
 	WatcherContextStuckTimeout time.Duration // Time a cancelled context must persist before being flagged as stuck
 	WatcherActivityTimeout     int64         // Seconds of no activity before the stream is flagged as stalled
-	WatcherStatsStaleTimeout   int64         // Seconds since last stats update before stats are considered stale
+	WatcherStatsStaleTimeout   time.Duration // Seconds since last stats update before stats are considered stale
 	WatcherLowThroughputBytes  int64         // Minimum bytes between health checks; below this is treated as a stall
 
 	// -------------------------------------------------------------------------
@@ -227,8 +227,8 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	// work/schedulesdirect/fetch.go — FetchAccount()
 	// -------------------------------------------------------------------------
-	SDDefaultDaysToFetch int // Default schedule lookahead window when an account has no DaysToFetch configured
-	SDBatchSize          int // Max program/schedule IDs per SD API batch request
+	SDDefaultDaysToFetch time.Duration // Default schedule lookahead window when an account has no DaysToFetch configured
+	SDBatchSize          int           // Max program/schedule IDs per SD API batch request
 
 	// -------------------------------------------------------------------------
 	// work/admin/logs.go
@@ -257,22 +257,22 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	// Stream core
 	// -------------------------------------------------------------------------
-	StreamBufferSize:         32 * 1024,
+	StreamBufferSize:         32 * 1024, // 32KB
 	BufferWarmupDelay:        500 * time.Millisecond,
-	BriefSuccessThreshold:    64 * 1024,
-	EOFSuccessThreshold:      2 * 1024 * 1024,
+	BriefSuccessThreshold:    64 * 1024,       // 64KB
+	EOFSuccessThreshold:      2 * 1024 * 1024, // 2MB
 	RetryDelay:               100 * time.Millisecond,
 	BufferWriteRetryDelay:    10 * time.Millisecond,
 	MaxClientSessionDuration: 24 * time.Hour,
-	StreamJitterMinMs:        50,
-	StreamJitterRangeMs:      450,
+	StreamJitterMinMs:        50 * time.Millisecond,
+	StreamJitterRangeMs:      450 * time.Millisecond,
 
 	// -------------------------------------------------------------------------
 	// Stream loop / source selection
 	// -------------------------------------------------------------------------
 	StreamMaxAttemptsMultiplier:       2,
 	StreamConsecutiveFailureThreshold: 2,
-	StreamMinViableBytes:              1024 * 1024,
+	StreamMinViableBytes:              1024 * 1024, // 1KB
 
 	// -------------------------------------------------------------------------
 	// streamFromURL
@@ -286,7 +286,7 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	StreamVariantFetchTimeout: 15 * time.Second,
 	StreamVariantTestTimeout:  10 * time.Second,
-	StreamTestBufferSize:      512,
+	StreamTestBufferSize:      512, // B
 
 	// -------------------------------------------------------------------------
 	// Fallback video
@@ -321,25 +321,25 @@ var Internal = InternalConstants{
 	FFmpegActivityUpdateInterval: 5 * time.Second,
 	FFmpegMetricUpdateInterval:   10 * time.Second,
 	FFmpegMaxConsecutiveErrors:   10,
-	FFmpegLogProgressInterval:    20 * 1024 * 1024,
+	FFmpegLogProgressInterval:    20 * 1024 * 1024, // 20MB
 
 	// -------------------------------------------------------------------------
 	// Stats
 	// -------------------------------------------------------------------------
-	StatsBufferPeekSize:     3 * 1024 * 1024,
-	StatsFFprobeMaxData:     2 * 1024 * 1024,
+	StatsBufferPeekSize:     3 * 1024 * 1024, // 3MB
+	StatsFFprobeMaxData:     2 * 1024 * 1024, // 2MB
 	StatsFFprobeTimeout:     15 * time.Second,
 	FFprobeSemaphoreLimit:   4,
 	StatsCollectionInterval: 5 * time.Minute,
 	StatsDebugInterval:      1 * time.Minute,
-	StatsJitterMaxSeconds:   30,
+	StatsJitterMaxSeconds:   30 * time.Second,
 
 	// -------------------------------------------------------------------------
 	// Proxy
 	// -------------------------------------------------------------------------
 	ImportGlobalTimeout:            2 * time.Minute,
 	SourceDefaultRateLimit:         5,
-	MasterPlaylistSizeThreshold:    100 * 1024,
+	MasterPlaylistSizeThreshold:    100 * 1024, // 100KB
 	ProxyCleanupTickerInterval:     10 * time.Second,
 	ProxyInactiveRestreamerTimeout: 30,
 	ProxyForceCleanTimeout:         60,
@@ -369,8 +369,8 @@ var Internal = InternalConstants{
 	WatcherGracePeriod:         30 * time.Second,
 	WatcherContextStuckTimeout: 300 * time.Second,
 	WatcherActivityTimeout:     120,
-	WatcherStatsStaleTimeout:   600,
-	WatcherLowThroughputBytes:  50 * 1024,
+	WatcherStatsStaleTimeout:   5 * time.Minute,
+	WatcherLowThroughputBytes:  50 * 1024, // 50KB
 	WatcherFailureThreshold:    3,
 	WatcherFailureResetWindow:  15 * time.Minute,
 	WatcherRestartDeadline:     3 * time.Second,
@@ -379,7 +379,7 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	// Cache
 	// -------------------------------------------------------------------------
-	CacheMaxSize: 10_000,
+	CacheMaxSize: 5_000, // Maximum entries in the otter in-memory cache
 
 	// -------------------------------------------------------------------------
 	// Users / auth
@@ -390,7 +390,7 @@ var Internal = InternalConstants{
 	RegistrationMaxAttempts: 5,
 	RegistrationWindow:      1 * time.Hour,
 	PasswordMinLength:       12,
-	Argon2Memory:            64 * 1024,
+	Argon2Memory:            64 * 1024, // 64KB
 	Argon2Iterations:        3,
 	Argon2Parallelism:       2,
 	Argon2SaltLength:        16,
@@ -402,7 +402,7 @@ var Internal = InternalConstants{
 	SDTokenValidDuration: 24 * time.Hour,
 	SDRefreshThreshold:   12 * time.Hour,
 	SDLoginTimeout:       15 * time.Second,
-	SDDefaultDaysToFetch: 7,
+	SDDefaultDaysToFetch: 3 * 24 * time.Hour, // 3 days
 	SDBatchSize:          1000,
 	SDBaseUrl:            "https://json.schedulesdirect.org/20141201",
 

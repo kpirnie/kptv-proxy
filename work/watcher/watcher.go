@@ -477,9 +477,9 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	statsUpdated := sw.restreamer.Stats.LastUpdated
 	sw.restreamer.Stats.Mu.RUnlock()
 
-	// If stats exist but haven't been updated in 10 minutes, treat as stale
-	if statsValid && time.Now().Unix()-statsUpdated > constants.Internal.WatcherStatsStaleTimeout {
-		logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Stream stats stale for >10 minutes", sw.channelName)
+	// If stats exist but haven't been updated in 5 minutes, treat as stale
+	if statsValid && time.Since(time.Unix(statsUpdated, 0)) > constants.Internal.WatcherStatsStaleTimeout {
+		logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Stream stats stale for >5 minutes", sw.channelName)
 		hasIssues = true
 	}
 

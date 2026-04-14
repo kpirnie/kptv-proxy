@@ -482,7 +482,7 @@ func (r *Restream) Stream() {
 		}
 
 		// Add jitter to prevent thundering herd when multiple channels fail simultaneously
-		jitter := time.Duration(constants.Internal.StreamJitterMinMs+(time.Now().UnixNano()%constants.Internal.StreamJitterRangeMs)) * time.Millisecond
+		jitter := (constants.Internal.StreamJitterMinMs + time.Duration(time.Now().UnixNano())%constants.Internal.StreamJitterRangeMs) * time.Millisecond
 
 		// Sleep briefly before retry
 		select {
