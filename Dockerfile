@@ -36,6 +36,7 @@ RUN groupadd --system --gid 107 render \
 
 COPY --from=builder /app/kptv-proxy /usr/local/bin/kptv-proxy
 COPY --from=builder /app/static/*.html /static/
+COPY --from=builder /app/static/openapi.json /static/
 COPY --from=builder /app/static/admin.css /static/
 COPY --from=builder /app/static/admin.js /static/
 COPY loading.ts /static/

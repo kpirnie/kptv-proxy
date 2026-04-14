@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPTV Proxy — API Docs</title>
+    <link rel="icon" type="image/png" href="https://cdn.kcp.im/tv/kptv-icon.png" />
+    <style>
+        :root {
+            --scalar-color-1: #f0f4f8;
+            --scalar-color-2: #a0aec0;
+            --scalar-color-3: #718096;
+            --scalar-color-accent: #2d7bb3;
+            --scalar-background-1: #050d17;
+            --scalar-background-2: #1e2936;
+            --scalar-background-3: #2d3a4a;
+            --scalar-background-accent: #1a5f8f1a;
+            --scalar-border-color: #3a4a5e;
+            --scalar-scrollbar-color: #3a4a5e;
+            --scalar-scrollbar-color-active: #2d7bb3;
+            --scalar-shadow-1: 0 2px 8px rgba(0,0,0,0.4);
+            --scalar-shadow-2: 0 4px 16px rgba(0,0,0,0.5);
+            --scalar-color-green: #22c55e;
+            --scalar-color-red: #ef4444;
+            --scalar-color-yellow: #eab308;
+            --scalar-color-blue: #2d7bb3;
+            --scalar-color-orange: #ea580c;
+            --scalar-color-purple: #a855f7;
+            --scalar-radius: 4px;
+            --scalar-radius-lg: 6px;
+            --scalar-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --scalar-font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--scalar-background-1);
+            color: var(--scalar-color-1);
+            font-family: var(--scalar-font);
+        }
+
+        /* Top bar matching admin nav */
+        #api-topbar {
+            background: var(--scalar-background-2);
+            border-bottom: 1px solid var(--scalar-border-color);
+            padding: 0 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        #api-topbar a.brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        #api-topbar a.brand img {
+            height: 48px;
+            width: 48px;
+            margin: -8px 0;
+        }
+
+        #api-topbar a.brand span {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        #api-topbar a.back-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--scalar-background-3);
+            border: 1px solid var(--scalar-border-color);
+            border-radius: var(--scalar-radius);
+            color: var(--scalar-color-1);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        #api-topbar a.back-btn:hover {
+            background: #1a5f8f;
+            border-color: #2d7bb3;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="api-topbar">
+        <a href="/" class="brand">
+            <img src="https://cdn.kcp.im/tv/kptv-icon.svg" alt="KPTV">
+            <span>KPTV Proxy — API Reference</span>
+        </a>
+        <a href="/" class="back-btn">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            Back to Admin
+        </a>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const ref = document.createElement('div');
+            ref.id = 'scalar-mount';
+            document.body.appendChild(ref);
+
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/@scalar/api-reference';
+            s.onload = function () {
+                Scalar.createApiReference('#scalar-mount', {
+                    spec: { url: '/static/openapi.json' },
+                    theme: 'none',
+                    darkMode: true,
+                    defaultHttpClient: {
+                        targetKey: 'javascript',
+                        clientKey: 'fetch'
+                    },
+                    metaData: {
+                        title: 'KPTV Proxy API Reference'
+                    },
+                    authentication: {
+                        preferredSecurityScheme: 'bearerAuth'
+                    }
+                });
+            };
+            document.body.appendChild(s);
+        });
+    </script>
+
+</body>
+</html>

@@ -11,6 +11,7 @@ import (
 
 // SetupAdminRoutes configures all HTTP routes for the administrative web interface.
 func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
+
 	// Serve static admin assets — public so login/register pages can load CSS
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("/static/"))))
 
@@ -60,6 +61,11 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api/sd-accounts/{id}", users.RequireAuthWithPerm(users.PermSD, corsMiddleware(handleUpdateSDAccount(sp)))).Methods("PUT", "OPTIONS")
 	router.HandleFunc("/api/sd-accounts/{id}", users.RequireAuthWithPerm(users.PermSD, corsMiddleware(handleDeleteSDAccount(sp)))).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/api/sd/discover", users.RequireAuthWithPerm(users.PermSD, corsMiddleware(handleSDDiscover(sp)))).Methods("POST", "OPTIONS")
+
+	// API reference docs
+	router.HandleFunc("/api-docs", users.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "/static/api-docs.html")
+	})).Methods("GET")
 
 	addLogEntry("info", "Admin interface initialized")
 }

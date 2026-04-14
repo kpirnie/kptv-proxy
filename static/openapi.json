@@ -1,0 +1,628 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "KPTV Proxy API",
+    "version": "1.1.111",
+    "description": "REST API for the KPTV Proxy admin interface. All endpoints require either a session cookie or a Bearer token with appropriate permissions."
+  },
+  "servers": [
+    {
+      "url": "",
+      "description": "This server"
+    }
+  ],
+  "security": [
+    { "bearerAuth": [] },
+    { "cookieAuth": [] }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API token generated in the Accounts tab. Include as `Authorization: Bearer <token>`."
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "kptv_session",
+        "description": "Session cookie set on login."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        }
+      },
+      "Success": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "success" }
+        }
+      },
+      "Config": {
+        "type": "object",
+        "properties": {
+          "baseURL":               { "type": "string",  "example": "http://localhost:8080" },
+          "bufferSizePerStream":   { "type": "integer", "example": 8 },
+          "cacheEnabled":          { "type": "boolean" },
+          "cacheDuration":         { "type": "string",  "example": "30m" },
+          "importRefreshInterval": { "type": "string",  "example": "12h" },
+          "workerThreads":         { "type": "integer", "example": 8 },
+          "logLevel":              { "type": "string",  "enum": ["DEBUG","INFO","WARN","ERROR","NONE"] },
+          "obfuscateUrls":         { "type": "boolean" },
+          "sortField":             { "type": "string",  "example": "tvg-name" },
+          "sortDirection":         { "type": "string",  "enum": ["asc","desc"] },
+          "streamTimeout":         { "type": "string",  "example": "30s" },
+          "maxConnectionsToApp":   { "type": "integer", "example": 100 },
+          "watcherEnabled":        { "type": "boolean" },
+          "ffmpegMode":            { "type": "boolean" },
+          "ffmpegPreInput":        { "type": "array",   "items": { "type": "string" } },
+          "ffmpegPreOutput":       { "type": "array",   "items": { "type": "string" } },
+          "responseHeaderTimeout": { "type": "string",  "example": "10s" },
+          "sources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Source" }
+          }
+        }
+      },
+      "Source": {
+        "type": "object",
+        "required": ["name","url"],
+        "properties": {
+          "name":                   { "type": "string" },
+          "url":                    { "type": "string" },
+          "username":               { "type": "string" },
+          "password":               { "type": "string" },
+          "order":                  { "type": "integer", "example": 1 },
+          "maxConnections":         { "type": "integer", "example": 5 },
+          "maxStreamTimeout":       { "type": "string",  "example": "30s" },
+          "retryDelay":             { "type": "string",  "example": "5s" },
+          "maxRetries":             { "type": "integer", "example": 3 },
+          "maxFailuresBeforeBlock": { "type": "integer", "example": 5 },
+          "minDataSize":            { "type": "integer", "example": 2 },
+          "userAgent":              { "type": "string" },
+          "reqOrigin":              { "type": "string" },
+          "reqReferrer":            { "type": "string" },
+          "liveIncludeRegex":       { "type": "string" },
+          "liveExcludeRegex":       { "type": "string" },
+          "seriesIncludeRegex":     { "type": "string" },
+          "seriesExcludeRegex":     { "type": "string" },
+          "vodIncludeRegex":        { "type": "string" },
+          "vodExcludeRegex":        { "type": "string" }
+        }
+      },
+      "EPG": {
+        "type": "object",
+        "required": ["name","url"],
+        "properties": {
+          "id":    { "type": "integer" },
+          "name":  { "type": "string" },
+          "url":   { "type": "string" },
+          "order": { "type": "integer", "example": 1 }
+        }
+      },
+      "XCAccount": {
+        "type": "object",
+        "required": ["name","username","password"],
+        "properties": {
+          "id":             { "type": "integer" },
+          "name":           { "type": "string" },
+          "username":       { "type": "string" },
+          "password":       { "type": "string" },
+          "maxConnections": { "type": "integer", "example": 10 },
+          "enableLive":     { "type": "boolean" },
+          "enableSeries":   { "type": "boolean" },
+          "enableVOD":      { "type": "boolean" }
+        }
+      },
+      "SDAccount": {
+        "type": "object",
+        "required": ["name","username","password"],
+        "properties": {
+          "id":              { "type": "integer" },
+          "name":            { "type": "string" },
+          "username":        { "type": "string" },
+          "password":        { "type": "string" },
+          "enabled":         { "type": "boolean" },
+          "daysToFetch":     { "type": "integer", "example": 7 },
+          "selectedLineups": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Channel": {
+        "type": "object",
+        "properties": {
+          "name":    { "type": "string" },
+          "active":  { "type": "boolean" },
+          "clients": { "type": "integer" },
+          "group":   { "type": "string" },
+          "sources": { "type": "integer" },
+          "logoURL": { "type": "string" }
+        }
+      },
+      "ActiveChannel": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Channel" },
+          {
+            "type": "object",
+            "properties": {
+              "bytesTransferred": { "type": "integer" },
+              "currentSource":    { "type": "string" }
+            }
+          }
+        ]
+      },
+      "StreamInfo": {
+        "type": "object",
+        "properties": {
+          "index":       { "type": "integer" },
+          "url":         { "type": "string" },
+          "sourceName":  { "type": "string" },
+          "sourceOrder": { "type": "integer" },
+          "attributes":  { "type": "object", "additionalProperties": { "type": "string" } }
+        }
+      },
+      "ChannelStreams": {
+        "type": "object",
+        "properties": {
+          "channelName":          { "type": "string" },
+          "currentStreamIndex":   { "type": "integer" },
+          "preferredStreamIndex": { "type": "integer" },
+          "obfuscated":           { "type": "boolean" },
+          "streams": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StreamInfo" }
+          }
+        }
+      },
+      "StreamStats": {
+        "type": "object",
+        "properties": {
+          "streaming":       { "type": "boolean" },
+          "container":       { "type": "string" },
+          "videoCodec":      { "type": "string" },
+          "audioCodec":      { "type": "string" },
+          "videoResolution": { "type": "string" },
+          "fps":             { "type": "number" },
+          "audioChannels":   { "type": "string" },
+          "bitrate":         { "type": "integer" },
+          "streamType":      { "type": "string" },
+          "valid":           { "type": "boolean" },
+          "lastUpdated":     { "type": "integer" }
+        }
+      },
+      "Stats": {
+        "type": "object",
+        "properties": {
+          "totalChannels":       { "type": "integer" },
+          "activeStreams":       { "type": "integer" },
+          "totalSources":        { "type": "integer" },
+          "totalEpgs":           { "type": "integer" },
+          "connectedClients":    { "type": "integer" },
+          "uptime":              { "type": "string" },
+          "memoryUsage":         { "type": "string" },
+          "cacheStatus":         { "type": "string" },
+          "workerThreads":       { "type": "integer" },
+          "totalConnections":    { "type": "integer" },
+          "bytesTransferred":    { "type": "string" },
+          "activeRestreamers":   { "type": "integer" },
+          "streamErrors":        { "type": "integer" },
+          "responseTime":        { "type": "string" },
+          "watcherEnabled":      { "type": "boolean" },
+          "upstreamConnections": { "type": "integer" },
+          "activeChannels":      { "type": "integer" },
+          "avgClientsPerStream": { "type": "number" }
+        }
+      },
+      "LogEntry": {
+        "type": "object",
+        "properties": {
+          "timestamp": { "type": "string" },
+          "level":     { "type": "string", "enum": ["debug","info","warn","error"] },
+          "message":   { "type": "string" }
+        }
+      },
+      "Token": {
+        "type": "object",
+        "properties": {
+          "id":          { "type": "integer" },
+          "name":        { "type": "string" },
+          "permissions": { "type": "integer" }
+        }
+      },
+      "Permissions": {
+        "type": "object",
+        "properties": {
+          "read":        { "type": "integer", "example": 1 },
+          "configWrite": { "type": "integer", "example": 2 },
+          "restart":     { "type": "integer", "example": 4 },
+          "streams":     { "type": "integer", "example": 8 },
+          "logs":        { "type": "integer", "example": 16 },
+          "xcAccounts":  { "type": "integer", "example": 32 },
+          "epgs":        { "type": "integer", "example": 64 },
+          "sd":          { "type": "integer", "example": 128 },
+          "all":         { "type": "integer", "example": 255 }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/config": {
+      "get": {
+        "summary": "Get current configuration",
+        "operationId": "getConfig",
+        "tags": ["Configuration"],
+        "security": [{"bearerAuth": []},{"cookieAuth": []}],
+        "responses": {
+          "200": { "description": "Current config", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Config" } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "summary": "Save configuration",
+        "operationId": "setConfig",
+        "tags": ["Configuration"],
+        "security": [{"bearerAuth": []},{"cookieAuth": []}],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Config" } } } },
+        "responses": {
+          "200": { "description": "Saved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Invalid payload" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "summary": "Get system statistics",
+        "operationId": "getStats",
+        "tags": ["System"],
+        "responses": {
+          "200": { "description": "Stats", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Stats" } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/restart": {
+      "post": {
+        "summary": "Trigger a graceful restart",
+        "operationId": "restart",
+        "tags": ["System"],
+        "responses": {
+          "200": { "description": "Restart initiated" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/watcher/toggle": {
+      "post": {
+        "summary": "Enable or disable the stream watcher",
+        "operationId": "toggleWatcher",
+        "tags": ["System"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "enabled": { "type": "boolean" } }, "required": ["enabled"] } } }
+        },
+        "responses": {
+          "200": { "description": "Toggled" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "summary": "Get application logs",
+        "operationId": "getLogs",
+        "tags": ["Logs"],
+        "responses": {
+          "200": { "description": "Log entries", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/LogEntry" } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "delete": {
+        "summary": "Clear application logs",
+        "operationId": "clearLogs",
+        "tags": ["Logs"],
+        "responses": {
+          "200": { "description": "Cleared" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/channels": {
+      "get": {
+        "summary": "Get all channels",
+        "operationId": "getAllChannels",
+        "tags": ["Channels"],
+        "responses": {
+          "200": { "description": "All channels", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Channel" } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/channels/active": {
+      "get": {
+        "summary": "Get currently active/streaming channels",
+        "operationId": "getActiveChannels",
+        "tags": ["Channels"],
+        "responses": {
+          "200": { "description": "Active channels", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ActiveChannel" } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/channels/{channel}/streams": {
+      "get": {
+        "summary": "Get streams for a channel",
+        "operationId": "getChannelStreams",
+        "tags": ["Channels"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Channel streams", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChannelStreams" } } } },
+          "404": { "description": "Channel not found" }
+        }
+      }
+    },
+    "/api/channels/{channel}/stats": {
+      "get": {
+        "summary": "Get FFprobe stream stats for a channel",
+        "operationId": "getChannelStats",
+        "tags": ["Channels"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Stream stats", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StreamStats" } } } },
+          "404": { "description": "Channel not found" }
+        }
+      }
+    },
+    "/api/channels/{channel}/stream": {
+      "post": {
+        "summary": "Manually switch the active stream",
+        "operationId": "setChannelStream",
+        "tags": ["Channels"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamIndex": { "type": "integer" } }, "required": ["streamIndex"] } } } },
+        "responses": {
+          "200": { "description": "Stream switched" },
+          "400": { "description": "Invalid index" },
+          "404": { "description": "Channel not found" }
+        }
+      }
+    },
+    "/api/channels/{channel}/order": {
+      "post": {
+        "summary": "Set custom stream ordering for a channel",
+        "operationId": "setChannelOrder",
+        "tags": ["Channels"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamOrder": { "type": "array", "items": { "type": "integer" } } }, "required": ["streamOrder"] } } } },
+        "responses": {
+          "200": { "description": "Order applied" },
+          "400": { "description": "Length mismatch" },
+          "404": { "description": "Channel not found" }
+        }
+      }
+    },
+    "/api/channels/{channel}/kill-stream": {
+      "post": {
+        "summary": "Mark a stream as dead (manual)",
+        "operationId": "killStream",
+        "tags": ["Channels"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamIndex": { "type": "integer" } }, "required": ["streamIndex"] } } } },
+        "responses": {
+          "200": { "description": "Stream killed" },
+          "404": { "description": "Channel not found" }
+        }
+      }
+    },
+    "/api/channels/{channel}/revive-stream": {
+      "post": {
+        "summary": "Revive a dead stream",
+        "operationId": "reviveStream",
+        "tags": ["Channels"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamIndex": { "type": "integer" } }, "required": ["streamIndex"] } } } },
+        "responses": {
+          "200": { "description": "Stream revived" },
+          "404": { "description": "Channel not found" }
+        }
+      }
+    },
+    "/api/epgs": {
+      "get": {
+        "summary": "Get all EPG sources",
+        "operationId": "getEPGs",
+        "tags": ["EPGs"],
+        "responses": {
+          "200": { "description": "EPG list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/EPG" } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "summary": "Create an EPG source",
+        "operationId": "createEPG",
+        "tags": ["EPGs"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EPG" } } } },
+        "responses": {
+          "200": { "description": "Created" },
+          "400": { "description": "Invalid payload" }
+        }
+      }
+    },
+    "/api/epgs/{id}": {
+      "put": {
+        "summary": "Update an EPG source",
+        "operationId": "updateEPG",
+        "tags": ["EPGs"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EPG" } } } },
+        "responses": {
+          "200": { "description": "Updated" },
+          "400": { "description": "Invalid payload" }
+        }
+      },
+      "delete": {
+        "summary": "Delete an EPG source",
+        "operationId": "deleteEPG",
+        "tags": ["EPGs"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Deleted" },
+          "400": { "description": "Invalid ID" }
+        }
+      }
+    },
+    "/api/xc-accounts": {
+      "get": {
+        "summary": "Get all XC output accounts",
+        "operationId": "getXCAccounts",
+        "tags": ["XC Accounts"],
+        "responses": {
+          "200": { "description": "XC accounts", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/XCAccount" } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "summary": "Create an XC output account",
+        "operationId": "createXCAccount",
+        "tags": ["XC Accounts"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/XCAccount" } } } },
+        "responses": {
+          "200": { "description": "Created" },
+          "400": { "description": "Invalid payload" }
+        }
+      }
+    },
+    "/api/xc-accounts/{id}": {
+      "put": {
+        "summary": "Update an XC output account",
+        "operationId": "updateXCAccount",
+        "tags": ["XC Accounts"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/XCAccount" } } } },
+        "responses": {
+          "200": { "description": "Updated" }
+        }
+      },
+      "delete": {
+        "summary": "Delete an XC output account",
+        "operationId": "deleteXCAccount",
+        "tags": ["XC Accounts"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Deleted" }
+        }
+      }
+    },
+    "/api/sd-accounts": {
+      "get": {
+        "summary": "Get all Schedules Direct accounts",
+        "operationId": "getSDAccounts",
+        "tags": ["Schedules Direct"],
+        "responses": {
+          "200": { "description": "SD accounts", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SDAccount" } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "summary": "Create a Schedules Direct account",
+        "operationId": "createSDAccount",
+        "tags": ["Schedules Direct"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SDAccount" } } } },
+        "responses": {
+          "200": { "description": "Created" }
+        }
+      }
+    },
+    "/api/sd-accounts/{id}": {
+      "put": {
+        "summary": "Update a Schedules Direct account",
+        "operationId": "updateSDAccount",
+        "tags": ["Schedules Direct"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SDAccount" } } } },
+        "responses": {
+          "200": { "description": "Updated" }
+        }
+      },
+      "delete": {
+        "summary": "Delete a Schedules Direct account",
+        "operationId": "deleteSDAccount",
+        "tags": ["Schedules Direct"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Deleted" }
+        }
+      }
+    },
+    "/api/sd/discover": {
+      "post": {
+        "summary": "Discover Schedules Direct lineups for credentials",
+        "operationId": "discoverSDLineups",
+        "tags": ["Schedules Direct"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "username": { "type": "string" }, "password": { "type": "string" } }, "required": ["username","password"] } } }
+        },
+        "responses": {
+          "200": { "description": "Lineups discovered" },
+          "401": { "description": "SD authentication failed" }
+        }
+      }
+    },
+    "/api/auth/tokens": {
+      "get": {
+        "summary": "Get all API tokens",
+        "operationId": "getTokens",
+        "tags": ["Auth"],
+        "responses": {
+          "200": { "description": "Token list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Token" } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "summary": "Create an API token",
+        "operationId": "createToken",
+        "tags": ["Auth"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "permissions": { "type": "integer" } }, "required": ["name","permissions"] } } } },
+        "responses": {
+          "200": { "description": "Token created — raw value returned once only", "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "integer" }, "name": { "type": "string" }, "token": { "type": "string" } } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "delete": {
+        "summary": "Delete an API token by ID",
+        "operationId": "deleteToken",
+        "tags": ["Auth"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] } } } },
+        "responses": {
+          "200": { "description": "Deleted" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/permissions": {
+      "get": {
+        "summary": "Get permission bitmask constants",
+        "operationId": "getPermissions",
+        "tags": ["Auth"],
+        "responses": {
+          "200": { "description": "Permission constants", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Permissions" } } } }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "summary": "Get current session info",
+        "operationId": "getMe",
+        "tags": ["Auth"],
+        "responses": {
+          "200": { "description": "Session user", "content": { "application/json": { "schema": { "type": "object", "properties": { "username": { "type": "string" }, "name": { "type": "string" } } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    }
+  }
+}
