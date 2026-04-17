@@ -411,26 +411,21 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 
 		// Identify segment lines (non-comment lines containing URLs)
 		if line != "" && !strings.HasPrefix(line, "#") {
-			var segmentURL string
-
-			if strings.HasPrefix(line, "http") {
-				// Absolute URL - use directly
-				segmentURL = line
-				logger.Debug("{restream/hls - getHLSSegments} Found absolute URL: %s", utils.LogURL(r.Config, segmentURL))
-			} else {
-				// Relative URL - resolve against playlist base URL
-				baseURL := playlistURL[:strings.LastIndex(playlistURL, "/")]
-				segmentURL = baseURL + "/" + line
-				logger.Debug("{restream/hls - getHLSSegments} Resolved relative URL to: %s", utils.LogURL(r.Config, segmentURL))
+			base, err := url.Parse(playlistURL)
+			if err != nil {
+				continue
 			}
-
-			// Check for tracking/beacon URLs requiring redirect resolution
+			rel, err := url.Parse(line)
+			if err != nil || rel == nil {
+				continue
+			}
+			segmentURL := base.ResolveReference(rel).String()
+			if !strings.HasPrefix(segmentURL, "http://") && !strings.HasPrefix(segmentURL, "https://") {
+				continue
+			}
 			if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
-				logger.Debug("{restream/hls - getHLSSegments} Resolved tracking URL for channel %s: %s -> %s",
-					r.Channel.Name, utils.LogURL(r.Config, segmentURL), utils.LogURL(r.Config, resolvedURL))
 				segmentURL = resolvedURL
 			}
-
 			segments = append(segments, segmentURL)
 		}
 	}

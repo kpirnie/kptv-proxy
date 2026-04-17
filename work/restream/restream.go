@@ -482,7 +482,7 @@ func (r *Restream) Stream() {
 		}
 
 		// Add jitter to prevent thundering herd when multiple channels fail simultaneously
-		jitter := (constants.Internal.StreamJitterMinMs + time.Duration(time.Now().UnixNano())%constants.Internal.StreamJitterRangeMs) * time.Millisecond
+		jitter := constants.Internal.StreamJitterMinMs + time.Duration(time.Now().UnixNano())%constants.Internal.StreamJitterRangeMs
 
 		// Sleep briefly before retry
 		select {
@@ -662,7 +662,7 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		return false, 0
 	}
 
-	return r.streamFromURL(variants[0].URL, stream.Source)
+	return r.testAndStreamVariant(variants[0], stream.Source)
 }
 
 // getStreamVariants fetches a stream URL and determines if it is a master playlist.
@@ -932,6 +932,17 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 			if now.Sub(lastActivityUpdate) > constants.Internal.StreamActivityUpdateInterval {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
+				// Check if stream was marked dead mid-stream
+				r.Channel.Mu.RLock()
+				idx := int(atomic.LoadInt32(&r.CurrentIndex))
+				var isDead bool
+				if idx < len(r.Channel.Streams) {
+					isDead = deadstreams.IsStreamDead(r.Channel.Name, r.Channel.Streams[idx].URLHash)
+				}
+				r.Channel.Mu.RUnlock()
+				if isDead {
+					return false, totalBytes
+				}
 			}
 
 			if now.Sub(lastMetricUpdate) > constants.Internal.StreamMetricUpdateInterval {

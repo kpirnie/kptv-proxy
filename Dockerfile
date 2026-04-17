@@ -6,11 +6,11 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w \
-    -X 'kptv-proxy/app.Version=v$(date -u +%Y%m%d%H.%M)' \
-    -X 'kptv-proxy/app.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)' \
-    -X 'kptv-proxy/app.Commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)'" \
+RUN VERSION="v$(date -u +%Y%m%d%H.%M)" && \
+    BUILDDATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" && \
+    COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" && \
+    CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X kptv-proxy/app.Version=$VERSION -X kptv-proxy/app.BuildDate=$BUILDDATE -X kptv-proxy/app.Commit=$COMMIT" \
     -trimpath -o kptv-proxy .
 
 # Final stage - keep all GPU drivers

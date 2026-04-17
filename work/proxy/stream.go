@@ -8,6 +8,7 @@ import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
+	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/filter"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/parser"
@@ -644,6 +645,15 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	}
 
 	channel.Mu.Unlock()
+
+	// If restreamer is running, check if its current stream was marked dead
+	if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
+		curIdx := int(atomic.LoadInt32(&channel.Restreamer.CurrentIndex))
+		if curIdx < len(channel.Streams) && deadstreams.IsStreamDead(channel.Name, channel.Streams[curIdx].URLHash) {
+			rs := &restream.Restream{Restreamer: channel.Restreamer}
+			rs.ForceStreamSwitch((curIdx + 1) % len(channel.Streams))
+		}
+	}
 
 	// generate a unique client identifier
 	clientID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
