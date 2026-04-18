@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
@@ -245,9 +246,11 @@ func (sp *StreamProxy) FetchAndMergeEPG() string {
 		return ""
 	}
 
+	// new — pre-seed with the dummy entry so the document is never empty
+	dummyCh, dummyProg := generateDummyEPGEntry()
 	var (
-		allChannels   []string
-		allProgrammes []string
+		allChannels   = []string{dummyCh}
+		allProgrammes = []string{dummyProg}
 		mu            sync.Mutex
 		wg            sync.WaitGroup
 	)
@@ -349,4 +352,33 @@ func (sp *StreamProxy) StartEPGWarmup() {
 			logger.Debug("{proxy/epg - StartEPGWarmup} Scheduled EPG refresh complete")
 		}
 	}()
+}
+
+// generateDummyEPGEntry returns a static XMLTV channel and 24-hour programme
+// element. This guarantees clients always receive a structurally valid, non-empty
+// XMLTV document even when no EPG sources are configured or all sources fail,
+// preventing players such as Tivimate from rejecting the guide response entirely.
+func generateDummyEPGEntry() (string, string) {
+	const (
+		dummyChannelID = "kptv-proxy-dummy"
+		xmltvTime      = "20060102150405 -0700"
+	)
+
+	now := time.Now().UTC()
+
+	channel := "<channel id=\"kptv-proxy-dummy\">\n" +
+		"  <display-name>KPTV Proxy Dummy Channel</display-name>\n" +
+		"</channel>\n"
+
+	programme := fmt.Sprintf(
+		"<programme start=\"%s\" stop=\"%s\" channel=\"%s\">\n"+
+			"  <title lang=\"en\">KPTV Proxy Dummy Channel</title>\n"+
+			"  <desc lang=\"en\">KPTV Proxy is active. Add EPG sources to populate your guide.</desc>\n"+
+			"</programme>\n",
+		now.Format(xmltvTime),
+		now.Add(24*time.Hour).Format(xmltvTime),
+		dummyChannelID,
+	)
+
+	return channel, programme
 }
