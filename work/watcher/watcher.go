@@ -588,12 +588,18 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 
 	logger.Debug("{watcher - forceStreamRestart} Channel %s: Updated stream indices to %d", sw.channelName, newIndex)
 
+	// capture old cancel before reassignment so the running goroutine
+	// receives the stop signal during the deadline-wait below
+	oldCancel := sw.restreamer.Cancel
+
 	// Gracefully terminate current streaming operations
 	deadline := time.Now().Add(constants.Internal.WatcherRestartDeadline)
 	for time.Now().Before(deadline) {
 		if !sw.restreamer.Running.Load() {
 			break
 		}
+		// signal the old goroutine to exit on first iteration, then poll
+		oldCancel()
 		time.Sleep(constants.Internal.WatcherRestartPollInterval)
 	}
 
