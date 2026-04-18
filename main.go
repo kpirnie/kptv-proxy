@@ -11,6 +11,7 @@ import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
+	"kptv-proxy/work/handlers"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/users"
 	"kptv-proxy/work/utils"
@@ -69,8 +70,10 @@ func main() {
 	addr := fmt.Sprintf(":%d", constants.Internal.ServerPort)
 
 	// Log startup summary
-	logger.Info("Starting KPTV Proxy %s", app.VersionString())
+	logger.Info("KPTV Proxy - https://kevinpirnie.com/")
 	logger.Info("Server configuration:")
+	logger.Info("  - Version: %s", app.VersionString())
+	logger.Info("  - HDHomeRun Device ID: %s", handlers.HDHRDeviceID(cfg.BaseURL))
 	logger.Info("  - Base URL: %s", cfg.BaseURL)
 	logger.Info("  - Worker Threads: %d", cfg.WorkerThreads)
 	logger.Info("  - Sources: %d", len(cfg.Sources))

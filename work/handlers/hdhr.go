@@ -89,7 +89,7 @@ type hdhrXMLDevice struct {
 
 // hdhrDeviceID derives a stable 8-hex-char device identifier from the configured
 // base URL using FNV32a. Consistent across restarts since it is deterministic.
-func hdhrDeviceID(baseURL string) string {
+func HDHRDeviceID(baseURL string) string {
 	h := fnv.New32a()
 	h.Write([]byte(baseURL))
 	return fmt.Sprintf("%08X", h.Sum32())
@@ -115,7 +115,6 @@ func SetupHDHRRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/lineup.json", users.RequireLocalNetwork(handleHDHRLineup(sp))).Methods("GET")
 	router.HandleFunc("/lineup.post", users.RequireLocalNetwork(handleHDHRLineupPost())).Methods("POST", "GET")
 
-	logger.Info("HDHomeRun emulation active (local network only, deviceID: %s)", hdhrDeviceID(sp.Config.BaseURL))
 }
 
 // handleHDHRDiscover serves /discover.json — the primary device identification
@@ -131,7 +130,7 @@ func handleHDHRDiscover(sp *proxy.StreamProxy) http.HandlerFunc {
 			FirmwareName:    hdhrFirmwareName,
 			TunerCount:      hdhrTunerCount,
 			FirmwareVersion: hdhrFirmwareVersion,
-			DeviceID:        hdhrDeviceID(sp.Config.BaseURL),
+			DeviceID:        HDHRDeviceID(sp.Config.BaseURL),
 			DeviceAuth:      "kptv1234",
 			BaseURL:         sp.Config.BaseURL,
 			LineupURL:       sp.Config.BaseURL + "/lineup.json",
@@ -147,7 +146,7 @@ func handleHDHRDeviceXML(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 
-		deviceID := hdhrDeviceID(sp.Config.BaseURL)
+		deviceID := HDHRDeviceID(sp.Config.BaseURL)
 
 		doc := hdhrDeviceXML{
 			XMLNS:   "urn:schemas-upnp-org:device-1-0",

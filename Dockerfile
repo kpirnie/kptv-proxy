@@ -2,13 +2,24 @@
 FROM docker.io/golang:1.26.2-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
+
+# setup the work directory
 WORKDIR /app
+
+# copy in our modulators
 COPY go.mod go.sum ./
+
+# download the modules necessary
 RUN go mod download
+
+# copy in the source code
 COPY . .
+
+# build the app
 RUN VERSION="v$(date -u +%Y%m%d%H.%M)" && \
     BUILDDATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" && \
     COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" && \
+    echo ">>> VERSION=$VERSION BUILDDATE=$BUILDDATE COMMIT=$COMMIT <<<" && \
     CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X kptv-proxy/work/app.Version=$VERSION -X kptv-proxy/work/app.BuildDate=$BUILDDATE -X kptv-proxy/work/app.Commit=$COMMIT" \
     -trimpath -o kptv-proxy .
