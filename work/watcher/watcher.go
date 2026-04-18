@@ -3,6 +3,7 @@ package watcher
 import (
 	"context"
 	"kptv-proxy/work/constants"
+	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
@@ -713,6 +714,13 @@ func (sw *StreamWatcher) findNextAvailableStream() int {
 		// Skip blocked streams
 		if atomic.LoadInt32(&stream.Blocked) == 1 {
 			logger.Debug("{watcher - findNextAvailableStream} Channel %s: Stream %d is blocked, skipping",
+				sw.channelName, nextIndex)
+			continue
+		}
+
+		// Skip manually dead streams — these must never be selected for failover
+		if deadstreams.IsStreamDead(sw.channelName, stream.URLHash) {
+			logger.Debug("{watcher - findNextAvailableStream} Channel %s: Stream %d is dead, skipping",
 				sw.channelName, nextIndex)
 			continue
 		}
