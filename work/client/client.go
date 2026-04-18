@@ -3,6 +3,7 @@ package client
 import (
 	"kptv-proxy/work/logger"
 	"net/http"
+	"net/http/cookiejar"
 	"time"
 )
 
@@ -28,8 +29,17 @@ type CustomResponseWriter struct {
 // - Connection pooling with keep-alives enabled
 // - Reasonable timeouts for various connection phases
 func NewHeaderSettingClient(responseHeaderTimeout time.Duration) *HeaderSettingClient {
+	// initialize a cookie jar so session cookies set during playlist
+	// fetches are automatically carried forward to segment requests,
+	// matching the behaviour of players like VLC
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		logger.Error("{client - NewHeaderSettingClient} failed to create cookie jar: %v", err)
+	}
+
 	client := &http.Client{
-		Timeout: 0, // No overall timeout for streaming scenarios
+		Timeout: 0,   // No overall timeout for streaming scenarios
+		Jar:     jar, // setup a cookied "jar" to pass through
 		Transport: &http.Transport{
 			MaxIdleConns:          200,                   // Maximum total idle connections
 			MaxIdleConnsPerHost:   50,                    // Increased from 10 for better reuse

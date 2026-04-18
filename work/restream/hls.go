@@ -224,7 +224,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		}
 
 		// Fetch current playlist and extract segment URLs
-		segments, err := r.getHLSSegments(playlistURL)
+		segments, effectiveURL, err := r.getHLSSegments(playlistURL)
 		if err != nil {
 			logger.Error("{restream/hls - streamHLSSegments} Error fetching playlist for channel %s: %v", r.Channel.Name, err)
 			return false, totalBytes
@@ -239,9 +239,20 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 		newSegmentCount := 0
 		segmentErrors := 0
 
+		// for the initial playlist fetch on a live stream, skip to the last segment
+		// to avoid fetching already-expired segments, matching standard player behaviour
+		isFirstFetch := segmentTracker.Size() == 0
+
 		for _, segmentURL := range segments {
 			// Skip segments we've already processed
 			if segmentTracker.HasProcessed(segmentURL) {
+				continue
+			}
+
+			// on first fetch, mark all but the last segment as already processed
+			// so we start streaming from the most recent available segment
+			if isFirstFetch && segmentURL != segments[len(segments)-1] {
+				segmentTracker.MarkProcessed(segmentURL)
 				continue
 			}
 
@@ -257,7 +268,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 				r.Channel.Name, utils.LogURL(r.Config, segmentURL))
 
 			// Stream this segment to all connected clients
-			segmentBytes, err := r.streamSegment(segmentURL, playlistURL)
+			segmentBytes, err := r.streamSegment(segmentURL, effectiveURL)
 			if err != nil {
 				segmentErrors++
 				logger.Warn("{restream/hls - streamHLSSegments} Error streaming segment for channel %s: %v (errors: %d/5)",
@@ -327,13 +338,15 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
  * - Applies rate limiting to prevent overwhelming source servers
  * - Locates source configuration for authentication headers
  * - Fetches playlist content with appropriate timeouts
+ * - Captures the effective URL after any HTTP redirects for accurate base URL
+ *   resolution and Referer header injection on subsequent segment requests
  * - Parses playlist to extract segment URLs
- * - Resolves relative URLs to absolute paths
+ * - Resolves relative URLs to absolute paths against the post-redirect base
  * - Handles tracking/redirect URLs that require extraction
  *
  * URL resolution logic:
  * - Absolute URLs (starting with http) are used directly
- * - Relative URLs are resolved against the playlist's base URL
+ * - Relative URLs are resolved against the effective post-redirect playlist URL
  * - Tracking URLs with redirect parameters are decoded and extracted
  *
  * Authentication handling:
@@ -341,9 +354,10 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
  * - Falls back to basic HTTP requests for unconfigured sources
  *
  * @param playlistURL Complete URL of the HLS playlist to fetch and parse
- * @return ([]string, error) - slice of absolute segment URLs, or error if fetch/parse fails
+ * @return ([]string, string, error) - slice of absolute segment URLs, the effective
+ *         URL after any redirects (for use as base and Referer), or error if fetch/parse fails
  */
-func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
+func (r *Restream) getHLSSegments(playlistURL string) ([]string, string, error) {
 	logger.Debug("{restream/hls - getHLSSegments} Fetching playlist for channel %s: %s", r.Channel.Name, utils.LogURL(r.Config, playlistURL))
 
 	// Apply rate limiting before HLS playlist request to prevent server overload
@@ -359,7 +373,7 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	req, err := http.NewRequest("GET", playlistURL, nil)
 	if err != nil {
 		logger.Error("{restream/hls - getHLSSegments} Failed to create request for channel %s: %v", r.Channel.Name, err)
-		return nil, err
+		return nil, "", err
 	}
 
 	// Create context with timeout to prevent hanging on slow/dead servers
@@ -372,31 +386,38 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 	if source != nil {
 		logger.Debug("{restream/hls - getHLSSegments} Using source-specific headers for channel %s (UA: %s)",
 			r.Channel.Name, source.UserAgent)
-		// Use source-specific authentication and headers
 		resp, err = r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	} else {
 		logger.Debug("{restream/hls - getHLSSegments} Using default HTTP client for channel %s", r.Channel.Name)
-		// Fallback to basic HTTP request without custom headers
 		resp, err = r.HttpClient.Do(req)
 	}
 
 	if err != nil {
 		logger.Error("{restream/hls - getHLSSegments} Request failed for channel %s: %v", r.Channel.Name, err)
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 
 	// Verify successful HTTP response before processing content
 	if resp.StatusCode != http.StatusOK {
 		logger.Error("{restream/hls - getHLSSegments} HTTP error for channel %s: status %d", r.Channel.Name, resp.StatusCode)
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	// Capture the effective URL after any HTTP redirects — the CDN may have
+	// redirected to a different host and the segments must be resolved and
+	// requested relative to that final location, not the original playlist URL
+	effectiveURL := resp.Request.URL.String()
+	if effectiveURL != playlistURL {
+		logger.Debug("{restream/hls - getHLSSegments} Followed redirect for channel %s: %s -> %s",
+			r.Channel.Name, utils.LogURL(r.Config, playlistURL), utils.LogURL(r.Config, effectiveURL))
 	}
 
 	// Read complete playlist content for parsing
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		logger.Error("{restream/hls - getHLSSegments} Failed to read response body for channel %s: %v", r.Channel.Name, err)
-		return nil, err
+		return nil, "", err
 	}
 
 	logger.Debug("{restream/hls - getHLSSegments} Successfully fetched playlist for channel %s: %d bytes",
@@ -411,28 +432,37 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, error) {
 
 		// Identify segment lines (non-comment lines containing URLs)
 		if line != "" && !strings.HasPrefix(line, "#") {
-			base, err := url.Parse(playlistURL)
-			if err != nil {
-				continue
+			var segmentURL string
+
+			if strings.HasPrefix(line, "http") {
+				// Absolute URL - use directly
+				segmentURL = line
+				logger.Debug("{restream/hls - getHLSSegments} Found absolute URL: %s", utils.LogURL(r.Config, segmentURL))
+			} else {
+				// Relative URL - resolve against the effective post-redirect base URL
+				// so segment paths are correct even when the playlist was redirected
+				// to a different host or path than originally requested
+				baseURL := effectiveURL[:strings.LastIndex(effectiveURL, "/")]
+				segmentURL = baseURL + "/" + line
+				logger.Debug("{restream/hls - getHLSSegments} Resolved relative URL to: %s", utils.LogURL(r.Config, segmentURL))
 			}
-			rel, err := url.Parse(line)
-			if err != nil || rel == nil {
-				continue
-			}
-			segmentURL := base.ResolveReference(rel).String()
-			if !strings.HasPrefix(segmentURL, "http://") && !strings.HasPrefix(segmentURL, "https://") {
-				continue
-			}
+
+			// Check for tracking/beacon URLs requiring redirect resolution
 			if resolvedURL := r.resolveRedirectURL(segmentURL); resolvedURL != "" {
+				logger.Debug("{restream/hls - getHLSSegments} Resolved tracking URL for channel %s: %s -> %s",
+					r.Channel.Name, utils.LogURL(r.Config, segmentURL), utils.LogURL(r.Config, resolvedURL))
 				segmentURL = resolvedURL
 			}
+
 			segments = append(segments, segmentURL)
 		}
 	}
 
 	logger.Debug("{restream/hls - getHLSSegments} Parsed %d segments from playlist for channel %s", len(segments), r.Channel.Name)
 
-	return segments, nil
+	// return segments alongside the effective URL so callers can use it as
+	// both the segment Referer and the base for subsequent playlist fetches
+	return segments, effectiveURL, nil
 }
 
 /**
@@ -564,13 +594,21 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	defer cancel()
 	req = req.WithContext(ctx)
 
+	// use the playlist URL as Referer for segment requests when no source-specific
+	// Referer is configured, matching standard player behaviour such as VLC
+	referer := ""
+	if source != nil {
+		referer = source.ReqReferrer
+	}
+	if referer == "" {
+		referer = playlistURL
+	}
+
 	// Execute request with source-specific headers if available
 	var resp *http.Response
 	if source != nil {
-		logger.Debug("{restream/hls - streamSegment} Using source-specific headers for channel %s", r.Channel.Name)
-		resp, err = r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
+		resp, err = r.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, referer)
 	} else {
-		logger.Debug("{restream/hls - streamSegment} Using default HTTP client for channel %s", r.Channel.Name)
 		resp, err = r.HttpClient.Do(req)
 	}
 
