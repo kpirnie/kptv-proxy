@@ -89,7 +89,6 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, cfg *config.Config, sourc
 		logger.Debug("{parser/m3u8 - ParseM3U8} Using cached M3U8 data for %s", source.Name)
 		var streams []*types.Stream
 		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
-			logger.Error("{parser/m3u8 - ParseM3U8} %v", err)
 			return streams
 		}
 	}

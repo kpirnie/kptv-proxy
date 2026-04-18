@@ -1147,6 +1147,9 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 
 	logger.Debug("{restream/restream - ForceStreamSwitch} Channel %s: Forcing switch to stream %d with %d clients", r.Channel.Name, newIndex, clientCount)
 
+	// capture the old cancel before overwriting it
+	oldCancel := r.Cancel
+
 	// create new context before cancelling old one to eliminate the gap
 	// where Ctx is cancelled but no replacement exists yet
 	newCtx, newCancel := context.WithCancel(context.Background())
@@ -1157,8 +1160,9 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 	// and will have exited when it was cancelled
 	go r.RestartMonitors()
 
-	// Cancel context first to stop the streaming loop before touching the buffer
-	r.Cancel()
+	// cancel the OLD context so the running goroutine gets the stop signal,
+	// leaving the new context intact for the restart
+	oldCancel()
 
 	// Now safe to destroy the buffer since the streaming loop is stopping
 	if r.Buffer != nil && !r.Buffer.IsDestroyed() {
