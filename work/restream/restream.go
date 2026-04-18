@@ -1009,8 +1009,20 @@ func (r *Restream) DistributeToClients(data []byte) int {
 		client := value
 		clientID := key
 
-		_, err := client.Writer.Write(data)
-		if err != nil {
+		// recover from any panic on this client's writer — a client disconnecting
+		// mid-stream can corrupt the HTTP server's internal bufio state if the
+		// connection close races with our write; treat any panic as a write failure
+		writeErr := func() (err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("write panic recovered: %v", r)
+				}
+			}()
+			_, err = client.Writer.Write(data)
+			return err
+		}()
+
+		if writeErr != nil {
 			failedClients = append(failedClients, clientID)
 			return true
 		}
