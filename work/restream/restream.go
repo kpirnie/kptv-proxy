@@ -83,15 +83,16 @@ func NewRestreamer(channel *types.Channel, bufferSize int64, httpClient *client.
 	ctx, cancel := context.WithCancel(context.Background())
 
 	base := &types.Restreamer{
-		Channel:     channel,
-		SourceCache: xsync.NewMapOf[string, *config.SourceConfig](),
-		Buffer:      bbuffer.NewRingBuffer(bufferSize),
-		Ctx:         ctx,
-		Cancel:      cancel,
-		HttpClient:  httpClient,
-		Config:      cfg,
-		RateLimiter: rateLimiter,
-		Stats:       &types.StreamStats{},
+		Channel:      channel,
+		SourceCache:  xsync.NewMapOf[string, *config.SourceConfig](),
+		Buffer:       bbuffer.NewRingBuffer(bufferSize),
+		Ctx:          ctx,
+		Cancel:       cancel,
+		HttpClient:   httpClient,
+		Config:       cfg,
+		RateLimiter:  rateLimiter,
+		Stats:        &types.StreamStats{},
+		SwitchNotify: make(chan struct{}),
 	}
 
 	base.LastActivity.Store(time.Now().Unix())
@@ -178,10 +179,15 @@ func (r *Restream) RemoveClient(id string) {
 		logger.Debug("{restream/restream - RemoveClient} clients_connected: %d [%s]", clientCount, r.Channel.Name)
 		logger.Debug("{restream/restream - RemoveClient} Channel %s: Client %s removed, remaining: %d", r.Channel.Name, id, clientCount)
 
-		// If no clients remain, stop the stream immediately
 		if clientCount == 0 {
-			logger.Debug("{restream/restream - RemoveClient} Channel %s: No more clients", r.Channel.Name)
-			r.stopStream()
+			// do not stop the stream if a watcher-initiated switch is in progress —
+			// the new goroutine is starting up and needs the context and buffer intact
+			if r.Switching.Load() {
+				logger.Debug("{restream/restream - RemoveClient} Channel %s: No more clients but switch in progress, skipping stop", r.Channel.Name)
+			} else {
+				logger.Debug("{restream/restream - RemoveClient} Channel %s: No more clients", r.Channel.Name)
+				r.stopStream()
+			}
 		}
 	}
 }
@@ -388,15 +394,17 @@ func (r *Restream) Stream() {
 				// For manual switches, don't return - continue to stream the new index
 				if wasManualSwitch {
 					r.ManualSwitch.Store(false)
+					// if this is a watcher-initiated switch, exit immediately —
+					// restartWithExistingLogic is already launching a new Stream() goroutine
+					// and continuing here would create two goroutines streaming simultaneously
+					if r.Switching.Load() {
+						logger.Debug("{restream/restream - Stream} Channel %s: Watcher switch detected, exiting loop to let restartWithExistingLogic take over", r.Channel.Name)
+						return
+					}
 					newIdx := int(atomic.LoadInt32(&r.CurrentIndex))
 					logger.Debug("{restream/restream - Stream} Channel %s: Manual switch succeeded, continuing with stream %d", r.Channel.Name, newIdx)
-
-					// Reset attempt counters but keep going
 					totalAttempts = 0
 					consecutiveFailures = make(map[int]int)
-
-					logger.Debug("{restream/restream - Stream} Channel %s: Continuing streaming loop after manual switch", r.Channel.Name)
-
 					continue
 				}
 
@@ -1009,17 +1017,22 @@ func (r *Restream) DistributeToClients(data []byte) int {
 		client := value
 		clientID := key
 
-		// recover from any panic on this client's writer — a client disconnecting
-		// mid-stream can corrupt the HTTP server's internal bufio state if the
-		// connection close races with our write; treat any panic as a write failure
+		// recover from any panic on this client's writer or flusher — a client
+		// disconnecting mid-stream can cause the HTTP server's chunked response
+		// finalization to race with our write/flush, corrupting bufio internal
+		// state and producing a double panic that kills the process
 		writeErr := func() (err error) {
 			defer func() {
-				if r := recover(); r != nil {
-					err = fmt.Errorf("write panic recovered: %v", r)
+				if rec := recover(); rec != nil {
+					err = fmt.Errorf("write/flush panic recovered: %v", rec)
 				}
 			}()
 			_, err = client.Writer.Write(data)
-			return err
+			if err != nil {
+				return err
+			}
+			client.Flusher.Flush()
+			return nil
 		}()
 
 		if writeErr != nil {
@@ -1027,7 +1040,6 @@ func (r *Restream) DistributeToClients(data []byte) int {
 			return true
 		}
 
-		client.Flusher.Flush()
 		client.LastSeen.Store(time.Now().Unix())
 		activeClients++
 		return true

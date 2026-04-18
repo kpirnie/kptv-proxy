@@ -177,12 +177,15 @@ func (wm *WatcherManager) StartWatching(channelName string, restreamer *types.Re
 
 	logger.Debug("{watcher - StartWatching} Starting watcher for channel: %s", channelName)
 
-	// Terminate existing watcher if present
+	// Terminate existing watcher if present, releasing its semaphore slot
+	// before acquiring a new one to prevent slot exhaustion on reconnects
 	if existing, exists := wm.watchers.LoadAndDelete(channelName); exists {
 		logger.Debug("{watcher - StartWatching} Stopping existing watcher for channel: %s", channelName)
 		existing.Stop()
+		// release the slot the old watcher was holding before we acquired a new one above;
+		// without this every client reconnect to an active channel leaks one slot permanently
+		<-watcherSemaphore
 	}
-
 	// Create new watcher instance
 	watcher := &StreamWatcher{
 		channelName:      channelName,
@@ -232,6 +235,14 @@ func (wm *WatcherManager) StopWatching(channelName string) {
 	} else {
 		logger.Debug("{watcher - StopWatching} No watcher found for channel: %s", channelName)
 	}
+}
+
+// IsWatching returns true if a watcher is already active for the given channel,
+// preventing duplicate watchers from being spawned for each additional client
+// connecting to an already-streaming channel.
+func (wm *WatcherManager) IsWatching(channelName string) bool {
+	_, exists := wm.watchers.Load(channelName)
+	return exists
 }
 
 /**
@@ -594,6 +605,17 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 	logger.Debug("{watcher - forceStreamRestart} Channel %s: Starting forced restart to stream index %d",
 		sw.channelName, newIndex)
 
+	// mark a switch in progress so RemoveClient does not call stopStream()
+	// and kill the new stream before it has a chance to start
+	sw.restreamer.Switching.Store(true)
+
+	// replace the notify channel and close the old one to unblock all
+	// HandleRestreamingClient goroutines, forcing clients to reconnect
+	// cleanly after the stream source changes
+	oldNotify := sw.restreamer.SwitchNotify
+	sw.restreamer.SwitchNotify = make(chan struct{})
+	close(oldNotify)
+
 	// Update preferred stream index atomically
 	atomic.StoreInt32(&sw.restreamer.Channel.PreferredStreamIndex, int32(newIndex))
 	atomic.StoreInt32(&sw.restreamer.CurrentIndex, int32(newIndex))
@@ -672,6 +694,10 @@ func (sw *StreamWatcher) restartWithExistingLogic() {
 			logger.Error("{watcher - restartWithExistingLogic} Channel %s: Recovered from panic: %v",
 				sw.channelName, rec)
 		}
+		// clear the switching flag now that the new stream goroutine has finished —
+		// keeping it true for the full duration prevents RemoveClient from calling
+		// stopStream() while the new stream is starting up
+		sw.restreamer.Switching.Store(false)
 		sw.restreamer.Running.Store(false)
 		logger.Debug("{watcher - restartWithExistingLogic} Channel %s: Restart completed, running=false", sw.channelName)
 	}()
@@ -684,7 +710,6 @@ func (sw *StreamWatcher) restartWithExistingLogic() {
 
 	// These are normally started by AddClient but are not running after a watcher-triggered switch
 	r.RestartMonitors()
-
 	r.WatcherStream()
 
 	logger.Debug("{watcher - restartWithExistingLogic} Channel %s: Stream restart logic completed", sw.channelName)

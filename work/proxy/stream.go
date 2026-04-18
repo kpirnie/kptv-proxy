@@ -685,8 +685,9 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 
 	restreamer.AddClient(clientID, w, flusher)
 
-	// start stream quality watcher if enabled and the restreamer is actively running
-	if sp.Config.WatcherEnabled && restreamer.Restreamer.Running.Load() {
+	// only start a watcher if one is not already running for this channel —
+	// calling StartWatching per client connection leaks semaphore slots
+	if sp.Config.WatcherEnabled && restreamer.Restreamer.Running.Load() && !sp.WatcherManager.IsWatching(channel.Name) {
 		preferredIndex := int(atomic.LoadInt32(&channel.PreferredStreamIndex))
 		currentIndex := int(atomic.LoadInt32(&restreamer.Restreamer.CurrentIndex))
 
@@ -720,6 +721,10 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 		logger.Debug("{proxy/stream - HandleRestreamingClient} Client disconnected: %s (channel: %s)", clientID, channel.Name)
 	case <-time.After(constants.Internal.MaxClientSessionDuration):
 		logger.Warn("{proxy/stream - HandleRestreamingClient} Client session timeout after 24h: %s (channel: %s)", clientID, channel.Name)
+	case <-restreamer.Restreamer.SwitchNotify:
+		// watcher switched stream sources; close this connection so the client
+		// reconnects fresh and negotiates the new stream from a clean state
+		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Stream switch signalled reconnect for client %s", channel.Name, clientID)
 	}
 }
 

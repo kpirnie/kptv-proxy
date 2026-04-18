@@ -96,6 +96,9 @@ type Restreamer struct {
 	ManualSwitch            atomic.Bool                                // did we manually switch?
 	ManualSwitchPreventStop atomic.Bool                                // try to prevent stopping playback during a manual switch
 	Stats                   *StreamStats                               // setup the stats
+	Switching               atomic.Bool                                // watcher-initiated switch in progress, prevents premature stopStream
+	SwitchNotify            chan struct{}                              // closed on watcher switch to force client reconnection
+
 }
 
 // RestreamClient represents an individual client connection receiving streamed content
