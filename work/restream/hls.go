@@ -288,6 +288,8 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 			newSegmentCount++
 			lastSuccessfulSegment = time.Now()
 			consecutiveEmptyRefresh = 0
+			// update activity so the watcher does not flag the inter-segment gap as a stall
+			r.LastActivity.Store(time.Now().Unix())
 
 			logger.Debug("{restream/hls - streamHLSSegments} Successfully streamed segment for channel %s: %d bytes (total: %d MB)",
 				r.Channel.Name, segmentBytes, totalBytes/(constants.Internal.StreamMinViableBytes))

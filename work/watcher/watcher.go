@@ -609,6 +609,15 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 	// and kill the new stream before it has a chance to start
 	sw.restreamer.Switching.Store(true)
 
+	// count clients BEFORE signalling reconnect — after close(oldNotify) the
+	// map will be empty because HandleRestreamingClient returns and calls
+	// RemoveClient; we must capture the count here
+	hadClients := false
+	sw.restreamer.Clients.Range(func(_ string, _ *types.RestreamClient) bool {
+		hadClients = true
+		return false
+	})
+
 	// replace the notify channel and close the old one to unblock all
 	// HandleRestreamingClient goroutines, forcing clients to reconnect
 	// cleanly after the stream source changes
@@ -654,16 +663,9 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 		logger.Debug("{watcher - forceStreamRestart} Channel %s: Reset buffer", sw.channelName)
 	}
 
-	// Verify client connections before restart
-	clientCount := 0
-	sw.restreamer.Clients.Range(func(key string, value *types.RestreamClient) bool {
-		clientCount++
-		return true
-	})
+	logger.Debug("{watcher - forceStreamRestart} Channel %s: Had clients before switch: %v", sw.channelName, hadClients)
 
-	logger.Debug("{watcher - forceStreamRestart} Channel %s: Verified %d clients connected", sw.channelName, clientCount)
-
-	if clientCount > 0 {
+	if hadClients {
 		// Initiate new streaming session
 		sw.restreamer.Running.Store(true)
 		sw.lastStreamStart = time.Now()
