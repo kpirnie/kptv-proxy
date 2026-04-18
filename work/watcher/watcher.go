@@ -434,7 +434,9 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 		currentWritePos := buf.GetWritePosition()
 
 		if sw.lastWritePos == 0 {
-			// first check after start, just record position and skip throughput evaluation
+			// first check after start or after buffer recreation —
+			// just record position and skip throughput evaluation
+			// to avoid a false stall detection on a fresh baseline
 			sw.lastWritePos = currentWritePos
 		} else if currentWritePos >= sw.lastWritePos {
 			bytesSinceLastCheck := currentWritePos - sw.lastWritePos
@@ -444,7 +446,16 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 				hasIssues = true
 			}
 			sw.lastWritePos = currentWritePos
+		} else {
+			// write position went backwards — buffer was destroyed and recreated;
+			// reset to zero so the next check establishes a clean baseline
+			logger.Debug("{watcher - evaluateStreamHealthFromState} Channel %s: Buffer write position reset detected, re-baselining throughput check",
+				sw.channelName)
+			sw.lastWritePos = 0
 		}
+	} else {
+		// buffer is gone — reset so we baseline cleanly when it comes back
+		sw.lastWritePos = 0
 	}
 
 	// Check stream activity
@@ -588,6 +599,10 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 	atomic.StoreInt32(&sw.restreamer.CurrentIndex, int32(newIndex))
 
 	logger.Debug("{watcher - forceStreamRestart} Channel %s: Updated stream indices to %d", sw.channelName, newIndex)
+
+	// signal that this is a controlled switch so the Stream() loop
+	// does not misclassify the context cancellation as a failure
+	sw.restreamer.ManualSwitch.Store(true)
 
 	// capture old cancel before reassignment so the running goroutine
 	// receives the stop signal during the deadline-wait below
