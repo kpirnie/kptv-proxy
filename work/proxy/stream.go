@@ -646,13 +646,45 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 
 	channel.Mu.Unlock()
 
-	// If restreamer is running, check if its current stream was marked dead
 	if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
+		// running: switch away from a dead current stream to the first live one
 		curIdx := int(atomic.LoadInt32(&channel.Restreamer.CurrentIndex))
-		if curIdx < len(channel.Streams) && deadstreams.IsStreamDead(channel.Name, channel.Streams[curIdx].URLHash) {
-			rs := &restream.Restream{Restreamer: channel.Restreamer}
-			rs.ForceStreamSwitch((curIdx + 1) % len(channel.Streams))
+		channel.Mu.RLock()
+		n := len(channel.Streams)
+		deadCurrent := curIdx < n && deadstreams.IsStreamDead(channel.Name, channel.Streams[curIdx].URLHash)
+		switchIdx := -1
+		if deadCurrent {
+			for i := 1; i < n; i++ {
+				next := (curIdx + i) % n
+				if !deadstreams.IsStreamDead(channel.Name, channel.Streams[next].URLHash) && atomic.LoadInt32(&channel.Streams[next].Blocked) == 0 {
+					switchIdx = next
+					break
+				}
+			}
 		}
+		channel.Mu.RUnlock()
+		if deadCurrent && switchIdx >= 0 {
+			rs := &restream.Restream{Restreamer: channel.Restreamer}
+			rs.ForceStreamSwitch(switchIdx)
+		}
+	} else {
+		// not running: advance PreferredStreamIndex past any dead/blocked streams
+		preferredIdx := int(atomic.LoadInt32(&channel.PreferredStreamIndex))
+		channel.Mu.RLock()
+		n := len(channel.Streams)
+		for i := 0; i < n; i++ {
+			checkIdx := (preferredIdx + i) % n
+			if checkIdx < n {
+				s := channel.Streams[checkIdx]
+				if !deadstreams.IsStreamDead(channel.Name, s.URLHash) && atomic.LoadInt32(&s.Blocked) == 0 {
+					if checkIdx != preferredIdx {
+						atomic.StoreInt32(&channel.PreferredStreamIndex, int32(checkIdx))
+					}
+					break
+				}
+			}
+		}
+		channel.Mu.RUnlock()
 	}
 
 	// generate a unique client identifier
