@@ -106,16 +106,16 @@ type Restreamer struct {
 // tracking, and completion signaling while sharing the same upstream data stream
 // with other concurrent clients for optimal bandwidth utilization.
 //
-// The RestreamClient struct encapsulates all client-specific state and communication
-// channels while providing thread-safe access to activity timestamps and completion
-// status. The design enables efficient client management and cleanup without
-// disrupting other active client connections.
+// writeChan provides a bounded queue for outbound chunks, decoupling the distribution
+// loop from per-client TCP socket drain speed. When the channel is full the client
+// is considered too slow and will be dropped.
 type RestreamClient struct {
-	Id       string              // Unique client identifier for tracking and debugging purposes
-	Writer   http.ResponseWriter // HTTP response writer for sending TS/HLS data to the client
-	Flusher  http.Flusher        // HTTP flusher interface for real-time data streaming without buffering delays
-	Done     chan bool           // Completion signal channel for coordinated client disconnection and cleanup
-	LastSeen atomic.Int64        // Atomic Unix timestamp of most recent client activity for inactivity detection
+	Id        string              // Unique client identifier for tracking and debugging purposes
+	Writer    http.ResponseWriter // HTTP response writer for sending TS/HLS data to the client
+	Flusher   http.Flusher        // HTTP flusher interface for real-time data streaming without buffering delays
+	Done      chan bool           // Completion signal channel for coordinated client disconnection and cleanup
+	LastSeen  atomic.Int64        // Atomic Unix timestamp of most recent client activity for inactivity detection
+	WriteChan chan []byte         // Bounded outbound chunk queue; full = client too slow to keep up
 }
 
 // StreamHealthData contains comprehensive stream quality and format information

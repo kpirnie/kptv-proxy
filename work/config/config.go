@@ -32,28 +32,29 @@ type SDAccount struct {
 // Config holds all application configuration values for the IPTV proxy server.
 // All persistence is handled via SQLite through LoadConfig and PersistConfig.
 type Config struct {
-	BaseURL               string            `json:"baseURL"`
-	BufferSizePerStream   int64             `json:"bufferSizePerStream"`
-	CacheEnabled          bool              `json:"cacheEnabled"`
-	CacheDuration         time.Duration     `json:"cacheDuration"`
-	ImportRefreshInterval time.Duration     `json:"importRefreshInterval"`
-	WorkerThreads         int               `json:"workerThreads"`
-	Debug                 bool              `json:"debug"`
-	LogLevel              string            `json:"logLevel"`
-	ObfuscateUrls         bool              `json:"obfuscateUrls"`
-	SortField             string            `json:"sortField"`
-	SortDirection         string            `json:"sortDirection"`
-	StreamTimeout         time.Duration     `json:"streamTimeout"`
-	MaxConnectionsToApp   int               `json:"maxConnectionsToApp"`
-	Sources               []SourceConfig    `json:"sources"`
-	EPGs                  []EPGConfig       `json:"epgs"`
-	XCOutputAccounts      []XCOutputAccount `json:"xcOutputAccounts"`
-	SDAccounts            []SDAccount       `json:"sdAccounts,omitempty"`
-	WatcherEnabled        bool              `json:"watcherEnabled"`
-	FFmpegMode            bool              `json:"ffmpegMode"`
-	FFmpegPreInput        []string          `json:"ffmpegPreInput"`
-	FFmpegPreOutput       []string          `json:"ffmpegPreOutput"`
-	ResponseHeaderTimeout time.Duration     `json:"responseHeaderTimeout"`
+	BaseURL                string            `json:"baseURL"`
+	BufferSizePerStream    int64             `json:"bufferSizePerStream"`
+	CacheEnabled           bool              `json:"cacheEnabled"`
+	CacheDuration          time.Duration     `json:"cacheDuration"`
+	ImportRefreshInterval  time.Duration     `json:"importRefreshInterval"`
+	WorkerThreads          int               `json:"workerThreads"`
+	Debug                  bool              `json:"debug"`
+	LogLevel               string            `json:"logLevel"`
+	ObfuscateUrls          bool              `json:"obfuscateUrls"`
+	SortField              string            `json:"sortField"`
+	SortDirection          string            `json:"sortDirection"`
+	StreamTimeout          time.Duration     `json:"streamTimeout"`
+	MaxConnectionsToApp    int               `json:"maxConnectionsToApp"`
+	Sources                []SourceConfig    `json:"sources"`
+	EPGs                   []EPGConfig       `json:"epgs"`
+	XCOutputAccounts       []XCOutputAccount `json:"xcOutputAccounts"`
+	SDAccounts             []SDAccount       `json:"sdAccounts,omitempty"`
+	WatcherEnabled         bool              `json:"watcherEnabled"`
+	FFmpegMode             bool              `json:"ffmpegMode"`
+	FFmpegPreInput         []string          `json:"ffmpegPreInput"`
+	FFmpegPreOutput        []string          `json:"ffmpegPreOutput"`
+	ResponseHeaderTimeout  time.Duration     `json:"responseHeaderTimeout"`
+	SlowClientBufferChunks int               `json:"slowClientBufferChunks"` // Number of chunks to queue per client before considering them too slow
 }
 
 // SourceConfig represents the configuration for a single stream source.
@@ -128,25 +129,26 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	}
 
 	aux := &struct {
-		BaseURL               string        `json:"baseURL"`
-		BufferSizePerStream   int64         `json:"bufferSizePerStream"`
-		CacheEnabled          bool          `json:"cacheEnabled"`
-		CacheDuration         string        `json:"cacheDuration"`
-		ImportRefreshInterval string        `json:"importRefreshInterval"`
-		WorkerThreads         int           `json:"workerThreads"`
-		Debug                 bool          `json:"debug"`
-		LogLevel              string        `json:"logLevel"`
-		ObfuscateUrls         bool          `json:"obfuscateUrls"`
-		SortField             string        `json:"sortField"`
-		SortDirection         string        `json:"sortDirection"`
-		StreamTimeout         string        `json:"streamTimeout"`
-		MaxConnectionsToApp   int           `json:"maxConnectionsToApp"`
-		WatcherEnabled        bool          `json:"watcherEnabled"`
-		FFmpegMode            bool          `json:"ffmpegMode"`
-		FFmpegPreInput        []string      `json:"ffmpegPreInput"`
-		FFmpegPreOutput       []string      `json:"ffmpegPreOutput"`
-		ResponseHeaderTimeout string        `json:"responseHeaderTimeout"`
-		Sources               []SourceAlias `json:"sources"`
+		BaseURL                string        `json:"baseURL"`
+		BufferSizePerStream    int64         `json:"bufferSizePerStream"`
+		CacheEnabled           bool          `json:"cacheEnabled"`
+		CacheDuration          string        `json:"cacheDuration"`
+		ImportRefreshInterval  string        `json:"importRefreshInterval"`
+		WorkerThreads          int           `json:"workerThreads"`
+		Debug                  bool          `json:"debug"`
+		LogLevel               string        `json:"logLevel"`
+		ObfuscateUrls          bool          `json:"obfuscateUrls"`
+		SortField              string        `json:"sortField"`
+		SortDirection          string        `json:"sortDirection"`
+		StreamTimeout          string        `json:"streamTimeout"`
+		MaxConnectionsToApp    int           `json:"maxConnectionsToApp"`
+		WatcherEnabled         bool          `json:"watcherEnabled"`
+		FFmpegMode             bool          `json:"ffmpegMode"`
+		FFmpegPreInput         []string      `json:"ffmpegPreInput"`
+		FFmpegPreOutput        []string      `json:"ffmpegPreOutput"`
+		ResponseHeaderTimeout  string        `json:"responseHeaderTimeout"`
+		Sources                []SourceAlias `json:"sources"`
+		SlowClientBufferChunks int           `json:"slowClientBufferChunks"`
 	}{}
 
 	if err := json.Unmarshal(data, aux); err != nil {
@@ -167,6 +169,7 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	c.FFmpegMode = aux.FFmpegMode
 	c.FFmpegPreInput = aux.FFmpegPreInput
 	c.FFmpegPreOutput = aux.FFmpegPreOutput
+	c.SlowClientBufferChunks = aux.SlowClientBufferChunks
 
 	var err error
 	if aux.CacheDuration != "" {
@@ -344,6 +347,11 @@ func loadFromDB() (*Config, error) {
 			cfg.ResponseHeaderTimeout = d
 		}
 	}
+	if v, ok := settings["slowClientBufferChunks"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.SlowClientBufferChunks = n
+		}
+	}
 
 	cfg.Sources, err = loadSourcesFromDB()
 	if err != nil {
@@ -468,24 +476,25 @@ func loadSDAccountsFromDB() ([]SDAccount, error) {
 // PersistConfig writes every field of cfg into kp_settings and syncs sources.
 func PersistConfig(cfg *Config) error {
 	settings := map[string]string{
-		"baseURL":               cfg.BaseURL,
-		"bufferSizePerStream":   strconv.FormatInt(cfg.BufferSizePerStream, 10),
-		"cacheEnabled":          strconv.FormatBool(cfg.CacheEnabled),
-		"cacheDuration":         cfg.CacheDuration.String(),
-		"importRefreshInterval": cfg.ImportRefreshInterval.String(),
-		"workerThreads":         strconv.Itoa(cfg.WorkerThreads),
-		"debug":                 strconv.FormatBool(cfg.Debug),
-		"logLevel":              cfg.LogLevel,
-		"obfuscateUrls":         strconv.FormatBool(cfg.ObfuscateUrls),
-		"sortField":             cfg.SortField,
-		"sortDirection":         cfg.SortDirection,
-		"streamTimeout":         cfg.StreamTimeout.String(),
-		"maxConnectionsToApp":   strconv.Itoa(cfg.MaxConnectionsToApp),
-		"watcherEnabled":        strconv.FormatBool(cfg.WatcherEnabled),
-		"ffmpegMode":            strconv.FormatBool(cfg.FFmpegMode),
-		"ffmpegPreInput":        strings.Join(cfg.FFmpegPreInput, " "),
-		"ffmpegPreOutput":       strings.Join(cfg.FFmpegPreOutput, " "),
-		"responseHeaderTimeout": cfg.ResponseHeaderTimeout.String(),
+		"baseURL":                cfg.BaseURL,
+		"bufferSizePerStream":    strconv.FormatInt(cfg.BufferSizePerStream, 10),
+		"cacheEnabled":           strconv.FormatBool(cfg.CacheEnabled),
+		"cacheDuration":          cfg.CacheDuration.String(),
+		"importRefreshInterval":  cfg.ImportRefreshInterval.String(),
+		"workerThreads":          strconv.Itoa(cfg.WorkerThreads),
+		"debug":                  strconv.FormatBool(cfg.Debug),
+		"logLevel":               cfg.LogLevel,
+		"obfuscateUrls":          strconv.FormatBool(cfg.ObfuscateUrls),
+		"sortField":              cfg.SortField,
+		"sortDirection":          cfg.SortDirection,
+		"streamTimeout":          cfg.StreamTimeout.String(),
+		"maxConnectionsToApp":    strconv.Itoa(cfg.MaxConnectionsToApp),
+		"watcherEnabled":         strconv.FormatBool(cfg.WatcherEnabled),
+		"ffmpegMode":             strconv.FormatBool(cfg.FFmpegMode),
+		"ffmpegPreInput":         strings.Join(cfg.FFmpegPreInput, " "),
+		"ffmpegPreOutput":        strings.Join(cfg.FFmpegPreOutput, " "),
+		"responseHeaderTimeout":  cfg.ResponseHeaderTimeout.String(),
+		"slowClientBufferChunks": strconv.Itoa(cfg.SlowClientBufferChunks),
 	}
 
 	for k, v := range settings {
@@ -654,6 +663,9 @@ func validateAndSetDefaults(config *Config) {
 	}
 	if config.FFmpegPreOutput == nil {
 		config.FFmpegPreOutput = []string{}
+	}
+	if config.SlowClientBufferChunks <= 0 {
+		config.SlowClientBufferChunks = 16
 	}
 	for i := range config.XCOutputAccounts {
 		if config.XCOutputAccounts[i].MaxConnections <= 0 {

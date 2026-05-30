@@ -307,6 +307,13 @@
                                         type="text" name="responseHeaderTimeout" placeholder="10s">
                                 </div>
                                 <div>
+                                    <label class="block text-sm font-medium mb-1">Slow Client Buffer (chunks)</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="number" name="slowClientBufferChunks" min="4" max="128">
+                                    <div class="text-xs text-gray-400 mt-1">Chunks to queue per client before dropping slow connections (default: 16, ~0.5s at HD bitrates)</div>
+                                </div>
+                                <div>
                                     <h4 class="text-base font-semibold mb-3 pb-2 border-b border-kptv-border">FFMPEG
                                         Settings</h4>
                                     <label class="flex items-center mb-3">

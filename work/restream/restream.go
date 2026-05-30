@@ -113,15 +113,20 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 	}
 
 	client := &types.RestreamClient{
-		Id:      id,
-		Writer:  w,
-		Flusher: flusher,
-		Done:    make(chan bool),
+		Id:        id,
+		Writer:    w,
+		Flusher:   flusher,
+		Done:      make(chan bool),
+		WriteChan: make(chan []byte, r.Config.SlowClientBufferChunks),
 	}
 
 	client.LastSeen.Store(time.Now().Unix())
 	r.Clients.Store(id, client)
 	r.LastActivity.Store(time.Now().Unix())
+
+	// Start the per-client drain goroutine that owns all writes to this client's
+	// socket, keeping the distribution loop fully decoupled from TCP drain speed.
+	go r.drainClient(client)
 
 	clientCount := 0
 	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
@@ -151,6 +156,8 @@ func (r *Restream) RemoveClient(id string) {
 
 	// Attempt to load and delete the client from the map
 	if client, ok := r.Clients.LoadAndDelete(id); ok {
+		// Signal the drain goroutine to exit by closing the write channel.
+		close(client.WriteChan)
 
 		// Mark client as finished by closing its Done channel
 		select {
@@ -190,6 +197,7 @@ func (r *Restream) RemoveClient(id string) {
 			}
 		}
 	}
+
 }
 
 // stopStream forces the restreamer to stop streaming immediately.
@@ -990,72 +998,38 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 	}
 }
 
-// DistributeToClients sends a chunk of stream data to all active clients.
-// Clients that fail to receive data are removed.
-//
-// Parameters:
-//   - data: TS/HLS chunk of stream data
-//
-// Returns:
-//   - int: number of active clients remaining after distribution
-//
-// DistributeToClients sends a chunk of stream data to all active clients.
-// Clients that fail to receive data are removed.
-//
-// Parameters:
-//   - data: TS/HLS chunk of stream data
-//
-// Returns:
-//   - int: number of active clients remaining after distribution
+// DistributeToClients enqueues a chunk of stream data into each active client's
+// outbound channel. The send is non-blocking — if a client's channel is full the
+// client is considered too slow and is scheduled for removal, preventing it from
+// stalling the distribution loop and degrading faster clients.
 func (r *Restream) DistributeToClients(data []byte) int {
 	activeClients := 0
 	var failedClients []string
+
+	// Copy the chunk once so every client channel holds an independent slice;
+	// the source buffer may be reused by the streaming loop immediately after return.
+	chunk := make([]byte, len(data))
+	copy(chunk, data)
 
 	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 		client := value
 		clientID := key
 
-		// Per-client write with backpressure timeout to prevent slow clients
-		// from blocking the distribution loop and starving fast clients.
-		done := make(chan error, 1)
-		go func() {
-			done <- func() (err error) {
-				defer func() {
-					if rec := recover(); rec != nil {
-						err = fmt.Errorf("write/flush panic recovered: %v", rec)
-					}
-				}()
-				_, err = client.Writer.Write(data)
-				if err != nil {
-					return err
-				}
-				client.Flusher.Flush()
-				return nil
-			}()
-		}()
-
 		select {
-		case writeErr := <-done:
-			if writeErr != nil {
-				failedClients = append(failedClients, clientID)
-				return true
-			}
-		case <-time.After(constants.Internal.ClientWriteTimeout):
-			// Slow client: socket buffer full and not draining fast enough.
-			// Drop the connection rather than blocking all other clients.
-			logger.Warn("{restream/restream - DistributeToClients} Channel %s: Client %s write timed out, dropping slow client",
+		case client.WriteChan <- chunk:
+			// Chunk queued successfully — client is keeping up.
+			activeClients++
+		default:
+			// Channel full: client cannot drain fast enough, drop it.
+			logger.Warn("{restream/restream - DistributeToClients} Channel %s: Client %s write buffer full, dropping slow client",
 				r.Channel.Name, clientID)
 			failedClients = append(failedClients, clientID)
-			return true
 		}
-
-		client.LastSeen.Store(time.Now().Unix())
-		activeClients++
 		return true
 	})
 
 	for _, clientID := range failedClients {
-		logger.Debug("{restream/restream - DistributeToClients} Channel %s: Removing failed client %s", r.Channel.Name, clientID)
+		logger.Debug("{restream/restream - DistributeToClients} Channel %s: Removing slow client %s", r.Channel.Name, clientID)
 		r.RemoveClient(clientID)
 	}
 
@@ -1409,4 +1383,38 @@ func (r *Restream) streamLocalFallback(filePath string) {
 func (r *Restream) RestartMonitors() {
 	go r.monitorClientHealth()
 	go r.StartStatsCollection()
+}
+
+// drainClient is the per-client goroutine that owns all writes to a single client's
+// HTTP response writer. It reads chunks from the client's bounded writeChan and
+// writes them to the socket sequentially. Exits cleanly when writeChan is closed
+// by RemoveClient, or removes itself if a write or flush fails.
+func (r *Restream) drainClient(client *types.RestreamClient) {
+	for chunk := range client.WriteChan {
+		writeErr := func() (err error) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					err = fmt.Errorf("write/flush panic recovered: %v", rec)
+				}
+			}()
+			_, err = client.Writer.Write(chunk)
+			if err != nil {
+				return err
+			}
+			client.Flusher.Flush()
+			return nil
+		}()
+
+		if writeErr != nil {
+			logger.Debug("{restream/restream - drainClient} Channel %s: Write error for client %s, removing: %v",
+				r.Channel.Name, client.Id, writeErr)
+			r.RemoveClient(client.Id)
+			return
+		}
+
+		client.LastSeen.Store(time.Now().Unix())
+	}
+
+	logger.Debug("{restream/restream - drainClient} Channel %s: Drain goroutine exiting for client %s",
+		r.Channel.Name, client.Id)
 }

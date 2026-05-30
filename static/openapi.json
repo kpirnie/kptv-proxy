@@ -62,6 +62,7 @@
           "ffmpegPreInput":        { "type": "array",   "items": { "type": "string" } },
           "ffmpegPreOutput":       { "type": "array",   "items": { "type": "string" } },
           "responseHeaderTimeout": { "type": "string",  "example": "10s" },
+          "slowClientBufferChunks": { "type": "integer", "example": 16 },
           "sources": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/Source" }
