@@ -9,8 +9,8 @@ chown -R $APP_USER:$APP_USER $APP_PATH*;
 
 # make sure node modules are up to date, and we build the css
 rm -rf $APP_PATH/node_modules
-devtools npm install
-devtools npm run build
+npm install
+npm run build
 
 # make sure we own it one last time
 chown -R $APP_USER:$APP_USER $APP_PATH*;
