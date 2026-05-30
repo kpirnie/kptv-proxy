@@ -1008,8 +1008,6 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 // Returns:
 //   - int: number of active clients remaining after distribution
 func (r *Restream) DistributeToClients(data []byte) int {
-	// logger.Debug("{restream/restream - DistributeToClients} Distributing %d bytes to clients for channel %s", len(data), r.Channel.Name)
-
 	activeClients := 0
 	var failedClients []string
 
@@ -1017,25 +1015,36 @@ func (r *Restream) DistributeToClients(data []byte) int {
 		client := value
 		clientID := key
 
-		// recover from any panic on this client's writer or flusher — a client
-		// disconnecting mid-stream can cause the HTTP server's chunked response
-		// finalization to race with our write/flush, corrupting bufio internal
-		// state and producing a double panic that kills the process
-		writeErr := func() (err error) {
-			defer func() {
-				if rec := recover(); rec != nil {
-					err = fmt.Errorf("write/flush panic recovered: %v", rec)
+		// Per-client write with backpressure timeout to prevent slow clients
+		// from blocking the distribution loop and starving fast clients.
+		done := make(chan error, 1)
+		go func() {
+			done <- func() (err error) {
+				defer func() {
+					if rec := recover(); rec != nil {
+						err = fmt.Errorf("write/flush panic recovered: %v", rec)
+					}
+				}()
+				_, err = client.Writer.Write(data)
+				if err != nil {
+					return err
 				}
+				client.Flusher.Flush()
+				return nil
 			}()
-			_, err = client.Writer.Write(data)
-			if err != nil {
-				return err
-			}
-			client.Flusher.Flush()
-			return nil
 		}()
 
-		if writeErr != nil {
+		select {
+		case writeErr := <-done:
+			if writeErr != nil {
+				failedClients = append(failedClients, clientID)
+				return true
+			}
+		case <-time.After(constants.Internal.ClientWriteTimeout):
+			// Slow client: socket buffer full and not draining fast enough.
+			// Drop the connection rather than blocking all other clients.
+			logger.Warn("{restream/restream - DistributeToClients} Channel %s: Client %s write timed out, dropping slow client",
+				r.Channel.Name, clientID)
 			failedClients = append(failedClients, clientID)
 			return true
 		}
@@ -1049,8 +1058,6 @@ func (r *Restream) DistributeToClients(data []byte) int {
 		logger.Debug("{restream/restream - DistributeToClients} Channel %s: Removing failed client %s", r.Channel.Name, clientID)
 		r.RemoveClient(clientID)
 	}
-
-	// logger.Debug("{restream/restream - DistributeToClients} Successfully distributed to %d clients for channel %s", activeClients, r.Channel.Name)
 
 	return activeClients
 }

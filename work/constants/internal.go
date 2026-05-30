@@ -22,9 +22,10 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	// work/restream/restream.go — StreamFromSource() / stream loop
 	// -------------------------------------------------------------------------
-	StreamMaxAttemptsMultiplier       int   // Multiplier applied to stream count to derive max total attempts
-	StreamConsecutiveFailureThreshold int   // Consecutive failures before a stream is marked for auto-blocking
-	StreamMinViableBytes              int64 // Minimum bytes transferred for a stream attempt to be deemed viable
+	StreamMaxAttemptsMultiplier       int           // Multiplier applied to stream count to derive max total attempts
+	StreamConsecutiveFailureThreshold int           // Consecutive failures before a stream is marked for auto-blocking
+	StreamMinViableBytes              int64         // Minimum bytes transferred for a stream attempt to be deemed viable
+	ClientWriteTimeout                time.Duration // Max time to wait for a single client write before dropping slow client
 
 	// -------------------------------------------------------------------------
 	// work/restream/restream.go — streamFromURL()
@@ -266,6 +267,7 @@ var Internal = InternalConstants{
 	MaxClientSessionDuration: 24 * time.Hour,
 	StreamJitterMinMs:        50 * time.Millisecond,
 	StreamJitterRangeMs:      450 * time.Millisecond,
+	ClientWriteTimeout:       2 * time.Second,
 
 	// -------------------------------------------------------------------------
 	// Stream loop / source selection
