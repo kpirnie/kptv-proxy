@@ -805,6 +805,35 @@
         </div>
     </div>
 
+    <!-- EPG channel mapping modal -->
+    <div id="epg-channel-modal" class="modal">
+        <div class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+            <div class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="epg-channel-modal-title">EPG Channel Mapping</h2>
+                <button class="text-gray-400 hover:text-white" id="close-epg-channel-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <div id="epg-channel-current" class="mb-4 p-3 bg-kptv-gray-light border border-kptv-border rounded text-sm text-gray-300"></div>
+                <input
+                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue mb-3"
+                    type="text" id="epg-channel-search" placeholder="Search by channel ID, name, or tvg-id...">
+                <div id="epg-channel-results" class="space-y-1 max-h-96 overflow-y-auto"></div>
+            </div>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between">
+                <button
+                    class="px-4 py-2 bg-red-900 border border-red-700 hover:bg-red-800 rounded transition-colors text-sm"
+                    id="clear-epg-channel-btn" type="button">Clear Mapping</button>
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-epg-channel-btn" type="button">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- epg modal -->
     <div id="epg-modal" class="modal">
         <div

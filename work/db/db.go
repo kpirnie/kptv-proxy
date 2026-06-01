@@ -148,6 +148,14 @@ func initSchema(db *sql.DB) error {
 		permissions INTEGER NOT NULL DEFAULT 0
 	);
 
+
+	CREATE TABLE IF NOT EXISTS kp_channel_epg (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		channel     TEXT NOT NULL UNIQUE,
+		epg_id      TEXT NOT NULL DEFAULT '',
+		epg_name    TEXT NOT NULL DEFAULT ''
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_sd_lineups_account     ON kp_sd_lineups(sd_account_id);
 	CREATE INDEX IF NOT EXISTS idx_overrides_channel_hash ON kp_stream_overrides(channel, s_hash);	
 	CREATE INDEX IF NOT EXISTS idx_users_username ON kp_users(username);

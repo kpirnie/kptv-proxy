@@ -60,15 +60,23 @@ function renderEPGs(epgs) {
 
 /**
  * Opens the EPG modal for adding or editing an EPG source.
+ * Fetches fresh data from the API when editing to ensure the
+ * unobfuscated URL is populated correctly.
  * @param {number|null} epgIndex - Index of EPG to edit, or null for new
  */
-function showEPGModal(epgIndex = null) {
+async function showEPGModal(epgIndex = null) {
     const title = document.getElementById('epg-modal-title');
 
     if (epgIndex !== null) {
         title.textContent = 'Edit EPG';
-        if (adminConfig && adminConfig.epgs && adminConfig.epgs[epgIndex]) {
-            populateEPGForm(adminConfig.epgs[epgIndex], epgIndex);
+        try {
+            const epgs = await apiCall('/api/epgs');
+            if (epgs && epgs[epgIndex]) {
+                populateEPGForm(epgs[epgIndex], epgIndex);
+            }
+        } catch (error) {
+            showNotification('Failed to load EPG data', 'danger');
+            return;
         }
     } else {
         title.textContent = 'Add EPG';
@@ -127,6 +135,8 @@ async function saveEPG() {
         hideModal('epg-modal');
         showNotification('EPG saved successfully!', 'success');
         loadEPGs();
+        showNotification('EPG cache rebuilding, please hold...', 'warning');
+        await apiCall('/api/epgs/refresh', { method: 'POST' }); // refresh the EPG cache
         setTimeout(() => restartService(), 500);
     } catch (error) {
         showNotification('Failed to save EPG: ' + error.message, 'danger');
@@ -156,6 +166,8 @@ async function deleteEPG(index) {
         await apiCall(`/api/epgs/${id}`, { method: 'DELETE' });
         showNotification('EPG deleted successfully!', 'success');
         loadEPGs();
+        showNotification('EPG cache rebuilding, please hold...', 'warning');
+        await apiCall('/api/epgs/refresh', { method: 'POST' }); // refresh the EPG cache
         setTimeout(() => restartService(), 500);
     } catch (error) {
         showNotification('Failed to delete EPG', 'danger');

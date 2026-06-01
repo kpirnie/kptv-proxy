@@ -167,14 +167,17 @@ func (c *Cache) EPGRemainingTTL(key string) int {
 	return c.epg.remainingTTL(key)
 }
 
-// WarmUpEPG runs the fetch function in a background goroutine and writes
-// the result to disk.
-func (c *Cache) WarmUpEPG(fetchFunc func() string) {
+// WarmUpEPG runs the fetch function in a background goroutine, writes the
+// result to disk, then calls the optional onComplete callback with the data.
+func (c *Cache) WarmUpEPG(fetchFunc func() string, onComplete func(string)) {
 	go func() {
 		data := fetchFunc()
 		if data != "" {
 			c.SetEPG("merged", data)
 			logger.Info("EPG warmup complete, cached to disk")
+			if onComplete != nil {
+				onComplete(data)
+			}
 		}
 	}()
 }

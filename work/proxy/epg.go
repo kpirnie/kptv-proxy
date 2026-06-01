@@ -6,6 +6,7 @@ import (
 	"io"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
+	"kptv-proxy/work/epgindex"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/schedulesdirect"
 	"net/http"
@@ -322,6 +323,8 @@ func (sp *StreamProxy) FetchAndMergeEPG() string {
 
 	logger.Debug("{proxy/epg - FetchAndMergeEPG} Merged EPG complete: %d channels, %d programmes (%d bytes)",
 		len(allChannels), len(allProgrammes), result.Len())
+
+	// return the EPG
 	return result.String()
 }
 
@@ -333,11 +336,12 @@ func (sp *StreamProxy) FetchAndMergeEPG() string {
 func (sp *StreamProxy) StartEPGWarmup() {
 	logger.Debug("{proxy/epg - StartEPGWarmup} Running initial EPG cache warmup")
 
-	// run the initial warmup synchronously so EPG data is ready at startup
+	// initial warmup
 	sp.Cache.WarmUpEPG(func() string {
 		return sp.FetchAndMergeEPG()
+	}, func(data string) {
+		epgindex.Rebuild(data)
 	})
-
 	logger.Debug("{proxy/epg - StartEPGWarmup} Initial warmup complete, scheduling 12-hour refresh cycle")
 
 	// schedule periodic background refreshes every 12 hours
@@ -346,8 +350,12 @@ func (sp *StreamProxy) StartEPGWarmup() {
 		defer ticker.Stop()
 		for range ticker.C {
 			logger.Debug("{proxy/epg - StartEPGWarmup} Starting scheduled EPG refresh")
+
+			// scheduled refresh
 			sp.Cache.WarmUpEPG(func() string {
 				return sp.FetchAndMergeEPG()
+			}, func(data string) {
+				epgindex.Rebuild(data)
 			})
 			logger.Debug("{proxy/epg - StartEPGWarmup} Scheduled EPG refresh complete")
 		}

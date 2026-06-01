@@ -55,6 +55,14 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api/epgs/{id}", users.RequireAuthWithPerm(users.PermEPGs, corsMiddleware(handleUpdateEPG(sp)))).Methods("PUT", "OPTIONS")
 	router.HandleFunc("/api/epgs/{id}", users.RequireAuthWithPerm(users.PermEPGs, corsMiddleware(handleDeleteEPG(sp)))).Methods("DELETE", "OPTIONS")
 
+	// EPG channel mapping endpoints
+	router.HandleFunc("/api/channels/{channel}/epg", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(middleware.GzipMiddleware(handleGetChannelEPG(sp))))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/epg", users.RequireAuthWithPerm(users.PermEPGs, corsMiddleware(handleSetChannelEPG(sp)))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/epg", users.RequireAuthWithPerm(users.PermEPGs, corsMiddleware(handleDeleteChannelEPG(sp)))).Methods("DELETE", "OPTIONS")
+	router.HandleFunc("/api/epg/search", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(middleware.GzipMiddleware(handleSearchEPGChannels(sp))))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels/epg-mappings", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(middleware.GzipMiddleware(handleGetAllChannelEPGs(sp))))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/epgs/refresh", users.RequireAuthWithPerm(users.PermEPGs, corsMiddleware(handleRefreshEPG(sp)))).Methods("POST", "OPTIONS")
+
 	// Schedules Direct endpoints
 	router.HandleFunc("/api/sd-accounts", users.RequireAuthWithPerm(users.PermSD, corsMiddleware(middleware.GzipMiddleware(handleGetSDAccounts(sp))))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/sd-accounts", users.RequireAuthWithPerm(users.PermSD, corsMiddleware(handleCreateSDAccount(sp)))).Methods("POST", "OPTIONS")

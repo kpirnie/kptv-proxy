@@ -11,7 +11,8 @@ function initModals() {
         { id: 'xc-account-modal', closeId: 'close-xc-account-modal', cancelId: 'cancel-xc-account-btn' },
         { id: 'sd-account-modal', closeId: 'close-sd-account-modal', cancelId: 'cancel-sd-account-btn' },
         { id: 'token-modal', closeId: 'close-token-modal', cancelId: 'cancel-token-btn' },
-        { id: 'token-reveal-modal', closeId: 'close-token-reveal-modal', cancelId: 'close-token-reveal-btn' }
+        { id: 'token-reveal-modal', closeId: 'close-token-reveal-modal', cancelId: 'close-token-reveal-btn' },
+        { id: 'epg-channel-modal', closeId: 'close-epg-channel-modal', cancelId: 'cancel-epg-channel-btn' },
     ];
 
     modals.forEach(({ id, closeId, cancelId }) => {

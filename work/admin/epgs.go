@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/db"
+	"kptv-proxy/work/epgindex"
 	"kptv-proxy/work/proxy"
 	"net/http"
 	"strconv"
@@ -169,5 +170,21 @@ func reloadEPGs(sp *proxy.StreamProxy) {
 			URL:   e.URL,
 			Order: e.SortOrder,
 		}
+	}
+}
+
+// handleRefreshEPG triggers an immediate EPG cache refresh in the background.
+func handleRefreshEPG(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		sp.Cache.WarmUpEPG(func() string {
+			return sp.FetchAndMergeEPG()
+		}, func(data string) {
+			epgindex.Rebuild(data)
+		})
+
+		addLogEntry("info", "EPG cache refresh triggered via admin")
+		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 	}
 }

@@ -422,6 +422,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSDAccounts();
     loadTokens();
 
+    loadEPGMappings();
+
     startAutoRefresh();
 
     document.getElementById('footer-year').textContent = new Date().getFullYear();
