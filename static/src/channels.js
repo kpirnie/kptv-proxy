@@ -151,6 +151,9 @@ async function loadAllChannels() {
 function renderAllChannels(channels) {
     const container = document.getElementById('all-channels-list');
 
+    // sort the channels by name
+    channels.sort((a, b) => a.name.localeCompare(b.name));
+
     if (channels.length === 0) {
         container.innerHTML = '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">No channels found</div>';
         return;
