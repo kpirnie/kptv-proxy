@@ -138,6 +138,11 @@ func (bp *BufferPool) Put(buf *ByteBuffer) {
 		return
 	}
 
+	// Decrement outstanding for any buffer that came from Get(), whether or
+	// not it gets pooled below — otherwise discarded buffers inflate the count
+	// and trigger false leak warnings at shutdown.
+	bp.outstanding.Add(-1)
+
 	// Discard oversized buffers to prevent memory bloat from accumulating
 	// in the pool during long-running streaming sessions
 	if cap(buf.B) > bp.bufferSize*constants.Internal.OversizedBufferMultiplier {
@@ -146,9 +151,6 @@ func (bp *BufferPool) Put(buf *ByteBuffer) {
 
 	// Reset length
 	buf.B = buf.B[:0]
-
-	// leak tracker
-	bp.outstanding.Add(-1)
 
 	// return to pool for reuse
 	bp.pool.Put(buf)
