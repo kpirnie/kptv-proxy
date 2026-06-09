@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -60,13 +61,14 @@ var (
 
 // Logger provides leveled logging with thread-safe configuration
 type Logger struct {
-	level LogLevel
-	mu    sync.RWMutex
+	level atomic.Int32
 }
 
 // New creates a new Logger instance with the specified log level
 func New(level string) *Logger {
-	return &Logger{level: ParseLogLevel(level)}
+	l := &Logger{}
+	l.level.Store(int32(ParseLogLevel(level)))
+	return l
 }
 
 // Init reads the DEBUG environment variable and configures the default logger
@@ -82,13 +84,14 @@ func Init() {
 
 // IsDebug returns true if the default logger is set to DEBUG level
 func IsDebug() bool {
-	return getDefaultLogger().level == DEBUG
+	return LogLevel(getDefaultLogger().level.Load()) == DEBUG
 }
 
 // getDefaultLogger returns the singleton default logger instance
 func getDefaultLogger() *Logger {
 	once.Do(func() {
-		defaultLogger = &Logger{level: INFO}
+		defaultLogger = &Logger{}
+		defaultLogger.level.Store(int32(INFO))
 	})
 	return defaultLogger
 }
@@ -123,16 +126,12 @@ func GetLogLevel() string {
 
 // SetLevel updates this logger instance's minimum level
 func (l *Logger) SetLevel(level string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.level = ParseLogLevel(level)
+	l.level.Store(int32(ParseLogLevel(level)))
 }
 
 // GetLevel retrieves this logger instance's current level as a string
 func (l *Logger) GetLevel() string {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	switch l.level {
+	switch LogLevel(l.level.Load()) {
 	case DEBUG:
 		return "DEBUG"
 	case WARN:
@@ -150,12 +149,11 @@ func (l *Logger) GetLevel() string {
 
 // shouldLog determines whether a message at the specified level should be logged
 func (l *Logger) shouldLog(level LogLevel) bool {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	if l.level == NONE || level == NONE {
+	cur := LogLevel(l.level.Load())
+	if cur == NONE || level == NONE {
 		return false
 	}
-	return level >= l.level
+	return level >= cur
 }
 
 // addToBuffer appends a log entry to the circular buffer

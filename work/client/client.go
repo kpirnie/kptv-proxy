@@ -73,8 +73,6 @@ func NewHeaderSettingClient(responseHeaderTimeout time.Duration) *HeaderSettingC
 //   - *http.Response: the HTTP response
 //   - error: any error encountered while making the request
 func (hsc *HeaderSettingClient) Do(req *http.Request) (*http.Response, error) {
-	logger.Debug("{client - Do} execute the http request")
-
 	// return the actual execution
 	return hsc.Client.Do(req)
 }
@@ -93,7 +91,6 @@ func (hsc *HeaderSettingClient) Do(req *http.Request) (*http.Response, error) {
 //   - *http.Response: the HTTP response
 //   - error: any error encountered while making the request
 func (hsc *HeaderSettingClient) DoWithHeaders(req *http.Request, userAgent, origin, referrer string) (*http.Response, error) {
-	logger.Debug("{client - DoWithHeaders} execute the http request after setting the headers")
 	// Set common headers before executing
 	hsc.setHeaders(req, userAgent, origin, referrer)
 	return hsc.Client.Do(req)
@@ -109,8 +106,6 @@ func (hsc *HeaderSettingClient) DoWithHeaders(req *http.Request, userAgent, orig
 //   - origin: optional Origin value
 //   - referrer: optional Referer value
 func (hsc *HeaderSettingClient) setHeaders(req *http.Request, userAgent, origin, referrer string) {
-	logger.Debug("{client - setHeaders} set the default headers")
-
 	// Apply User-Agent if provided
 	if userAgent != "" {
 		req.Header.Set("User-Agent", userAgent)
@@ -192,7 +187,6 @@ func (crw *CustomResponseWriter) Write(b []byte) (int, error) {
 	if !crw.WroteHeader {
 		crw.WriteHeader(http.StatusOK)
 	}
-	logger.Debug("{client - Write} write the http response")
 	// return the number of bytes written
 	return crw.ResponseWriter.Write(b)
 }
@@ -204,7 +198,6 @@ func (crw *CustomResponseWriter) Flush() {
 
 	// Check if underlying writer supports Flusher
 	if flusher, ok := crw.ResponseWriter.(http.Flusher); ok {
-		logger.Debug("{client - Flush} flush the http response")
 		flusher.Flush()
 	}
 }
