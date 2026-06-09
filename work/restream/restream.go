@@ -172,11 +172,6 @@ func (r *Restream) RemoveClient(id string) {
 			close(client.Done)
 		}
 
-		// Remove the client from the buffer's internal tracking - with nil check
-		if r.Buffer != nil && !r.Buffer.IsDestroyed() {
-			r.Buffer.RemoveClient(id)
-		}
-
 		// Count remaining clients
 		clientCount := 0
 		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
@@ -1210,18 +1205,7 @@ func (r *Restream) resetBufferSafely() {
 	if r.Buffer != nil && !r.Buffer.IsDestroyed() {
 		r.Buffer.Reset()
 
-		// Zero out all client read positions so they don't stall waiting
-		// for a write position that no longer exists after the reset
-		r.Clients.Range(func(clientID string, _ *types.RestreamClient) bool {
-			r.Buffer.UpdateClientPosition(clientID, r.Buffer.GetWritePosition())
-			return true
-		})
-
-		logger.Debug("{restream/restream - resetBufferSafely} Channel %s: Buffer reset, zeroed %d client positions", r.Channel.Name, func() int {
-			count := 0
-			r.Clients.Range(func(_ string, _ *types.RestreamClient) bool { count++; return true })
-			return count
-		}())
+		logger.Debug("{restream/restream - resetBufferSafely} Channel %s: Buffer reset", r.Channel.Name)
 	} else if r.Buffer == nil || r.Buffer.IsDestroyed() {
 
 		// Only create new buffer if none exists

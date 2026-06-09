@@ -176,7 +176,6 @@ type RingBuffer struct {
 	data      []byte       // Circular buffer storage
 	size      int64        // Total buffer capacity in bytes
 	writePos  atomic.Int64 // Current write position (monotonically increasing, modulo size for indexing)
-	readPos   sync.Map     // Per-client read positions (clientID string -> int64 position)
 	destroyed atomic.Bool  // Destruction flag preventing operations on invalidated buffers
 	mu        sync.RWMutex // Read-write mutex protecting data slice access
 }
@@ -242,54 +241,6 @@ func (rb *RingBuffer) Write(data []byte) {
 	rb.writePos.Add(dataLen)
 }
 
-// GetClientPosition returns the current read position for a specific client.
-// If the client doesn't exist, it initializes and returns position 0.
-// Returns 0 if the buffer is destroyed.
-//
-// Parameters:
-//   - clientID: unique identifier for the client reader
-//
-// Returns:
-//   - int64: current read position for the specified client
-func (rb *RingBuffer) GetClientPosition(clientID string) int64 {
-	if rb.destroyed.Load() {
-		return 0
-	}
-
-	// Load existing position or atomically store initial position of 0
-	pos, _ := rb.readPos.LoadOrStore(clientID, int64(0))
-	return pos.(int64)
-}
-
-// UpdateClientPosition updates the read position for a specific client.
-// Does nothing if the buffer is destroyed.
-//
-// Parameters:
-//   - clientID: unique identifier for the client reader
-//   - pos: new read position to set for the client
-func (rb *RingBuffer) UpdateClientPosition(clientID string, pos int64) {
-	if rb.destroyed.Load() {
-		return
-	}
-
-	// store it
-	rb.readPos.Store(clientID, pos)
-}
-
-// RemoveClient removes a client's read position from the buffer, freeing the
-// associated tracking resources. Does nothing if the buffer is destroyed.
-//
-// Parameters:
-//   - clientID: unique identifier for the client reader to remove
-func (rb *RingBuffer) RemoveClient(clientID string) {
-	if rb.destroyed.Load() {
-		return
-	}
-
-	// delete it
-	rb.readPos.Delete(clientID)
-}
-
 // Reset clears the buffer write position and removes all client read positions,
 // effectively resetting the buffer to its initial empty state. Thread-safe through
 // exclusive lock acquisition, but will not reset if the buffer has been destroyed.
@@ -310,11 +261,6 @@ func (rb *RingBuffer) Reset() {
 	// Reset write position to beginning
 	rb.writePos.Store(0)
 
-	// Remove all client read positions
-	rb.readPos.Range(func(key, value interface{}) bool {
-		rb.readPos.Delete(key)
-		return true
-	})
 }
 
 // Destroy permanently invalidates the buffer by clearing all client positions,
@@ -331,12 +277,6 @@ func (rb *RingBuffer) Destroy() {
 	// thread safe lock
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-
-	// Remove all client read positions
-	rb.readPos.Range(func(key, value interface{}) bool {
-		rb.readPos.Delete(key)
-		return true
-	})
 
 	// Release data slice for garbage collection
 	if rb.data != nil {
