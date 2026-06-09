@@ -15,6 +15,7 @@ import (
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/users"
 	"kptv-proxy/work/utils"
+	//_ "net/http/pprof"
 )
 
 func main() {
@@ -65,6 +66,9 @@ func main() {
 	// Register all HTTP routes: playlists, streams, XC API, EPG, metrics, admin, HDHomeRun
 	router := mux.NewRouter()
 	app.RegisterRoutes(router, proxyInstance)
+
+	// expose net/http/pprof under /debug/pprof/ for profiling
+	// router.PathPrefix("/debug/pprof/").Handler(http.DefaultServeMux)
 
 	// set the application address and port
 	addr := fmt.Sprintf(":%d", constants.Internal.ServerPort)
