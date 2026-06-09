@@ -308,9 +308,28 @@ func (sp *StreamProxy) FetchAndMergeEPG() string {
 		return ""
 	}
 
+	const (
+		epgHeader = `<?xml version="1.0" encoding="UTF-8"?>` + "\n" +
+			`<tv generator-info-name="KPTV-Proxy">` + "\n"
+		epgFooter = "</tv>"
+	)
+
+	// Pre-size the builder to the exact final length so WriteString allocates
+	// its backing array once. Without this, the builder grows by repeated
+	// doubling, transiently holding both the old and new (~400MB) buffers — the
+	// bulk of the EPG memory spike. Pre-sizing caps the peak at a single buffer.
+	total := len(epgHeader) + len(epgFooter)
+	for _, ch := range allChannels {
+		total += len(ch)
+	}
+	for _, prog := range allProgrammes {
+		total += len(prog)
+	}
+
 	var result strings.Builder
-	result.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-	result.WriteString(`<tv generator-info-name="KPTV-Proxy">` + "\n")
+	result.Grow(total)
+
+	result.WriteString(epgHeader)
 
 	for _, ch := range allChannels {
 		result.WriteString(ch)
@@ -319,7 +338,7 @@ func (sp *StreamProxy) FetchAndMergeEPG() string {
 		result.WriteString(prog)
 	}
 
-	result.WriteString("</tv>")
+	result.WriteString(epgFooter)
 
 	logger.Debug("{proxy/epg - FetchAndMergeEPG} Merged EPG complete: %d channels, %d programmes (%d bytes)",
 		len(allChannels), len(allProgrammes), result.Len())
