@@ -126,6 +126,7 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 	}
 
 	client.LastSeen.Store(time.Now().Unix())
+	client.LastProgress.Store(time.Now().Unix())
 	client.ConnectedAt = time.Now().Unix()
 	r.Clients.Store(id, client)
 	r.LastActivity.Store(time.Now().Unix())
@@ -227,7 +228,6 @@ func (r *Restream) stopStream() {
 
 		// Reset streaming context and index for future restarts
 		r.Ctx, r.Cancel = context.WithCancel(context.Background())
-		atomic.StoreInt32(&r.CurrentIndex, 0)
 
 	}
 }
@@ -363,7 +363,7 @@ func (r *Restream) Stream() {
 		// Bail if no clients
 		if clientCount == 0 {
 			logger.Debug("{restream/restream - Stream} Channel %s: No clients remaining", r.Channel.Name)
-
+			r.LastStreamFailed.Store(true)
 			return
 		}
 
@@ -375,6 +375,13 @@ func (r *Restream) Stream() {
 		if !r.ManualSwitch.Load() {
 			r.resetBufferSafely()
 		}
+
+		// Reset each client's grace period timestamp for the new stream attempt
+		// so burst output at stream-switch time doesn't trigger a slow-client drop.
+		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
+			value.ConnectedAt = time.Now().Unix()
+			return true
+		})
 
 		// Attempt to stream from source
 		logger.Debug("{restream/restream - Stream} Channel %s: Attempting stream %d, manual switch flag: %t",
@@ -449,6 +456,7 @@ func (r *Restream) Stream() {
 
 				if clientCount == 0 {
 					// no clients, legitimate stop
+					r.LastStreamFailed.Store(false)
 					return
 				}
 
@@ -456,6 +464,14 @@ func (r *Restream) Stream() {
 				totalAttempts = 0
 				consecutiveFailures = make(map[int]int)
 				triedPreferred = false
+				r.LastStreamFailed.Store(false)
+
+				// Pause before restarting to prevent rapid cycling on short .ts
+				// segments — gives the client's WriteChan time to drain fully.
+				// Use Sleep instead of select on r.Ctx.Done() since stopStream
+				// cancels and immediately recreates the context, causing a false exit.
+				time.Sleep(constants.Internal.EOFRestartDelay)
+
 				continue
 			}
 
@@ -983,6 +999,13 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 				}
 				logger.Debug("{restream/restream - streamFromURL} Channel %s: Stream ended (%s, %d bytes)", r.Channel.Name, status, totalBytes)
 
+				// Pause at EOF to let the client's WriteChan drain before the
+				// caller restarts the stream — prevents burst cycling from
+				// overwhelming the queue on short .ts segments.
+				if success {
+					time.Sleep(constants.Internal.EOFRestartDelay)
+				}
+
 				return success, totalBytes
 			}
 
@@ -1010,7 +1033,6 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 // stalling the distribution loop and degrading faster clients.
 func (r *Restream) DistributeToClients(data []byte) int {
 	activeClients := 0
-	var failedClients []string
 
 	// Copy the chunk once so every client channel holds an independent slice;
 	// the source buffer may be reused by the streaming loop immediately after return.
@@ -1019,30 +1041,31 @@ func (r *Restream) DistributeToClients(data []byte) int {
 
 	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
 		client := value
-		clientID := key
 
 		select {
 		case client.WriteChan <- chunk:
+			// Successful enqueue counts as progress; resets the slow-client clock.
+			client.LastProgress.Store(time.Now().Unix())
 			activeClients++
 		default:
-			// Give newly connected clients a grace period before dropping them;
-			// brand-new TCP connections hit slow start and can't drain fast enough
-			// to keep up with a burst even on LAN.
-			if time.Now().Unix()-client.ConnectedAt < int64(constants.Internal.SlowClientGracePeriod.Seconds()) {
-				activeClients++ // count as active, don't drop yet
-			} else {
-				logger.Warn("{restream/restream - DistributeToClients} Channel %s: Client %s write buffer full, dropping slow client",
-					r.Channel.Name, clientID)
-				failedClients = append(failedClients, clientID)
+			// Channel full: the client is briefly behind the live edge, common on
+			// bursty or high-bitrate (e.g. 4K HEVC) sources that deliver faster than
+			// realtime. Rather than drop the client, discard the oldest queued chunk
+			// and enqueue the newest so it stays on the live edge. TS decoders resync
+			// after a gap, trading a momentary artifact for uninterrupted playback.
+			select {
+			case <-client.WriteChan: // shed oldest chunk
+			default:
 			}
+			select {
+			case client.WriteChan <- chunk:
+				client.LastProgress.Store(time.Now().Unix())
+			default:
+			}
+			activeClients++ // keep the client; never drop on a full buffer alone
 		}
 		return true
 	})
-
-	for _, clientID := range failedClients {
-		logger.Debug("{restream/restream - DistributeToClients} Channel %s: Removing slow client %s", r.Channel.Name, clientID)
-		r.RemoveClient(clientID)
-	}
 
 	return activeClients
 }

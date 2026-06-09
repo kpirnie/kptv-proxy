@@ -230,6 +230,14 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 				success := totalBytes > constants.Internal.StreamMinViableBytes
 				logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Stream ended for channel %s: %d bytes transferred (success: %v)",
 					r.Channel.Name, totalBytes, success)
+
+				// Pause at EOF to let the client's WriteChan drain before the
+				// caller restarts the stream — prevents burst cycling from
+				// overwhelming the queue on short .ts segments.
+				if success {
+					time.Sleep(constants.Internal.EOFRestartDelay)
+				}
+
 				return success, totalBytes
 			}
 

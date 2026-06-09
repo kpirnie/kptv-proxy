@@ -97,6 +97,7 @@ type Restreamer struct {
 	ManualSwitchPreventStop atomic.Bool                                // try to prevent stopping playback during a manual switch
 	Stats                   *StreamStats                               // setup the stats
 	Switching               atomic.Bool                                // watcher-initiated switch in progress, prevents premature stopStream
+	LastStreamFailed        atomic.Bool                                // true if Stream() last exited due to stream failure (not clean client disconnect)
 	SwitchNotify            chan struct{}                              // closed on watcher switch to force client reconnection
 
 }
@@ -110,13 +111,14 @@ type Restreamer struct {
 // loop from per-client TCP socket drain speed. When the channel is full the client
 // is considered too slow and will be dropped.
 type RestreamClient struct {
-	Id          string              // Unique client identifier for tracking and debugging purposes
-	Writer      http.ResponseWriter // HTTP response writer for sending TS/HLS data to the client
-	Flusher     http.Flusher        // HTTP flusher interface for real-time data streaming without buffering delays
-	Done        chan bool           // Completion signal channel for coordinated client disconnection and cleanup
-	LastSeen    atomic.Int64        // Atomic Unix timestamp of most recent client activity for inactivity detection
-	WriteChan   chan []byte         // Bounded outbound chunk queue; full = client too slow to keep up
-	ConnectedAt int64               // Unix timestamp when client was registered, used for new-client grace period
+	Id           string              // Unique client identifier for tracking and debugging purposes
+	Writer       http.ResponseWriter // HTTP response writer for sending TS/HLS data to the client
+	Flusher      http.Flusher        // HTTP flusher interface for real-time data streaming without buffering delays
+	Done         chan bool           // Completion signal channel for coordinated client disconnection and cleanup
+	LastSeen     atomic.Int64        // Atomic Unix timestamp of most recent client activity for inactivity detection
+	WriteChan    chan []byte         // Bounded outbound chunk queue; full = client too slow to keep up
+	ConnectedAt  int64               // Unix timestamp when client was registered, used for new-client grace period
+	LastProgress atomic.Int64        // Unix timestamp of last successful WriteChan enqueue; full channel past grace from this = slow client
 }
 
 // StreamHealthData contains comprehensive stream quality and format information

@@ -636,7 +636,7 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 		}
 		// If not running, reset CurrentIndex to PreferredStreamIndex so the
 		// next Stream() call starts from the correct custom-ordered position.
-		if !channel.Restreamer.Running.Load() {
+		if !channel.Restreamer.Running.Load() && !channel.Restreamer.LastStreamFailed.Load() {
 			preferred := atomic.LoadInt32(&channel.PreferredStreamIndex)
 			atomic.StoreInt32(&channel.Restreamer.CurrentIndex, preferred)
 		}
