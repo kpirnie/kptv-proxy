@@ -117,7 +117,6 @@ type RestreamClient struct {
 	Done         chan bool           // Completion signal channel for coordinated client disconnection and cleanup
 	LastSeen     atomic.Int64        // Atomic Unix timestamp of most recent client activity for inactivity detection
 	WriteChan    chan []byte         // Bounded outbound chunk queue; full = client too slow to keep up
-	ConnectedAt  int64               // Unix timestamp when client was registered, used for new-client grace period
 	LastProgress atomic.Int64        // Unix timestamp of last successful WriteChan enqueue; full channel past grace from this = slow client
 }
 

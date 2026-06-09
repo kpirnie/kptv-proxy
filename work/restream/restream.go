@@ -127,7 +127,6 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 
 	client.LastSeen.Store(time.Now().Unix())
 	client.LastProgress.Store(time.Now().Unix())
-	client.ConnectedAt = time.Now().Unix()
 	r.Clients.Store(id, client)
 	r.LastActivity.Store(time.Now().Unix())
 
@@ -375,13 +374,6 @@ func (r *Restream) Stream() {
 		if !r.ManualSwitch.Load() {
 			r.resetBufferSafely()
 		}
-
-		// Reset each client's grace period timestamp for the new stream attempt
-		// so burst output at stream-switch time doesn't trigger a slow-client drop.
-		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-			value.ConnectedAt = time.Now().Unix()
-			return true
-		})
 
 		// Attempt to stream from source
 		logger.Debug("{restream/restream - Stream} Channel %s: Attempting stream %d, manual switch flag: %t",
