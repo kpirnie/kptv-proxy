@@ -112,15 +112,21 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 		r.Clients = xsync.NewMapOf[string, *types.RestreamClient]()
 	}
 
+	writeChanDepth := r.Config.SlowClientBufferChunks
+	if r.Config.FFmpegMode {
+		writeChanDepth = constants.Internal.FFmpegClientBufferChunks
+	}
+
 	client := &types.RestreamClient{
 		Id:        id,
 		Writer:    w,
 		Flusher:   flusher,
 		Done:      make(chan bool),
-		WriteChan: make(chan []byte, r.Config.SlowClientBufferChunks),
+		WriteChan: make(chan []byte, writeChanDepth),
 	}
 
 	client.LastSeen.Store(time.Now().Unix())
+	client.ConnectedAt = time.Now().Unix()
 	r.Clients.Store(id, client)
 	r.LastActivity.Store(time.Now().Unix())
 
@@ -1017,13 +1023,18 @@ func (r *Restream) DistributeToClients(data []byte) int {
 
 		select {
 		case client.WriteChan <- chunk:
-			// Chunk queued successfully — client is keeping up.
 			activeClients++
 		default:
-			// Channel full: client cannot drain fast enough, drop it.
-			logger.Warn("{restream/restream - DistributeToClients} Channel %s: Client %s write buffer full, dropping slow client",
-				r.Channel.Name, clientID)
-			failedClients = append(failedClients, clientID)
+			// Give newly connected clients a grace period before dropping them;
+			// brand-new TCP connections hit slow start and can't drain fast enough
+			// to keep up with a burst even on LAN.
+			if time.Now().Unix()-client.ConnectedAt < int64(constants.Internal.SlowClientGracePeriod.Seconds()) {
+				activeClients++ // count as active, don't drop yet
+			} else {
+				logger.Warn("{restream/restream - DistributeToClients} Channel %s: Client %s write buffer full, dropping slow client",
+					r.Channel.Name, clientID)
+				failedClients = append(failedClients, clientID)
+			}
 		}
 		return true
 	})

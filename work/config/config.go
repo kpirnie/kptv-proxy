@@ -665,7 +665,7 @@ func validateAndSetDefaults(config *Config) {
 		config.FFmpegPreOutput = []string{}
 	}
 	if config.SlowClientBufferChunks <= 0 {
-		config.SlowClientBufferChunks = 16
+		config.SlowClientBufferChunks = 64
 	}
 	for i := range config.XCOutputAccounts {
 		if config.XCOutputAccounts[i].MaxConnections <= 0 {

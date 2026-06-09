@@ -110,12 +110,13 @@ type Restreamer struct {
 // loop from per-client TCP socket drain speed. When the channel is full the client
 // is considered too slow and will be dropped.
 type RestreamClient struct {
-	Id        string              // Unique client identifier for tracking and debugging purposes
-	Writer    http.ResponseWriter // HTTP response writer for sending TS/HLS data to the client
-	Flusher   http.Flusher        // HTTP flusher interface for real-time data streaming without buffering delays
-	Done      chan bool           // Completion signal channel for coordinated client disconnection and cleanup
-	LastSeen  atomic.Int64        // Atomic Unix timestamp of most recent client activity for inactivity detection
-	WriteChan chan []byte         // Bounded outbound chunk queue; full = client too slow to keep up
+	Id          string              // Unique client identifier for tracking and debugging purposes
+	Writer      http.ResponseWriter // HTTP response writer for sending TS/HLS data to the client
+	Flusher     http.Flusher        // HTTP flusher interface for real-time data streaming without buffering delays
+	Done        chan bool           // Completion signal channel for coordinated client disconnection and cleanup
+	LastSeen    atomic.Int64        // Atomic Unix timestamp of most recent client activity for inactivity detection
+	WriteChan   chan []byte         // Bounded outbound chunk queue; full = client too slow to keep up
+	ConnectedAt int64               // Unix timestamp when client was registered, used for new-client grace period
 }
 
 // StreamHealthData contains comprehensive stream quality and format information

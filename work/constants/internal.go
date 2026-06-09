@@ -53,6 +53,7 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	ClientHealthCheckInterval time.Duration // Ticker interval for the per-channel client health goroutine
 	ClientStaleTimeout        int64         // Seconds of inactivity before a client is removed as stale
+	SlowClientGracePeriod     time.Duration // How long after connect before a full WriteChan triggers a drop
 
 	// -------------------------------------------------------------------------
 	// work/restream/hls.go — streamHLSSegments()
@@ -82,6 +83,7 @@ type InternalConstants struct {
 	FFmpegMetricUpdateInterval   time.Duration // How often Prometheus metrics are updated in the FFmpeg loop
 	FFmpegMaxConsecutiveErrors   int           // Max consecutive read/write errors before the FFmpeg loop aborts
 	FFmpegLogProgressInterval    int64         // Byte interval at which FFmpeg streaming progress is logged
+	FFmpegClientBufferChunks     int           // WriteChan depth for FFmpeg mode clients (larger to absorb burst output)
 
 	// -------------------------------------------------------------------------
 	// work/restream/ffmpeg.go — stopFFmpeg()
@@ -302,6 +304,7 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	ClientHealthCheckInterval: 10 * time.Second,
 	ClientStaleTimeout:        120,
+	SlowClientGracePeriod:     5 * time.Second,
 
 	// -------------------------------------------------------------------------
 	// HLS
@@ -324,6 +327,7 @@ var Internal = InternalConstants{
 	FFmpegMetricUpdateInterval:   10 * time.Second,
 	FFmpegMaxConsecutiveErrors:   10,
 	FFmpegLogProgressInterval:    20 * 1024 * 1024, // 20MB
+	FFmpegClientBufferChunks:     128,
 
 	// -------------------------------------------------------------------------
 	// Stats
