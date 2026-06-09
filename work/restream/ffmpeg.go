@@ -68,7 +68,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Command args for channel %s: %v", r.Channel.Name, args)
 
 	// Create cancellable context for FFmpeg process
-	ctx, cancel := context.WithCancel(r.Ctx)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
 	// Setup FFmpeg command with process group for clean termination
@@ -148,7 +148,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	for {
 		// Check if context was cancelled (shutdown or manual switch)
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Context cancelled for channel %s (manual switch: %v, total bytes: %d)",
 				r.Channel.Name, r.ManualSwitch.Load(), totalBytes)
 			if r.ManualSwitch.Load() {

@@ -474,7 +474,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 
 					if now-lastActivity > constants.Internal.ProxyInactiveRestreamerTimeout {
 						select {
-						case <-channel.Restreamer.Ctx.Done():
+						case <-channel.Restreamer.Context().Done():
 							// context already cancelled, force clean after 60 seconds
 							if now-lastActivity > constants.Internal.ProxyForceCleanTimeout {
 								logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Force cleaning cancelled context after 60s", channel.Name)
@@ -482,7 +482,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 								if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {
 									channel.Restreamer.Buffer.Destroy()
 								}
-								channel.Restreamer.Cancel()
+								channel.Restreamer.CancelStream()
 								channel.Restreamer = nil
 							}
 						default:
@@ -497,7 +497,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 								logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Safely destroying buffer", channel.Name)
 								channel.Restreamer.Buffer.Destroy()
 							}
-							channel.Restreamer.Cancel()
+							channel.Restreamer.CancelStream()
 							channel.Restreamer = nil
 							logger.Debug("{proxy/stream - RestreamCleanup} Cleaned up inactive restreamer for channel: %s (idle %ds)", channel.Name, now-lastActivity)
 						}
@@ -530,7 +530,7 @@ func (sp *StreamProxy) RestreamCleanup() {
 						lastActivity := channel.Restreamer.LastActivity.Load()
 						if now-lastActivity > constants.Internal.ProxyClientInactivityTimeout {
 							logger.Debug("{proxy/stream - RestreamCleanup} No active clients for channel %s (idle %ds), stopping restreamer", channel.Name, now-lastActivity)
-							channel.Restreamer.Cancel()
+							channel.Restreamer.CancelStream()
 							channel.Restreamer.Running.Store(false)
 
 							if channel.Restreamer.Buffer != nil && !channel.Restreamer.Buffer.IsDestroyed() {

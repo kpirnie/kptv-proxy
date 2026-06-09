@@ -86,14 +86,13 @@ func NewRestreamer(channel *types.Channel, bufferSize int64, httpClient *client.
 		Channel:      channel,
 		SourceCache:  xsync.NewMapOf[string, *config.SourceConfig](),
 		Buffer:       bbuffer.NewRingBuffer(bufferSize),
-		Ctx:          ctx,
-		Cancel:       cancel,
 		HttpClient:   httpClient,
 		Config:       cfg,
 		RateLimiter:  rateLimiter,
 		Stats:        &types.StreamStats{},
 		SwitchNotify: make(chan struct{}),
 	}
+	base.SetContext(ctx, cancel)
 
 	base.LastActivity.Store(time.Now().Unix())
 	base.Running.Store(false)
@@ -215,7 +214,7 @@ func (r *Restream) stopStream() {
 		logger.Debug("{restream/restream - stopStream} Stopping stream for channel %s", r.Channel.Name)
 
 		// Cancel the current streaming context
-		r.Cancel()
+		r.CancelStream()
 		logger.Debug("{restream/restream - stopStream} Context cancelled for channel %s", r.Channel.Name)
 
 		// Destroy buffer if valid
@@ -226,7 +225,8 @@ func (r *Restream) stopStream() {
 		r.Buffer = nil
 
 		// Reset streaming context and index for future restarts
-		r.Ctx, r.Cancel = context.WithCancel(context.Background())
+		newCtx, newCancel := context.WithCancel(context.Background())
+		r.SetContext(newCtx, newCancel)
 
 	}
 }
@@ -296,7 +296,7 @@ func (r *Restream) Stream() {
 	// Loop until all attempts exhausted
 	for totalAttempts < maxTotalAttempts {
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			isManualSwitch := r.ManualSwitch.Load()
 
 			if isManualSwitch {
@@ -321,7 +321,8 @@ func (r *Restream) Stream() {
 				logger.Debug("{restream/restream - Stream} Channel %s: %d clients still connected, restarting immediately", r.Channel.Name, clientCount)
 
 				// Create fresh context for restart
-				r.Ctx, r.Cancel = context.WithCancel(context.Background())
+				newCtx, newCancel := context.WithCancel(context.Background())
+				r.SetContext(newCtx, newCancel)
 
 				// Reset running state and restart the streaming loop
 				r.Running.Store(false)
@@ -422,7 +423,7 @@ func (r *Restream) Stream() {
 				}
 
 				// Check if context was cancelled due to manual switch
-				if r.Ctx.Err() != nil {
+				if r.Context().Err() != nil {
 					isManualSwitch := r.ManualSwitch.Load()
 					if isManualSwitch {
 						logger.Debug("{restream/restream - Stream} Channel %s: Context cancelled due to manual switch, continuing", r.Channel.Name)
@@ -431,7 +432,7 @@ func (r *Restream) Stream() {
 
 						select {
 						case <-time.After(constants.Internal.RetryDelay):
-						case <-r.Ctx.Done():
+						case <-r.Context().Done():
 							return
 						}
 
@@ -516,7 +517,7 @@ func (r *Restream) Stream() {
 
 		// Sleep briefly before retry
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			isManualSwitch := r.ManualSwitch.Load()
 
 			if isManualSwitch {
@@ -537,7 +538,8 @@ func (r *Restream) Stream() {
 				logger.Debug("{restream/restream - Stream} Channel %s: %d clients connected, continuing failover", r.Channel.Name, clientCount)
 
 				// Create fresh context
-				r.Ctx, r.Cancel = context.WithCancel(context.Background())
+				newCtx, newCancel := context.WithCancel(context.Background())
+				r.SetContext(newCtx, newCancel)
 
 				// For manual switches, reset the flag
 				if isManualSwitch {
@@ -714,7 +716,7 @@ func (r *Restream) getStreamVariants(url string, source *config.SourceConfig) ([
 	}
 
 	// Apply a timeout context for safety (15s)
-	checkCtx, cancel := context.WithTimeout(r.Ctx, constants.Internal.StreamVariantFetchTimeout)
+	checkCtx, cancel := context.WithTimeout(r.Context(), constants.Internal.StreamVariantFetchTimeout)
 	defer cancel()
 	req = req.WithContext(checkCtx)
 
@@ -776,7 +778,7 @@ func (r *Restream) testAndStreamVariant(variant parser.StreamVariant, source *co
 	}
 
 	// Apply 10-second timeout for initial validation
-	testCtx, cancel := context.WithTimeout(r.Ctx, constants.Internal.StreamVariantTestTimeout)
+	testCtx, cancel := context.WithTimeout(r.Context(), constants.Internal.StreamVariantTestTimeout)
 	defer cancel()
 	testReq = testReq.WithContext(testCtx)
 
@@ -898,7 +900,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 		return false, 0
 	}
 
-	req = req.WithContext(r.Ctx)
+	req = req.WithContext(r.Context())
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Accept", "*/*")
 
@@ -925,7 +927,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 
 	for {
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			if r.ManualSwitch.Load() {
 				logger.Debug("{restream/restream - streamFromURL} Channel %s: Graceful switch", r.Channel.Name)
 				return true, totalBytes
@@ -1001,7 +1003,7 @@ func (r *Restream) streamFromURL(url string, source *config.SourceConfig) (bool,
 				return success, totalBytes
 			}
 
-			if r.Ctx.Err() != nil && r.ManualSwitch.Load() {
+			if r.Context().Err() != nil && r.ManualSwitch.Load() {
 				return true, totalBytes
 			}
 
@@ -1075,7 +1077,7 @@ func (r *Restream) SafeBufferWrite(data []byte) bool {
 
 	// Check if context cancelled due to manual switch - allow this to succeed
 	select {
-	case <-r.Ctx.Done():
+	case <-r.Context().Done():
 		if r.ManualSwitch.Load() {
 			logger.Debug("{restream/restream - SafeBufferWrite} Channel %s: Buffer write during manual switch, allowing success", r.Channel.Name)
 			return true // Don't treat manual switch cancellation as buffer failure
@@ -1103,7 +1105,7 @@ func (r *Restream) monitorClientHealth() {
 
 	for {
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			logger.Debug("{restream/restream - monitorClientHealth} Health monitor stopping for channel %s", r.Channel.Name)
 			return
 		case <-ticker.C:
@@ -1178,14 +1180,11 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 
 	logger.Debug("{restream/restream - ForceStreamSwitch} Channel %s: Forcing switch to stream %d with %d clients", r.Channel.Name, newIndex, clientCount)
 
-	// capture the old cancel before overwriting it
-	oldCancel := r.Cancel
-
-	// create new context before cancelling old one to eliminate the gap
-	// where Ctx is cancelled but no replacement exists yet
+	// create new context and install it atomically before cancelling the old
+	// one, eliminating the gap where the context is cancelled but no
+	// replacement exists yet. SetContext returns the previous bundle.
 	newCtx, newCancel := context.WithCancel(context.Background())
-	r.Ctx = newCtx
-	r.Cancel = newCancel
+	oldBundle := r.SetContext(newCtx, newCancel)
 
 	// restart background monitors since they are tied to the previous context
 	// and will have exited when it was cancelled
@@ -1193,7 +1192,9 @@ func (r *Restream) ForceStreamSwitch(newIndex int) {
 
 	// cancel the OLD context so the running goroutine gets the stop signal,
 	// leaving the new context intact for the restart
-	oldCancel()
+	if oldBundle != nil && oldBundle.Cancel != nil {
+		oldBundle.Cancel()
+	}
 
 	// Now safe to destroy the buffer since the streaming loop is stopping
 	if r.Buffer != nil && !r.Buffer.IsDestroyed() {
@@ -1255,7 +1256,7 @@ func (r *Restream) streamFallbackVideo() {
 
 	for {
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: Context cancelled", r.Channel.Name)
 
 			return
@@ -1282,7 +1283,7 @@ func (r *Restream) streamFallbackVideo() {
 
 		// Brief pause before restarting loop
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			return
 		case <-time.After(constants.Internal.FallbackVideoLoopDelay):
 			continue
@@ -1332,7 +1333,7 @@ func (r *Restream) streamLocalFallback(filePath string) {
 
 	for {
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			logger.Debug("{restream/restream - streamLocalFallback} Channel %s: Context cancelled after %d bytes", r.Channel.Name, totalBytes)
 
 			return

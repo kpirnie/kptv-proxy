@@ -484,7 +484,7 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 	// normal switching are expected and should not trigger failover
 	if sw.restreamer.Running.Load() {
 		select {
-		case <-sw.restreamer.Ctx.Done():
+		case <-sw.restreamer.Context().Done():
 			if time.Since(sw.lastStreamStart) > constants.Internal.WatcherContextStuckTimeout {
 				logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Context cancelled and stream has been running for >300s",
 					sw.channelName)
@@ -635,25 +635,22 @@ func (sw *StreamWatcher) forceStreamRestart(newIndex int) {
 	// does not misclassify the context cancellation as a failure
 	sw.restreamer.ManualSwitch.Store(true)
 
-	// capture old cancel before reassignment so the running goroutine
-	// receives the stop signal during the deadline-wait below
-	oldCancel := sw.restreamer.Cancel
-
-	// Gracefully terminate current streaming operations
+	// Gracefully terminate current streaming operations. CancelStream cancels
+	// whatever context is currently installed (the old one), signalling the
+	// running goroutine to exit during the deadline-wait below.
 	deadline := time.Now().Add(constants.Internal.WatcherRestartDeadline)
 	for time.Now().Before(deadline) {
 		if !sw.restreamer.Running.Load() {
 			break
 		}
 		// signal the old goroutine to exit on first iteration, then poll
-		oldCancel()
+		sw.restreamer.CancelStream()
 		time.Sleep(constants.Internal.WatcherRestartPollInterval)
 	}
 
 	// Create fresh context for new streaming session
 	ctx, cancel := context.WithCancel(context.Background())
-	sw.restreamer.Ctx = ctx
-	sw.restreamer.Cancel = cancel
+	sw.restreamer.SetContext(ctx, cancel)
 
 	logger.Debug("{watcher - forceStreamRestart} Channel %s: Created new streaming context", sw.channelName)
 

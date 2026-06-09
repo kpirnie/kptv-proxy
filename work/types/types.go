@@ -86,8 +86,7 @@ type Restreamer struct {
 	SourceCache             *xsync.MapOf[string, *config.SourceConfig] // Cached URL -> source lookups to reduce per-segment source resolution overhead
 	Buffer                  *buffer.RingBuffer                         // Shared ring buffer for efficient data distribution to multiple clients
 	Running                 atomic.Bool                                // Atomic flag indicating active streaming state (true=streaming, false=stopped)
-	Ctx                     context.Context                            // Cancellable context for coordinated shutdown and timeout management
-	Cancel                  context.CancelFunc                         // Context cancellation function for graceful streaming termination
+	ctx                     atomic.Pointer[CtxBundle]                  // Current streaming context+cancel pair, swapped atomically to avoid torn reads
 	CurrentIndex            int32                                      // Atomic storage of currently active stream index within channel
 	LastActivity            atomic.Int64                               // Atomic Unix timestamp of most recent streaming activity for cleanup logic
 	HttpClient              *client.HeaderSettingClient                // HTTP client with custom header support for source authentication
@@ -100,6 +99,14 @@ type Restreamer struct {
 	LastStreamFailed        atomic.Bool                                // true if Stream() last exited due to stream failure (not clean client disconnect)
 	SwitchNotify            chan struct{}                              // closed on watcher switch to force client reconnection
 
+}
+
+// CtxBundle pairs a context with its cancel func so both can be swapped as a
+// single atomic unit, eliminating torn reads when the streaming context is
+// replaced concurrently with goroutines reading it.
+type CtxBundle struct {
+	Ctx    context.Context
+	Cancel context.CancelFunc
 }
 
 // RestreamClient represents an individual client connection receiving streamed content
@@ -150,4 +157,27 @@ type StreamStats struct {
 	Valid           bool         `json:"valid"`
 	LastUpdated     int64        `json:"lastUpdated"`
 	Mu              sync.RWMutex `json:"-"`
+}
+
+// Context returns the current streaming context, or a background context if
+// none has been set yet. Safe for concurrent use.
+func (r *Restreamer) Context() context.Context {
+	if b := r.ctx.Load(); b != nil {
+		return b.Ctx
+	}
+	return context.Background()
+}
+
+// CancelStream cancels the current streaming context if one is set.
+func (r *Restreamer) CancelStream() {
+	if b := r.ctx.Load(); b != nil && b.Cancel != nil {
+		b.Cancel()
+	}
+}
+
+// SetContext atomically installs a new context+cancel pair and returns the
+// previous bundle (nil if none), so the caller can cancel the old one after
+// the new one is live.
+func (r *Restreamer) SetContext(ctx context.Context, cancel context.CancelFunc) *CtxBundle {
+	return r.ctx.Swap(&CtxBundle{Ctx: ctx, Cancel: cancel})
 }

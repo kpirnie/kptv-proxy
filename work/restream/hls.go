@@ -202,7 +202,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 	for {
 		// Check if context was cancelled (shutdown or manual switch)
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			success := totalBytes > constants.Internal.StreamMinViableBytes
 			logger.Debug("{restream/hls - streamHLSSegments} Context cancelled for channel %s (total bytes: %d, success: %v)",
 				r.Channel.Name, totalBytes, success)
@@ -258,7 +258,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 
 			// Check for cancellation before processing each segment
 			select {
-			case <-r.Ctx.Done():
+			case <-r.Context().Done():
 				logger.Debug("{restream/hls - streamHLSSegments} Context cancelled during segment processing for channel %s", r.Channel.Name)
 				return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 			default:
@@ -323,7 +323,7 @@ func (r *Restream) streamHLSSegments(playlistURL string) (bool, int64) {
 
 		// Wait before next playlist refresh (HLS standard is typically 1-3 seconds)
 		select {
-		case <-r.Ctx.Done():
+		case <-r.Context().Done():
 			logger.Debug("{restream/hls - streamHLSSegments} Context cancelled during refresh wait for channel %s", r.Channel.Name)
 			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 		case <-time.After(constants.Internal.HLSPlaylistRefreshInterval):
@@ -379,7 +379,7 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, string, error) 
 	}
 
 	// Create context with timeout to prevent hanging on slow/dead servers
-	ctx, cancel := context.WithTimeout(r.Ctx, constants.Internal.HLSPlaylistFetchTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), constants.Internal.HLSPlaylistFetchTimeout)
 	defer cancel()
 	req = req.WithContext(ctx)
 
@@ -592,7 +592,7 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string) (int64, error) 
 	}
 
 	// Create context with timeout to prevent hanging on slow segments
-	ctx, cancel := context.WithTimeout(r.Ctx, constants.Internal.HLSStallThreshold)
+	ctx, cancel := context.WithTimeout(r.Context(), constants.Internal.HLSStallThreshold)
 	defer cancel()
 	req = req.WithContext(ctx)
 
