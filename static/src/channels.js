@@ -65,7 +65,7 @@ function renderActiveChannels(channels) {
                             <span>Streams</span>
                         </button>
                         <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-xs transition-colors flex items-center space-x-1"
-                            onclick="showEPGChannelModal('${escapeHtml(channel.name).replace(/'/g, "\\'")}')">
+                            onclick="showEPGChannelModal(this.dataset.channel)" data-channel="${channel.name.replace(/"/g, '&quot;')}">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                             </svg>
@@ -133,6 +133,7 @@ async function loadAllChannels() {
     try {
         const channels = await apiCall('/api/channels');
         allChannels = channels;
+        renderGroupFilterButtons();
         renderCurrentPage();
         return channels;
     } catch (error) {
@@ -201,7 +202,7 @@ function renderAllChannels(channels) {
                             <span>Streams</span>
                         </button>
                         <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-xs transition-colors flex items-center space-x-1"
-                            onclick="showEPGChannelModal('${escapeHtml(channel.name).replace(/'/g, "\\'")}')">
+                            onclick="showEPGChannelModal(this.dataset.channel)" data-channel="${channel.name.replace(/"/g, '&quot;')}">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                             </svg>
@@ -271,16 +272,8 @@ function renderChannelStatsBadgesForAllTab(channelName, stats) {
  */
 function filterChannels(searchTerm) {
     if (!allChannels) return;
-
-    filteredChannels = searchTerm.trim()
-        ? allChannels.filter(channel =>
-            channel.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (channel.group && channel.group.toLowerCase().includes(searchTerm.toLowerCase()))
-        )
-        : null;
-
     currentPage = 1;
-    renderCurrentPage();
+    applyChannelFilters();
 }
 
 /**
@@ -391,4 +384,89 @@ function goToPage(page) {
         currentPage = page;
         renderCurrentPage();
     }
+}
+
+/**
+ * Reads the saved group filter from the kptv_group_filter cookie.
+ * @returns {string} Saved group name or empty string
+ */
+function getGroupFilterCookie() {
+    const match = document.cookie.match(/(?:^|;\s*)kptv_group_filter=([^;]*)/);
+    return match ? decodeURIComponent(match[1]) : '';
+}
+
+/**
+ * Writes the active group filter to the kptv_group_filter cookie (session lifetime).
+ * @param {string} group
+ */
+function setGroupFilterCookie(group) {
+    document.cookie = `kptv_group_filter=${encodeURIComponent(group)};path=/`;
+}
+
+/**
+ * Derives unique sorted group names from allChannels and renders
+ * filter buttons into #group-filter-btns. Restores saved cookie selection.
+ */
+function renderGroupFilterButtons() {
+    const container = document.getElementById('group-filter-btns');
+    if (!container || !allChannels) return;
+
+    const groups = [...new Set(
+        allChannels.map(ch => ch.group || 'Uncategorized').filter(Boolean)
+    )].sort();
+
+    const saved = getGroupFilterCookie();
+    if (saved && groups.includes(saved)) {
+        activeGroupFilter = saved;
+    }
+
+    const allBtn = `<button class="group-filter-btn px-3 py-1 rounded text-xs border transition-colors ${!activeGroupFilter ? 'bg-kptv-blue border-kptv-blue text-white' : 'bg-kptv-gray-light border-kptv-border hover:border-kptv-blue'}"
+        data-group="">All</button>`;
+
+    const groupBtns = groups.map(g => `
+        <button class="group-filter-btn px-3 py-1 rounded text-xs border transition-colors ${activeGroupFilter === g ? 'bg-kptv-blue border-kptv-blue text-white' : 'bg-kptv-gray-light border-kptv-border hover:border-kptv-blue'}"
+            data-group="${g.replace(/"/g, '&quot;')}">${escapeHtml(g)}</button>
+    `).join('');
+
+    container.innerHTML = allBtn + groupBtns;
+
+    container.onclick = function(e) {
+        const btn = e.target.closest('.group-filter-btn');
+        if (!btn) return;
+        activeGroupFilter = btn.dataset.group || null;
+        setGroupFilterCookie(activeGroupFilter || '');
+        currentPage = 1;
+        applyChannelFilters();
+        // update active state
+        container.querySelectorAll('.group-filter-btn').forEach(b => {
+            const isActive = (b.dataset.group || null) === activeGroupFilter;
+            b.classList.toggle('bg-kptv-blue', isActive);
+            b.classList.toggle('border-kptv-blue', isActive);
+            b.classList.toggle('text-white', isActive);
+            b.classList.toggle('bg-kptv-gray-light', !isActive);
+            b.classList.toggle('border-kptv-border', !isActive);
+        });
+    };
+}
+
+/**
+ * Applies both the active group filter and text search against allChannels,
+ * updating filteredChannels and re-rendering the current page.
+ */
+function applyChannelFilters() {
+    if (!allChannels) return;
+    const searchTerm = document.getElementById('channel-search').value.trim().toLowerCase();
+
+    let result = allChannels;
+    if (activeGroupFilter) {
+        result = result.filter(ch => (ch.group || 'Uncategorized') === activeGroupFilter);
+    }
+    if (searchTerm) {
+        result = result.filter(ch =>
+            ch.name.toLowerCase().includes(searchTerm) ||
+            (ch.group && ch.group.toLowerCase().includes(searchTerm))
+        );
+    }
+    filteredChannels = (activeGroupFilter || searchTerm) ? result : null;
+    renderCurrentPage();
 }

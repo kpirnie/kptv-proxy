@@ -62,7 +62,9 @@ async function showEPGChannelModal(channelName) {
 function renderCurrentEPGMapping(mapping) {
     const el = document.getElementById('epg-channel-current');
     if (mapping.epg_id) {
-        el.innerHTML = `Current mapping: <span class="text-white font-semibold">${escapeHtml(mapping.epg_name)}</span> <span class="text-gray-500">(${escapeHtml(mapping.epg_id)})</span>`;
+        el.innerHTML = `Current mapping: <span class="text-white font-semibold"></span> <span class="text-gray-500"></span>`;
+        el.querySelector('.text-white').textContent = mapping.epg_name;
+        el.querySelector('.text-gray-500').textContent = `(${mapping.epg_id})`;
     } else {
         el.textContent = 'No mapping set';
     }
@@ -115,11 +117,11 @@ function renderEPGSearchResults(results) {
         return;
     }
 
-    el.innerHTML = results.map(ch => {
+    el.innerHTML = results.map((ch, i) => {
         const names = (ch.DisplayNames || []).join(', ');
         return `
-            <div class="flex justify-between items-center px-3 py-2 bg-kptv-gray-light border border-kptv-border rounded hover:border-kptv-blue cursor-pointer transition-colors"
-                onclick="selectEPGChannel('${escapeHtml(ch.ID)}', '${escapeHtml((ch.DisplayNames || [''])[0])}')">
+            <div class="flex justify-between items-center px-3 py-2 bg-kptv-gray-light border border-kptv-border rounded hover:border-kptv-blue cursor-pointer transition-colors epg-result-row"
+                data-epg-index="${i}">
                 <div>
                     <div class="text-sm font-semibold text-white">${escapeHtml(ch.ID)}</div>
                     <div class="text-xs text-gray-400">${escapeHtml(names)}</div>
@@ -130,6 +132,17 @@ function renderEPGSearchResults(results) {
             </div>
         `;
     }).join('');
+
+    // store results array for index-based lookup on click
+    el._epgResults = results;
+
+    el.onclick = function(e) {
+        const row = e.target.closest('.epg-result-row');
+        if (!row) return;
+        const idx = parseInt(row.dataset.epgIndex, 10);
+        const ch = el._epgResults[idx];
+        if (ch) selectEPGChannel(ch.ID, (ch.DisplayNames || [''])[0]);
+    };
 }
 
 /**

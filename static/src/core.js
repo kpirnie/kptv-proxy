@@ -11,6 +11,7 @@ let filteredChannels = null;
 let currentChannelName = null;
 let currentStreamData = null;
 let refreshInterval = null;
+let activeGroupFilter = null;
 
 /**
  * Performs an authenticated API call to the given endpoint,
@@ -52,24 +53,20 @@ function startAutoRefresh() {
         loadStats();
         loadActiveChannels();
 
+        const savedPage = currentPage;
+        const savedGroup = activeGroupFilter;
         const searchInput = document.getElementById('channel-search');
         const currentSearch = searchInput ? searchInput.value.trim() : '';
-        const savedPage = currentPage;
 
         await loadAllChannels();
 
-        filteredChannels = currentSearch
-            ? allChannels.filter(channel =>
-                channel.name.toLowerCase().includes(currentSearch.toLowerCase()) ||
-                (channel.group && channel.group.toLowerCase().includes(currentSearch.toLowerCase()))
-            )
-            : null;
-
+        // restore group filter and search without resetting them
+        activeGroupFilter = savedGroup;
         const totalPages = Math.ceil((filteredChannels || allChannels || []).length / pageSize);
         currentPage = (savedPage > totalPages && totalPages > 0) ? totalPages
             : (totalPages === 0 ? 1 : savedPage);
 
-        renderCurrentPage();
+        applyChannelFilters();
     }, 5000);
 }
 
@@ -343,7 +340,9 @@ function setupEventListeners() {
     document.getElementById('refresh-all-channels').addEventListener('click', () => {
         currentPage = 1;
         filteredChannels = null;
+        activeGroupFilter = null;
         document.getElementById('channel-search').value = '';
+        setGroupFilterCookie('');
         loadAllChannels();
     });
 
