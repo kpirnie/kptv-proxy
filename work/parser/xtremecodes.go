@@ -30,6 +30,13 @@ type XCLiveStream struct {
 	EpgChannelID string `json:"epg_channel_id"` // EPG channel identifier for program guide integration
 }
 
+// XCLiveCategory represents a live TV category returned by the
+// Xtreme Codes get_live_categories endpoint.
+type XCLiveCategory struct {
+	CategoryID   string `json:"category_id"`   // Unique category identifier
+	CategoryName string `json:"category_name"` // Human-readable category name
+}
+
 // XCSeries represents a single series entry from the Xtreme Codes API response,
 // containing metadata for television series and episodic content including identification,
 // categorization, and artwork information. This structure maps to the JSON response
@@ -84,7 +91,7 @@ type xcSeriesWork struct {
 //
 // Returns:
 //   - []*types.Stream: slice of processed streams ready for channel aggregation
-func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *regexp.Regexp, source *config.SourceConfig) []*types.Stream {
+func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *regexp.Regexp, source *config.SourceConfig, categoryLookup map[string]string) []*types.Stream {
 	results := make([]*types.Stream, 0, len(batch))
 	logger.Debug("{parser/xtremecodes - processLiveBatchWorker} process the live batch")
 
@@ -100,13 +107,19 @@ func processLiveBatchWorker(batch []XCLiveStream, liveInclude, liveExclude *rege
 		// set the stream URL
 		streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
 
-		// setup the group
-		group := "live"
-		if utils.SeriesRegex.MatchString(stream.Name) || utils.SeriesRegex.MatchString(streamURL) {
-			group = "series"
-		} else if utils.VodRegex.MatchString(stream.Name) || utils.VodRegex.MatchString(streamURL) {
-			group = "vod"
-		}
+        // setup the group
+        group := "live"
+        
+        if utils.SeriesRegex.MatchString(stream.Name) || utils.SeriesRegex.MatchString(streamURL) {
+        	group = "series"
+        } else if utils.VodRegex.MatchString(stream.Name) || utils.VodRegex.MatchString(streamURL) {
+        	group = "vod"
+        }
+        
+        // Override with the original Xtream category if available
+        if categoryName, ok := categoryLookup[stream.CategoryID]; ok && categoryName != "" {
+        	group = categoryName
+        }
 
 		// create the stream group
 		s := &types.Stream{
@@ -263,6 +276,20 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 	liveStreams := fetchXCLiveStreams(httpClient, cfg, source, rateLimiter)
 	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Fetched %d live streams", len(liveStreams))
 
+	//----------
+
+	liveCategories := fetchXCLiveCategories(httpClient, cfg, source, rateLimiter)
+    logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Fetched %d live categories", len(liveCategories))
+    categoryLookup := make(map[string]string)
+
+    for _, category := range liveCategories {
+	  categoryLookup[category.CategoryID] = category.CategoryName
+    }
+
+    logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Built category lookup with %d entries", len(categoryLookup))
+	//---------
+
+
 	// if we actually have live streams
 	if len(liveStreams) > 0 {
 
@@ -285,7 +312,7 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 					default:
 					}
 					logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} process the live batch %v", i)
-					results := processLiveBatchWorker(work.streams, liveInclude, liveExclude, source)
+					results := processLiveBatchWorker(work.streams, liveInclude, liveExclude, source, categoryLookup)
 					resultsChan <- results
 				}
 			}()
@@ -521,6 +548,48 @@ func fetchXCLiveStreams(httpClient *client.HeaderSettingClient, cfg *config.Conf
 	return streams
 }
 
+
+
+//------------------------
+// fetchXCLiveCategories retrieves live television category data from the Xtreme Codes API
+// get_live_categories endpoint, implementing proper rate limiting, error handling, and
+// debug logging. The function constructs the appropriate API URL with authentication
+// parameters and delegates to the generic data fetching function for HTTP operations.
+//
+// Parameters:
+//   - httpClient: configured HTTP client for API requests with header support
+//   - logger: application logger for debugging and error reporting
+//   - cfg: application configuration for debug logging control
+//   - source: source configuration containing URL, credentials, and request parameters
+//   - rateLimiter: rate limiter for controlling API request frequency
+//
+// Returns:
+//   - []XCLiveCategory: array of live category objects from API response, or nil on error
+func fetchXCLiveCategories(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) []XCLiveCategory {
+
+	// Apply rate limiting before making API request to prevent server overload
+	if rateLimiter != nil {
+		rateLimiter.Take()
+		logger.Debug("{parser/xtremecodes - fetchXCLiveCategories} Applied rate limit for XC live categories request: %s", source.Name)
+	}
+
+	// Construct API URL for live categories endpoint with authentication parameters
+	url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_live_categories", source.URL, source.Username, source.Password)
+
+	// Execute generic API data fetching with proper error handling
+	categories, err := fetchXCData[XCLiveCategory](httpClient, cfg, source, url)
+	if err != nil {
+		logger.Error("{parser/xtremecodes - fetchXCLiveCategories} Failed to fetch XC live categories from %s: %v", utils.LogURL(cfg, source.URL), err)
+		return nil
+	}
+
+	logger.Debug("{parser/xtremecodes - fetchXCLiveCategories} Successfully fetched %d live categories from XC API", len(categories))
+	return categories
+}
+
+
+
+//------------------------
 // fetchXCSeries retrieves television series data from the Xtreme Codes API
 // get_series endpoint, implementing proper rate limiting, error handling, and
 // debug logging. The function constructs the appropriate API URL with authentication
