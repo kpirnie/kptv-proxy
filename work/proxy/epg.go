@@ -23,9 +23,9 @@ import (
 	"github.com/klauspost/compress/gzip"
 )
 
-// dummyChannelID is the XMLTV id of the synthetic keep-alive channel. It is
+// DummyChannelID is the XMLTV id of the synthetic keep-alive channel. It is
 // always retained when filtering so the exported guide is never empty.
-const dummyChannelID = "kptv-proxy-dummy"
+const DummyChannelID = "kptv-proxy-dummy"
 
 var (
 	reEPGChannelID        = regexp.MustCompile(`id="([^"]*)"`)
@@ -262,9 +262,11 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 	spillW := bufio.NewWriterSize(spill, 256*1024)
 
 	var (
-		progMu    sync.Mutex
-		progCount int
-		spillErr  error
+		progMu     sync.Mutex
+		progCount  int
+		spillErr   error
+		indexProgs []string // dummy + export copies, fed to the programme index
+
 	)
 
 	// progSink writes one programme fragment plus one rewritten copy per
@@ -286,12 +288,21 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 			return
 		}
 		progCount++
+
+		// index the dummy entry and the originals of mapped ids so raw-id
+		// guide lookups resolve
+		if m[1] == DummyChannelID || len(rev[m[1]]) > 0 {
+			indexProgs = append(indexProgs, prog)
+		}
+
 		// additionally emit one copy per proxy channel mapped to this epg id
 		for _, exportID := range rev[m[1]] {
-			if _, err := spillW.WriteString(strings.Replace(prog, `channel="`+m[1]+`"`, `channel="`+exportID+`"`, 1)); err != nil {
+			rewritten := strings.Replace(prog, `channel="`+m[1]+`"`, `channel="`+exportID+`"`, 1)
+			if _, err := spillW.WriteString(rewritten); err != nil {
 				spillErr = err
 				return
 			}
+			indexProgs = append(indexProgs, rewritten)
 			progCount++
 		}
 	}
@@ -362,6 +373,11 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 	// index the raw, unfiltered channel list so the mapping picker always
 	// offers real source ids, never the rewritten per-channel export ids
 	epgindex.RebuildFromSlices(allChannels)
+
+	// index the export-copy programmes so XC get_short_epg /
+	// get_simple_data_table lookups work after warmup and scheduled
+	// refreshes, not only after an HTTP cache-miss rebuild
+	epgindex.RebuildProgrammesFromSlices(indexProgs)
 
 	// restrict the exported guide to channels that are actually mapped in the app
 	allChannels = expandMappedChannels(allChannels, rev)
@@ -455,14 +471,15 @@ func ChannelEPGMap() map[string]string {
 	return m
 }
 
-// EPGIDForChannel resolves the XMLTV id to advertise for a proxy channel. Mapped
-// channels advertise their per-channel export id, matching the expanded guide.
-// Channels without a mapping resolve to the dummy id.
+// EPGIDForChannel resolves the XMLTV id to advertise for a proxy channel.
+// Mapped channels advertise their raw mapped epg id, matching the original
+// source entries in the exported guide. Channels without a mapping resolve
+// to the dummy id.
 func EPGIDForChannel(channelName string, mapped map[string]string) string {
 	if id, ok := mapped[channelName]; ok && id != "" {
-		return utils.SanitizeChannelName(channelName)
+		return id
 	}
-	return dummyChannelID
+	return DummyChannelID
 }
 
 // loadExportIDMap builds the reverse channel mapping: source epg_id -> the

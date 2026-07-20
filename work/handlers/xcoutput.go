@@ -553,8 +553,15 @@ func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *c
 		group := attrs["group-title"]
 		tvgID := proxy.EPGIDForChannel(item.name, epgMap)
 
-		fmt.Fprintf(w, "#EXTINF:-1 tvg-id=\"%s\" tvg-name=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n",
-			tvgID, item.name, logo, group, item.name)
+		// mapped channels advertise the raw mapped epg id on all three
+		// guide-matching attributes; unmapped fall back to the dummy id
+		epgAttrs := fmt.Sprintf(" tvg-id=\"%s\"", tvgID)
+		if tvgID != proxy.DummyChannelID {
+			epgAttrs = fmt.Sprintf(" tvg-id=\"%s\" tvg-epgid=\"%s\" tvc-guide-stationid=\"%s\"", tvgID, tvgID, tvgID)
+		}
+
+		fmt.Fprintf(w, "#EXTINF:-1%s tvg-name=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n",
+			epgAttrs, item.name, logo, group, item.name)
 		fmt.Fprintf(w, "%s/live/%s/%s/%d.ts\n",
 			sp.Config.BaseURL, account.Username, account.Password, streamID)
 	}

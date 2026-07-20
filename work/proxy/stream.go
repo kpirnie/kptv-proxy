@@ -410,7 +410,17 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 			// write the EXTINF line with all stream attributes; tvg-id is forced
 			// to the mapped EPG id (or dummy) so the playlist matches the export
 			playlist.WriteString("#EXTINF:-1")
-			playlist.WriteString(fmt.Sprintf(" tvg-id=\"%s\"", EPGIDForChannel(ch.name, epgMap)))
+
+			// mapped channels advertise the raw mapped epg id on all three
+			// guide-matching attributes; unmapped fall back to the dummy id
+			epgID := EPGIDForChannel(ch.name, epgMap)
+			if epgID != DummyChannelID {
+				playlist.WriteString(fmt.Sprintf(" tvg-id=\"%s\" tvg-epgid=\"%s\" tvc-guide-stationid=\"%s\"", epgID, epgID, epgID))
+			} else {
+				playlist.WriteString(fmt.Sprintf(" tvg-id=\"%s\"", epgID))
+			}
+
+			// other EXTINF attributes...
 			for key, value := range attrs {
 				if key != "tvg-name" && key != "duration" && key != "tvg-id" {
 					if strings.ContainsAny(value, ",\"") {

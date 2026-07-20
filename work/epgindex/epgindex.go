@@ -175,6 +175,63 @@ func RebuildFromSlices(channelElements []string) {
 	logger.Debug("{epgindex - RebuildFromSlices} Index rebuilt with %d channels", len(fresh))
 }
 
+// RebuildProgrammesFromSlices parses raw XMLTV <programme> element strings and
+// replaces the in-memory programme index. Used by the warmup/refresh pipeline
+// to index only the mapped export copies (plus the dummy entry) without
+// materializing the full merged document.
+func RebuildProgrammesFromSlices(programmeElements []string) {
+	fresh := make(map[string][]EPGProgramme)
+	for _, el := range programmeElements {
+		pm := reProgrammeBlock.FindStringSubmatch(el)
+		if pm == nil {
+			continue
+		}
+		attrs, body := pm[1], pm[2]
+
+		chm := reAttrChannel.FindStringSubmatch(attrs)
+		if chm == nil || strings.TrimSpace(chm[1]) == "" {
+			continue
+		}
+		sm := reAttrStart.FindStringSubmatch(attrs)
+		em := reAttrStop.FindStringSubmatch(attrs)
+		if sm == nil || em == nil {
+			continue
+		}
+		start, ok1 := parseXMLTVTime(sm[1])
+		stop, ok2 := parseXMLTVTime(em[1])
+		if !ok1 || !ok2 {
+			continue
+		}
+
+		p := EPGProgramme{Start: start, Stop: stop}
+		if tm := reTitle.FindStringSubmatch(body); tm != nil {
+			p.Title = decodeXMLText(strings.TrimSpace(tm[1]))
+		}
+		if dm := reDesc.FindStringSubmatch(body); dm != nil {
+			p.Desc = decodeXMLText(strings.TrimSpace(dm[1]))
+		}
+		fresh[chm[1]] = append(fresh[chm[1]], p)
+	}
+
+	// keep each channel's programmes in start order for windowed lookups
+	for id := range fresh {
+		ps := fresh[id]
+		for i := 0; i < len(ps)-1; i++ {
+			for j := i + 1; j < len(ps); j++ {
+				if ps[i].Start.After(ps[j].Start) {
+					ps[i], ps[j] = ps[j], ps[i]
+				}
+			}
+		}
+	}
+
+	mu.Lock()
+	progIndex = fresh
+	mu.Unlock()
+
+	logger.Debug("{epgindex - RebuildProgrammesFromSlices} Programme index rebuilt with %d channels", len(fresh))
+}
+
 // Programmes returns up to limit programmes for the given channel id that end
 // after the given time, in start order. limit <= 0 returns everything current
 // and future.
