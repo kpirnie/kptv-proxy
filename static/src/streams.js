@@ -16,8 +16,8 @@ async function showStreamSelector(channelName) {
 }
 
 /**
- * Renders the stream selector modal content including the status indicator
- * and all stream cards, then initializes drag-and-drop sorting.
+ * Renders the stream selector modal content including the reorder controls
+ * and all stream cards, then initializes pointer-driven sorting.
  * @param {Object} data - Channel streams response from API
  */
 function renderStreamSelector(data) {
@@ -31,15 +31,15 @@ function renderStreamSelector(data) {
     }
 
     currentChannelName = data.channelName;
-    currentStreamData = data.streams;
+    currentStreamData = data;
 
     container.innerHTML = `
         <div class="mb-4 flex items-center gap-3">
-            <span class="text-sm text-gray-400">Drag to Reorder</span>
-            <br><button id="save-order-btn" type="button"
-                class="px-3 py-1 text-xs font-semibold bg-kptv-blue hover:bg-kptv-blue-light text-white rounded"
-                onclick="saveStreamOrder()">
-                Save
+            <span class="text-sm text-gray-400">Drag to reorder &mdash; saves on drop</span>
+            <button id="reset-order-btn" type="button"
+                class="px-3 py-1 text-xs font-semibold bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border text-white rounded"
+                onclick="resetStreamOrder()">
+                Reset to Default
             </button>
             <span id="order-save-status" class="text-xs text-gray-500"></span>
         </div>
@@ -48,7 +48,7 @@ function renderStreamSelector(data) {
         </div>
     `;
 
-    initStreamDragDrop(data.channelName);
+    initStreamDragDrop();
 }
 
 /**
@@ -72,8 +72,8 @@ function renderStreamCards(data) {
         return `
             <div class="stream-card ${cardClass} ${isDead ? 'dead-stream' : ''} border border-kptv-border rounded p-3 mb-2 cursor-grab active:cursor-grabbing"
                 data-original-index="${originalIndex}"
-                data-display-index="${displayIndex}"
-                draggable="true">
+                data-hash="${stream.hash}"
+                style="touch-action: none;">
                 <div class="flex justify-between items-center">
                     <div class="flex items-center flex-1">
                         <div class="flex items-center mr-3 text-gray-600 cursor-grab">
@@ -137,87 +137,167 @@ function renderStreamCards(data) {
 }
 
 /**
- * Initializes drag-and-drop sorting on the streams container.
- * Attaches dragstart, dragover, and dragend events to stream cards.
- * Reveals the Save Order button after a drop; saving is manual.
- * @param {string} channelName - Channel name used when saving the new order
+ * Initializes pointer-driven sorting on the streams container. The DOM is never
+ * mutated mid-drag: the grabbed card follows the pointer and the rest are shifted
+ * with transforms, so the geometry measured at drag start stays valid for the
+ * whole gesture. The destination index is computed once, on release, from which
+ * cards' midpoints the grabbed card's centre has passed.
  */
-function initStreamDragDrop(channelName) {
+function initStreamDragDrop() {
     const container = document.getElementById('streams-container');
     if (!container) return;
 
+    let cards = [];
+    let rects = [];
     let dragCard = null;
+    let startIndex = -1;
+    let targetIndex = -1;
+    let startY = 0;
+    let outerHeight = 0;
+    let active = false;
 
-    container.addEventListener('dragstart', (e) => {
-        dragCard = e.target.closest('.stream-card');
-        if (!dragCard) return;
-        dragCard.classList.add('opacity-50');
-        e.dataTransfer.effectAllowed = 'move';
-    });
-
-    container.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        const target = e.target.closest('.stream-card');
-        if (!target || target === dragCard) return;
-
-        const rect = target.getBoundingClientRect();
-        const midY = rect.top + rect.height / 2;
-        if (e.clientY < midY) {
-            container.insertBefore(dragCard, target);
-        } else {
-            container.insertBefore(dragCard, target.nextSibling);
-        }
-    });
-
-    container.addEventListener('dragend', () => {
-        if (!dragCard) return;
-        dragCard.classList.remove('opacity-50');
-        dragCard = null;
-
-        // Update display indices after drop
-        container.querySelectorAll('.stream-card').forEach((card, idx) => {
-            card.setAttribute('data-display-index', idx);
+    const measure = () => {
+        cards = Array.from(container.querySelectorAll('.stream-card'));
+        rects = cards.map(c => {
+            const r = c.getBoundingClientRect();
+            return { top: r.top, height: r.height };
         });
+        if (rects.length < 2) {
+            outerHeight = rects[startIndex].height;
+        } else if (startIndex < rects.length - 1) {
+            outerHeight = rects[startIndex + 1].top - rects[startIndex].top;
+        } else {
+            outerHeight = rects[startIndex].top - rects[startIndex - 1].top;
+        }
+    };
 
-        const saveBtn = document.getElementById('save-order-btn');
-        if (saveBtn) saveBtn.classList.remove('hidden');
-        const statusEl = document.getElementById('order-save-status');
-        if (statusEl) statusEl.textContent = 'Unsaved changes';
+    const paint = (dy) => {
+        const centre = rects[startIndex].top + rects[startIndex].height / 2 + dy;
+
+        targetIndex = 0;
+        for (let i = 0; i < rects.length; i++) {
+            if (i === startIndex) continue;
+            if (centre > rects[i].top + rects[i].height / 2) targetIndex++;
+        }
+
+        cards.forEach((card, i) => {
+            if (i === startIndex) {
+                card.style.transform = `translateY(${dy}px)`;
+                return;
+            }
+            let shift = 0;
+            if (i > startIndex && i <= targetIndex) shift = -outerHeight;
+            else if (i < startIndex && i >= targetIndex) shift = outerHeight;
+            card.style.transform = shift ? `translateY(${shift}px)` : '';
+        });
+    };
+
+    const clear = () => {
+        cards.forEach(card => {
+            card.style.transform = '';
+            card.style.transition = '';
+            card.style.zIndex = '';
+            card.style.opacity = '';
+        });
+        container.style.userSelect = '';
+    };
+
+    container.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest('a')) return;
+
+        const card = e.target.closest('.stream-card');
+        if (!card) return;
+
+        dragCard = card;
+        startY = e.clientY;
+        startIndex = Array.from(container.querySelectorAll('.stream-card')).indexOf(card);
+        targetIndex = startIndex;
+        active = false;
+        measure();
+        container.setPointerCapture(e.pointerId);
     });
+
+    container.addEventListener('pointermove', (e) => {
+        if (!dragCard) return;
+
+        const dy = e.clientY - startY;
+
+        // Below the threshold this is still a click, not a drag.
+        if (!active) {
+            if (Math.abs(dy) < 4) return;
+            active = true;
+            container.style.userSelect = 'none';
+            dragCard.style.zIndex = '10';
+            dragCard.style.opacity = '0.85';
+            cards.forEach((c, i) => {
+                if (i !== startIndex) c.style.transition = 'transform 120ms ease';
+            });
+        }
+
+        e.preventDefault();
+        paint(dy);
+    });
+
+    const finish = (e) => {
+        if (!dragCard) return;
+        if (container.hasPointerCapture(e.pointerId)) container.releasePointerCapture(e.pointerId);
+
+        const moved = active && targetIndex !== startIndex;
+        const from = startIndex;
+        const to = targetIndex;
+
+        clear();
+        dragCard = null;
+        active = false;
+
+        if (moved) commitStreamOrder(from, to);
+    };
+
+    container.addEventListener('pointerup', finish);
+    container.addEventListener('pointercancel', finish);
 }
 
 /**
- * Saves the current stream card DOM order to the server.
- * Reads data-original-index from each card in current DOM order
- * and POSTs the resulting array to the channel order endpoint.
- * On success, re-stamps each card's data-original-index to its new
- * position so a subsequent reorder in the same session is computed
- * against the order the server now actually has.
+ * Re-renders just the stream cards, leaving the container element and its
+ * delegated pointer listeners in place.
+ * @param {Object} data - Channel streams response shape
+ */
+function renderStreamCardsInto(data) {
+    const container = document.getElementById('streams-container');
+    if (!container) return;
+    container.innerHTML = renderStreamCards(data);
+}
+
+/**
+ * Applies a completed drag to the local stream list and persists the result as
+ * an ordered array of stream hashes. Positions come from the array itself, so
+ * the outcome does not depend on the server's ordering when the request lands.
+ * @param {number} from - Index the card was grabbed from
+ * @param {number} to - Index the card was released at
  * @returns {Promise<void>}
  */
-async function saveStreamOrder() {
-    const cards = document.querySelectorAll('.stream-card');
-    if (!cards.length) return;
-
-    const saveBtn = document.getElementById('save-order-btn');
+async function commitStreamOrder(from, to) {
     const statusEl = document.getElementById('order-save-status');
     if (statusEl) statusEl.textContent = 'Saving...';
 
-    const newOrder = Array.from(cards).map(card =>
-        parseInt(card.getAttribute('data-original-index'))
-    );
+    const streams = currentStreamData.streams.slice();
+    streams.splice(to, 0, streams.splice(from, 1)[0]);
+    streams.forEach((s, i) => { s.index = i; });
+
+    currentStreamData = {
+        ...currentStreamData,
+        streams: streams,
+        currentStreamIndex: 0,
+        preferredStreamIndex: 0
+    };
+    renderStreamCardsInto(currentStreamData);
 
     try {
         await apiCall(`/api/channels/${encodeURIComponent(currentChannelName)}/order`, {
             method: 'POST',
-            body: JSON.stringify({ streamOrder: newOrder })
+            body: JSON.stringify({ streamOrder: streams.map(s => s.hash) })
         });
-
-        cards.forEach((card, idx) => {
-            card.setAttribute('data-original-index', idx);
-        });
-
         if (statusEl) {
             statusEl.textContent = 'Saved';
             setTimeout(() => statusEl.textContent = '', 2000);
@@ -225,7 +305,31 @@ async function saveStreamOrder() {
     } catch (error) {
         if (statusEl) statusEl.textContent = 'Save failed';
         showNotification('Failed to save stream order: ' + error.message, 'danger');
+        showStreamSelector(currentChannelName);
     }
+}
+
+/**
+ * Clears any custom ordering for the current channel, returning it to the
+ * globally configured sort, then reloads the selector.
+ * @returns {Promise<void>}
+ */
+async function resetStreamOrder() {
+    if (!confirm('Reset this channel to the default stream order?')) return;
+
+    const statusEl = document.getElementById('order-save-status');
+    if (statusEl) statusEl.textContent = 'Resetting...';
+
+    try {
+        await apiCall(`/api/channels/${encodeURIComponent(currentChannelName)}/order`, {
+            method: 'DELETE'
+        });
+        showNotification(`Stream order reset for ${currentChannelName}`, 'success');
+    } catch (error) {
+        showNotification('Failed to reset stream order: ' + error.message, 'danger');
+    }
+
+    showStreamSelector(currentChannelName);
 }
 
 /**

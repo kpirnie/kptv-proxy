@@ -41,7 +41,7 @@ func MarkStreamDeadByHash(channelName, hash, reason string) error {
 
 // ReviveStream clears dead status for a stream by channel name and index.
 func ReviveStream(channelName, hash string) error {
-	if err := db.DeleteStreamOverride(channelName, hash); err != nil {
+	if err := db.SetStreamAlive(channelName, hash); err != nil {
 		logger.Error("{deadstreams - ReviveStream} channel=%s hash=%s: %v", channelName, hash, err)
 		return err
 	}

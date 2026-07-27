@@ -8,7 +8,7 @@ import (
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/restream"
-	"kptv-proxy/work/streamorder"
+	"kptv-proxy/work/types"
 	"net/http"
 	"net/url"
 	"sync/atomic"
@@ -16,10 +16,10 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// handleSetChannelOrder processes requests to update the custom ordering of streams
-// within a channel, validating the new order against channel configuration and
-// persisting changes to the stream order database. Applies changes immediately
-// without requiring application restart.
+// handleSetChannelOrder persists a new stream ordering for a channel. The request
+// carries stream hashes in the desired display order; positions are derived from
+// the array itself, so the result does not depend on the server's current ordering
+// at the time the request arrives. Applied immediately without a restart.
 func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -32,7 +32,7 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		var request struct {
-			StreamOrder []int `json:"streamOrder"`
+			StreamOrder []string `json:"streamOrder"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -45,68 +45,29 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 			http.Error(w, "Channel not found", http.StatusNotFound)
 			return
 		}
+
 		channel.Mu.RLock()
-		streamCount := len(channel.Streams)
+		known := make(map[string]bool, len(channel.Streams))
+		for _, s := range channel.Streams {
+			known[s.URLHash] = true
+		}
 		channel.Mu.RUnlock()
 
-		if len(request.StreamOrder) != streamCount {
-			http.Error(w, "Stream order length mismatch", http.StatusBadRequest)
-			return
-		}
-
-		// Detect if order is unchanged from default [0,1,2,3...]
-		isDefault := true
-		for i, idx := range request.StreamOrder {
-			if idx != i {
-				isDefault = false
-				break
-			}
-		}
-
-		if isDefault {
-			streamorder.DeleteChannelStreamOrder(channelName)
-		} else {
-			// Resolve positional indices to hash-based entries for stable ordering
-			channel.Mu.RLock()
-			entries := make([]streamorder.StreamOrderEntry, len(request.StreamOrder))
-			for newPos, origIdx := range request.StreamOrder {
-				hash := ""
-				if origIdx >= 0 && origIdx < len(channel.Streams) {
-					hash = channel.Streams[origIdx].URLHash
-				}
-				entries[newPos] = streamorder.StreamOrderEntry{
-					Index: newPos,
-					Hash:  hash,
-				}
-			}
-			channel.Mu.RUnlock()
-
-			if err := streamorder.SetChannelStreamOrder(channelName, entries); err != nil {
-				addLogEntry("error", fmt.Sprintf("Failed to save stream order: %v", err))
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+		for _, hash := range request.StreamOrder {
+			if !known[hash] {
+				http.Error(w, "Unknown stream hash", http.StatusBadRequest)
 				return
 			}
-			addLogEntry("info", fmt.Sprintf("Stream order updated for channel %s", channelName))
 		}
 
-		// Apply the new order immediately without restart
-		channel.Mu.Lock()
-		// Load the just-persisted overrides so the custom order is actually
-		// applied in-memory instead of being wiped by the global sort
-		chOverrides, oErr := db.GetChannelOverrides(channelName)
-		if oErr != nil {
-			chOverrides = map[string]db.StreamOverride{}
+		if err := db.SetChannelOrder(channelName, request.StreamOrder); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to save stream order: %v", err))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		parser.SortStreams(channel.Streams, sp.Config, channelName, map[string]map[string]db.StreamOverride{channelName: chOverrides})
-		atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
+		addLogEntry("info", fmt.Sprintf("Stream order updated for channel %s", channelName))
 
-		// If a restreamer is active, force it to switch to the new first stream
-		if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
-			rs := &restream.Restream{Restreamer: channel.Restreamer}
-			rs.ForceStreamSwitch(0)
-			addLogEntry("info", fmt.Sprintf("Forced stream switch to index 0 after reorder for channel %s", channelName))
-		}
-		channel.Mu.Unlock()
+		applyChannelOrder(sp, channel, channelName)
 
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]any{
@@ -114,6 +75,63 @@ func handleSetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
 			"message": "Stream order updated and applied immediately",
 		})
 	}
+}
+
+// handleResetChannelOrder clears any custom ordering for a channel, returning its
+// streams to the globally configured sort.
+func handleResetChannelOrder(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		vars := mux.Vars(r)
+		channelName, err := url.PathUnescape(vars["channel"])
+		if err != nil {
+			http.Error(w, "Invalid channel name", http.StatusBadRequest)
+			return
+		}
+
+		channel, exists := sp.Channels.Load(channelName)
+		if !exists {
+			http.Error(w, "Channel not found", http.StatusNotFound)
+			return
+		}
+
+		if err := db.ClearChannelOrder(channelName); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to reset stream order: %v", err))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		addLogEntry("info", fmt.Sprintf("Stream order reset for channel %s", channelName))
+
+		applyChannelOrder(sp, channel, channelName)
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":  "success",
+			"message": "Stream order reset to default",
+		})
+	}
+}
+
+// applyChannelOrder re-sorts a channel's streams in memory from the persisted
+// order and forces any active restreamer onto the new first stream.
+func applyChannelOrder(sp *proxy.StreamProxy, channel *types.Channel, channelName string) {
+	chOrder, err := db.GetChannelOrder(channelName)
+	if err != nil {
+		chOrder = map[string]int{}
+	}
+
+	channel.Mu.Lock()
+	channel.Streams = parser.SortStreams(channel.Streams, sp.Config, channelName,
+		map[string]map[string]int{channelName: chOrder})
+	atomic.StoreInt32(&channel.PreferredStreamIndex, 0)
+
+	if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
+		rs := &restream.Restream{Restreamer: channel.Restreamer}
+		rs.ForceStreamSwitch(0)
+		addLogEntry("info", fmt.Sprintf("Forced stream switch to index 0 after reorder for channel %s", channelName))
+	}
+	channel.Mu.Unlock()
 }
 
 // handleKillStream manually marks a stream as dead in the dead streams database,

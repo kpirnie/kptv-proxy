@@ -283,10 +283,10 @@ func (sp *StreamProxy) ImportStreams() {
 		sp.Config.Sources[i].ActiveConns.Store(0)
 	}
 
-	allOverrides, err := db.GetAllStreamOverrides()
+	allOrders, err := db.GetAllChannelOrders()
 	if err != nil {
-		logger.Warn("{proxy/stream - ImportStreams} Failed to load stream overrides: %v", err)
-		allOverrides = make(map[string]map[string]db.StreamOverride)
+		logger.Warn("{proxy/stream - ImportStreams} Failed to load stream orders: %v", err)
+		allOrders = make(map[string]map[string]int)
 	}
 
 	count := 0
@@ -294,13 +294,13 @@ func (sp *StreamProxy) ImportStreams() {
 		channelName := key
 		channel := value
 
-		// Hash URLs before sorting so SortStreams can use them for custom ordering.
+		// Hash URLs before sorting so SortStreams can dedupe and rank on them.
 		for _, s := range channel.Streams {
 			s.URLHash = utils.HashURL(s.URL)
 		}
 
-		// SortStreams handles both global sort and custom ordering internally.
-		parser.SortStreams(channel.Streams, sp.Config, channelName, allOverrides)
+		// SortStreams handles global sort, dedupe, and custom ordering internally.
+		channel.Streams = parser.SortStreams(channel.Streams, sp.Config, channelName, allOrders)
 
 		// Preserve the existing preferred stream index across import cycles.
 		if existingChannel, exists := sp.Channels.Load(channelName); exists {

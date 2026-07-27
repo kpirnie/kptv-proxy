@@ -167,6 +167,7 @@ func handleGetChannelStreams(sp *proxy.StreamProxy) http.HandlerFunc {
 		for i, stream := range channel.Streams {
 			streams[i] = StreamInfo{
 				Index:       i,
+				Hash:        stream.URLHash,
 				URL:         utils.LogURL(sp.Config, stream.URL),
 				SourceName:  stream.Source.Name,
 				SourceOrder: stream.Source.Order,

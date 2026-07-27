@@ -10,9 +10,7 @@ import (
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
-	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
-	"kptv-proxy/work/streamorder"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"net/http"
@@ -485,29 +483,16 @@ func ParseEXTINF(line string) map[string]string {
 	return attrs
 }
 
-// SortStreams organizes a slice of Stream objects according to application configuration
-// settings, implementing a two-tier sorting strategy. The primary sort is by source order
-// (lower order values indicate higher priority for failover), while the secondary sort
-// uses the configured field and direction for quality-based organization.
-//
-// The sorting process enables predictable stream selection during failover scenarios
-// and allows administrators to control quality preferences through configuration.
-// Debug logging provides detailed before/after comparisons when multiple streams exist.
-//
-// Sorting criteria:
-//   - Primary: Source order (ascending - lower numbers = higher priority)
-//   - Secondary: Configured field (bandwidth, resolution, etc.) in specified direction
-//
-// Parameters:
-//   - streams: slice of Stream objects to sort in-place
-//   - cfg: application configuration containing sort field and direction preferences
-//   - channelName: channel name for debug logging context
-func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string, allOverrides map[string]map[string]db.StreamOverride) {
-	if len(streams) <= 1 {
-		return
+// SortStreams orders a channel's streams for playback and returns the result.
+// The configured global sort runs first, duplicate URLs are then collapsed so the
+// highest-priority copy survives, and any custom order recorded for the channel is
+// applied last. The returned slice may be shorter than the input, so callers must
+// assign it back rather than relying on in-place mutation.
+func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string, allOrders map[string]map[string]int) []*types.Stream {
+	if len(streams) == 0 {
+		return streams
 	}
 
-	// Global sort always runs first
 	sort.SliceStable(streams, func(i, j int) bool {
 		s1, s2 := streams[i], streams[j]
 		if s1.Source.Order != s2.Source.Order {
@@ -524,49 +509,38 @@ func SortStreams(streams []*types.Stream, cfg *config.Config, channelName string
 		return v1 < v2
 	})
 
-	// Apply custom order if one exists for this channel
-	channelOverrides := allOverrides[channelName]
-	entries := make([]streamorder.StreamOrderEntry, 0, len(channelOverrides))
-	for hash, o := range channelOverrides {
-		if o.SOrder >= 0 {
-			entries = append(entries, streamorder.StreamOrderEntry{Index: o.SOrder, Hash: hash})
+	deduped := make([]*types.Stream, 0, len(streams))
+	seen := make(map[string]bool, len(streams))
+	for _, s := range streams {
+		if seen[s.URLHash] {
+			logger.Debug("{parser/m3u8 - SortStreams} Channel %s: dropped duplicate of %s from source %s",
+				channelName, s.URLHash, s.Source.Name)
+			continue
+		}
+		seen[s.URLHash] = true
+		deduped = append(deduped, s)
+	}
+
+	order := allOrders[channelName]
+	if len(order) == 0 {
+		return deduped
+	}
+
+	ranked := make([]*types.Stream, 0, len(deduped))
+	unranked := make([]*types.Stream, 0, len(deduped))
+	for _, s := range deduped {
+		if _, ok := order[s.URLHash]; ok {
+			ranked = append(ranked, s)
+		} else {
+			unranked = append(unranked, s)
 		}
 	}
 
-	if len(entries) == 0 {
-		return
-	}
-
-	// Build hash -> stream map from globally sorted slice
-	hashMap := make(map[string]*types.Stream, len(streams))
-	for _, s := range streams {
-		hashMap[s.URLHash] = s
-	}
-
-	// Sort entries by their stored index
-	sort.SliceStable(entries, func(i, j int) bool {
-		return entries[i].Index < entries[j].Index
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return order[ranked[i].URLHash] < order[ranked[j].URLHash]
 	})
 
-	result := make([]*types.Stream, 0, len(streams))
-	usedHashes := make(map[string]bool, len(entries))
-
-	// Place manually ordered streams first
-	for _, entry := range entries {
-		if s, ok := hashMap[entry.Hash]; ok {
-			result = append(result, s)
-			usedHashes[entry.Hash] = true
-		}
-	}
-
-	// Append remaining streams in global sort order
-	for _, s := range streams {
-		if !usedHashes[s.URLHash] {
-			result = append(result, s)
-		}
-	}
-
-	copy(streams, result)
-	logger.Debug("{parser/m3u8 - SortStreams} Channel %s: Applied custom ordering (%d manual, %d appended)",
-		channelName, len(usedHashes), len(result)-len(usedHashes))
+	logger.Debug("{parser/m3u8 - SortStreams} Channel %s: applied custom ordering (%d ranked, %d appended)",
+		channelName, len(ranked), len(unranked))
+	return append(ranked, unranked...)
 }

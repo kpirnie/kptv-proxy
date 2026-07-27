@@ -41,6 +41,7 @@ type ChannelResponse struct {
 // including source metadata, ordering, and attributes for advanced channel management.
 type StreamInfo struct {
 	Index       int               `json:"index"`
+	Hash        string            `json:"hash"`
 	URL         string            `json:"url"`
 	SourceName  string            `json:"sourceName"`
 	SourceOrder int               `json:"sourceOrder"`
