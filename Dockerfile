@@ -1,5 +1,7 @@
-# Build stage - use alpine for smaller builder
-FROM docker.io/golang:1.26.5-alpine AS builder
+# Build stage - pinned to the build platform so Go cross-compiles natively
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.26.5-alpine AS builder
+
+ARG TARGETARCH
 
 RUN apk add --no-cache git ca-certificates
 
@@ -19,8 +21,8 @@ COPY . .
 RUN VERSION="v$(date -u +%Y%m%d%H.%M)" && \
     BUILDDATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" && \
     COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" && \
-    echo ">>> VERSION=$VERSION BUILDDATE=$BUILDDATE COMMIT=$COMMIT <<<" && \
-    CGO_ENABLED=0 GOOS=linux go build \
+    echo ">>> VERSION=$VERSION BUILDDATE=$BUILDDATE COMMIT=$COMMIT ARCH=$TARGETARCH <<<" && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build \
     -ldflags="-s -w -X kptv-proxy/work/app.Version=$VERSION -X kptv-proxy/work/app.BuildDate=$BUILDDATE -X kptv-proxy/work/app.Commit=$COMMIT" \
     -trimpath -o kptv-proxy .
 
