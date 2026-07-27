@@ -16,6 +16,7 @@ import (
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"kptv-proxy/work/watcher"
+	"mime"
 	"strconv"
 
 	"net/http"
@@ -314,6 +315,35 @@ func (sp *StreamProxy) ImportStreams() {
 
 }
 
+// streamContentType resolves a stream's content type via the shared resolver.
+func streamContentType(stream *types.Stream) string {
+	return string(utils.ContentTypeOfStream(stream))
+}
+
+// streamResponseContentType picks the response MIME type from the currently selected
+// stream's container, falling back to MPEG-TS when the container is unknown.
+func streamResponseContentType(channel *types.Channel) string {
+	extension := ""
+
+	channel.Mu.RLock()
+	index := 0
+	if channel.Restreamer != nil {
+		index = int(atomic.LoadInt32(&channel.Restreamer.CurrentIndex))
+	}
+	if index >= 0 && index < len(channel.Streams) {
+		extension = channel.Streams[index].ContainerExtension
+	}
+	channel.Mu.RUnlock()
+
+	if extension == "" {
+		return "video/mp2t"
+	}
+	if contentType := mime.TypeByExtension("." + utils.NormalizeContainerExtension(extension)); contentType != "" {
+		return contentType
+	}
+	return "video/mp2t"
+}
+
 // GeneratePlaylist creates and serves a complete M3U8 playlist containing all discovered
 // channels. When a group filter is provided, only channels matching that group are included.
 // The generated playlist is cached when caching is enabled to avoid regeneration on
@@ -371,7 +401,8 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	for _, ch := range channels {
 		ch.channel.Mu.RLock()
 		if len(ch.channel.Streams) > 0 {
-			attrs := ch.channel.Streams[0].Attributes
+			stream := ch.channel.Streams[0]
+			attrs := stream.Attributes
 
 			// skip channels that don't match the group filter
 			if groupFilter != "" {
@@ -382,14 +413,8 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 				}
 			}
 
-			// determine content type from group-title attribute
-			group := strings.ToLower(attrs["group-title"])
-			contentType := "live"
-			if strings.Contains(group, "series") {
-				contentType = "series"
-			} else if strings.Contains(group, "vod") || strings.Contains(group, "movie") {
-				contentType = "vod"
-			}
+			// determine content type from the importer's classification
+			contentType := streamContentType(stream)
 
 			// skip channels that don't match the account content settings
 			if contentType == "live" && !account.EnableLive {
@@ -423,15 +448,12 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 			// other EXTINF attributes...
 			for key, value := range attrs {
 				if key != "tvg-name" && key != "duration" && key != "tvg-id" {
-					if strings.ContainsAny(value, ",\"") {
-						value = fmt.Sprintf("%q", value)
-					}
-					playlist.WriteString(fmt.Sprintf(" %s=\"%s\"", key, value))
+					playlist.WriteString(fmt.Sprintf(" %s=\"%s\"", key, utils.EscapeM3UAttribute(value)))
 				}
 			}
 
 			// write the channel name and proxy URL with XC credentials
-			cleanName := strings.Trim(ch.name, "\"")
+			cleanName := utils.SanitizeM3UDisplayName(strings.Trim(ch.name, "\""))
 			playlist.WriteString(fmt.Sprintf(",%s\n", cleanName))
 			safeName := utils.SanitizeChannelName(ch.name)
 			proxyURL := fmt.Sprintf("%s/s/%s/%s/%s", sp.Config.BaseURL, account.Username, account.Password, safeName)
@@ -759,7 +781,7 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 	clientID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
 
 	// set streaming response headers
-	w.Header().Set("Content-Type", "video/mp2t")
+	w.Header().Set("Content-Type", streamResponseContentType(channel))
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Accept", "*/*")

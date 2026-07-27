@@ -2,14 +2,14 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: ["main", "develop"]  # Trigger on push to main AND develop
+    branches: ["main", "develop"] # Trigger on push to main AND develop
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # Needed to push to GitHub Packages
+      packages: write # Needed to push to GitHub Packages
 
     steps:
       - name: Checkout code
@@ -20,7 +20,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}  # Auto-generated secret
+          password: ${{ secrets.GITHUB_TOKEN }} # Auto-generated secret
 
       - name: Determine image tag
         id: vars
@@ -36,7 +36,9 @@ jobs:
         with:
           context: .
           push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ github.repository_owner }}/kptv-proxy:${{ steps.vars.outputs.TAG }}
             ghcr.io/${{ github.repository_owner }}/kptv-proxy:${{ github.sha }}
-            

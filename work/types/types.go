@@ -39,19 +39,21 @@ const (
 // is ensured through atomic operations for counters and mutex protection for
 // complex state updates.
 type Stream struct {
-	URL         string               // Complete URL of the streamable content source
-	Name        string               // Human-readable display name for the stream/channel
-	Attributes  map[string]string    // Key-value pairs from M3U8 EXTINF metadata (tvg-id, group-title, etc.)
-	Source      *config.SourceConfig // Reference to source configuration for authentication and limits
-	Failures    int32                // Atomic counter of consecutive failures for reliability tracking
-	LastFail    time.Time            // Timestamp of most recent failure for debugging and analysis
-	Blocked     int32                // Atomic flag (0=active, 1=blocked) indicating stream availability
-	Mu          sync.Mutex           // Mutex for thread-safe access to non-atomic fields (LastFail, ResolvedURL)
-	StreamType  StreamType           // Content type classification for specialized processing logic
-	ResolvedURL string               // For HLS master playlists, contains the selected variant URL
-	LastChecked time.Time            // Timestamp of most recent stream validation or health check
-	URLHash     string               // FNV64a hash of URL, assigned on import, never persisted
-	ImportOrder int                  // Original position within the imported source playlist/API response
+	URL                string               // Complete URL of the streamable content source
+	Name               string               // Human-readable display name for the stream/channel
+	Attributes         map[string]string    // Key-value pairs from M3U8 EXTINF metadata (tvg-id, group-title, etc.)
+	Source             *config.SourceConfig // Reference to source configuration for authentication and limits
+	Failures           int32                // Atomic counter of consecutive failures for reliability tracking
+	LastFail           time.Time            // Timestamp of most recent failure for debugging and analysis
+	Blocked            int32                // Atomic flag (0=active, 1=blocked) indicating stream availability
+	Mu                 sync.Mutex           // Mutex for thread-safe access to non-atomic fields (LastFail, ResolvedURL)
+	StreamType         StreamType           // Transport protocol classification for specialized processing logic
+	ContentType        ContentType          // Semantic content classification, when the source supplies one
+	ContainerExtension string               // Media container extension for VOD/series URLs, when known
+	ResolvedURL        string               // For HLS master playlists, contains the selected variant URL
+	LastChecked        time.Time            // Timestamp of most recent stream validation or health check
+	URLHash            string               // FNV64a hash of URL, assigned on import, never persisted
+	ImportOrder        int                  // Original position within the imported source playlist/API response
 }
 
 // Channel represents a logical grouping of streams that provide the same content
@@ -159,6 +161,25 @@ type StreamStats struct {
 	LastUpdated     int64        `json:"lastUpdated"`
 	Mu              sync.RWMutex `json:"-"`
 }
+
+// ContentType represents the semantic classification of a stream's content,
+// distinguishing live television from on-demand movies and episodic series.
+// It is deliberately kept separate from StreamType, which describes the transport
+// protocol used to deliver the content rather than the nature of the content itself.
+// Separating the two allows an upstream provider's authoritative classification to be
+// carried through the import pipeline without disturbing protocol handling.
+type ContentType string
+
+// Content type constants define the semantic content classifications recognized by
+// the proxy. ContentTypeUnknown is the zero value and indicates that no authoritative
+// classification was supplied at import time, in which case consumers fall back to
+// name, URL, and group-title heuristics for legacy M3U sources.
+const (
+	ContentTypeUnknown ContentType = ""       // No authoritative classification available; heuristics apply
+	ContentTypeLive    ContentType = "live"   // Live television channel content
+	ContentTypeVOD     ContentType = "vod"    // Video on demand, single-asset movie content
+	ContentTypeSeries  ContentType = "series" // Episodic series content
+)
 
 // Context returns the current streaming context, or a background context if
 // none has been set yet. Safe for concurrent use.

@@ -10,6 +10,7 @@ import (
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/types"
+	"kptv-proxy/work/utils"
 	"net/http"
 	"sort"
 	"strconv"
@@ -168,6 +169,22 @@ func categoryIDFromName(name string) string {
 	return fmt.Sprintf("%d", id)
 }
 
+// buildXCStreamURL constructs an XC direct-source URL for a content type, using the
+// stream's real container extension rather than assuming MPEG-TS.
+func buildXCStreamURL(baseURL, contentType, username, password string, streamID int, extension string) string {
+	pathType := "live"
+	suffix := "ts"
+	switch contentType {
+	case "vod":
+		pathType = "movie"
+		suffix = utils.NormalizeContainerExtension(extension)
+	case "series":
+		pathType = "series"
+		suffix = utils.NormalizeContainerExtension(extension)
+	}
+	return fmt.Sprintf("%s/%s/%s/%s/%d.%s", baseURL, pathType, username, password, streamID, suffix)
+}
+
 // findXCAccount locates an XC output account by username and password.
 func findXCAccount(cfg *config.Config, username, password string) *config.XCOutputAccount {
 	for i := range cfg.XCOutputAccounts {
@@ -198,14 +215,7 @@ func getChannelContentType(ch *types.Channel) string {
 	if len(ch.Streams) == 0 {
 		return "live"
 	}
-	group := strings.ToLower(ch.Streams[0].Attributes["group-title"])
-	if group == "series" || strings.Contains(group, "series") {
-		return "series"
-	}
-	if group == "vod" || strings.Contains(group, "vod") || strings.Contains(group, "movie") {
-		return "vod"
-	}
-	return "live"
+	return string(utils.ContentTypeOfStream(ch.Streams[0]))
 }
 
 // buildXCServerInfo constructs the server_info block from the configured base URL.
@@ -279,7 +289,9 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 			continue
 		}
 
-		attrs := item.channel.Streams[0].Attributes
+		stream := item.channel.Streams[0]
+		attrs := stream.Attributes
+		extension := utils.NormalizeContainerExtension(stream.ContainerExtension)
 		item.channel.Mu.RUnlock()
 
 		streamID := streamIDFromName(item.name)
@@ -287,15 +299,7 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 		logo := attrs["tvg-logo"]
 		tvgID := proxy.EPGIDForChannel(item.name, epgMap)
 
-		var directURL string
-		switch contentType {
-		case "vod":
-			directURL = fmt.Sprintf("%s/movie/%s/%s/%d.ts", baseURL, username, password, streamID)
-		case "series":
-			directURL = fmt.Sprintf("%s/series/%s/%s/%d.ts", baseURL, username, password, streamID)
-		default:
-			directURL = fmt.Sprintf("%s/live/%s/%s/%d.ts", baseURL, username, password, streamID)
-		}
+		directURL := buildXCStreamURL(baseURL, contentType, username, password, streamID, extension)
 
 		s := xcStream{
 			Num:               num,
@@ -312,7 +316,7 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 			TVArchiveDuration: 0,
 		}
 		if contentType == "vod" || contentType == "series" {
-			s.ContainerExtension = "ts"
+			s.ContainerExtension = extension
 		}
 
 		streams = append(streams, s)
@@ -475,8 +479,19 @@ func HandleXCGetPHP(sp *proxy.StreamProxy) http.HandlerFunc {
 	}
 }
 
-// HandleXCStream handles direct stream requests from XC clients.
+// HandleXCLiveStream handles live XC requests, canonicalizing a misleading .m3u8
+// request to the .ts URL before the continuous MPEG-TS response begins.
+func HandleXCLiveStream(sp *proxy.StreamProxy) http.HandlerFunc {
+	return handleXCStream(sp, true)
+}
+
+// HandleXCStream handles direct VOD and series stream requests from XC clients.
 func HandleXCStream(sp *proxy.StreamProxy) http.HandlerFunc {
+	return handleXCStream(sp, false)
+}
+
+// handleXCStream resolves an XC stream ID to a channel and hands it to the restreamer.
+func handleXCStream(sp *proxy.StreamProxy, redirectM3U8 bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		username := vars["username"]
@@ -512,7 +527,17 @@ func HandleXCStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		logger.Debug("{handlers/xcoutput - HandleXCStream} XC stream: account=%s, id=%d, channel=%s",
+		if redirectM3U8 && strings.HasSuffix(strings.ToLower(rawID), ".m3u8") {
+			location := id + ".ts"
+			if r.URL.RawQuery != "" {
+				location += "?" + r.URL.RawQuery
+			}
+			w.Header().Set("Location", location)
+			w.WriteHeader(http.StatusTemporaryRedirect)
+			return
+		}
+
+		logger.Debug("{handlers/xcoutput - handleXCStream} XC stream: account=%s, id=%d, channel=%s",
 			account.Name, streamID, channelName)
 
 		sp.HandleRestreamingClient(w, r, channel)
@@ -535,7 +560,9 @@ func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *c
 		}
 
 		contentType := getChannelContentType(item.channel)
-		attrs := item.channel.Streams[0].Attributes
+		stream := item.channel.Streams[0]
+		attrs := stream.Attributes
+		extension := utils.NormalizeContainerExtension(stream.ContainerExtension)
 		item.channel.Mu.RUnlock()
 
 		if contentType == "live" && !account.EnableLive {
@@ -560,10 +587,11 @@ func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *c
 			epgAttrs = fmt.Sprintf(" tvg-id=\"%s\" tvg-epgid=\"%s\" tvc-guide-stationid=\"%s\"", tvgID, tvgID, tvgID)
 		}
 
+		displayName := utils.SanitizeM3UDisplayName(item.name)
 		fmt.Fprintf(w, "#EXTINF:-1%s tvg-name=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n",
-			epgAttrs, item.name, logo, group, item.name)
-		fmt.Fprintf(w, "%s/live/%s/%s/%d.ts\n",
-			sp.Config.BaseURL, account.Username, account.Password, streamID)
+			epgAttrs, utils.EscapeM3UAttribute(displayName), utils.EscapeM3UAttribute(logo), utils.EscapeM3UAttribute(group), displayName)
+		fmt.Fprintln(w, buildXCStreamURL(sp.Config.BaseURL, contentType, account.Username, account.Password, streamID, extension))
+
 	}
 }
 

@@ -38,6 +38,7 @@ Thumbs.db
 # Docker files
 docker-compose.yaml
 docker-compose.yml
+test.yml
 
 # Log files
 *.log
@@ -71,3 +72,5 @@ settings/
 
 package-lock.json
 static/admin-concat.js
+
+temp/

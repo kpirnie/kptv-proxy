@@ -266,6 +266,8 @@ Group Filtered Playlist: http://your-server-ip:PORT/pl/{username}/{password}/{gr
 XC API:                  http://your-server-ip:PORT/player_api.php
 ```
 
+> **Note**: `{group}` must match a channel's `group-title`. For XC sources this is the provider's own category name (e.g. `USA | ENTERTAINMENT`), not the content type — `live`, `vod`, and `series` are no longer valid group filters for XC-sourced channels unless a provider happens to name a category that.
+
 ## Docker Compose Examples
 
 ### Standard Setup (default)
@@ -398,6 +400,8 @@ Per-account configuration:
 | Enable Live | Include live TV streams |
 | Enable Series | Include series content |
 | Enable VOD | Include video on demand |
+
+> **Note**: Enable Live/Series/VOD control what appears in the account's generated M3U playlist and XC catalog listings only. Direct stream routes (`/live/`, `/movie/`, `/series/`) authenticate on the account's username/password alone and aren't gated by these flags.
 
 Quick copy buttons on each account card:
 - Base URL
@@ -613,9 +617,9 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 | `GET /player_api.php` | Main XC API endpoint |
 | `GET /get.php` | M3U playlist export |
 | `GET /xmltv.php` | EPG data |
-| `GET /live/{user}/{pass}/{id}` | Live stream |
-| `GET /movie/{user}/{pass}/{id}` | VOD stream |
-| `GET /series/{user}/{pass}/{id}` | Series stream |
+| `GET /live/{user}/{pass}/{id}` | Live stream. A request for `{id}.m3u8` gets a 307 redirect to the canonical `{id}.ts` URL rather than being served directly. |
+| `GET /movie/{user}/{pass}/{id}` | VOD stream. The file extension reflects the source's actual container (e.g. `.mp4`, `.mkv`), not always `.ts`. |
+| `GET /series/{user}/{pass}/{id}` | Series stream. Same real-container-extension behavior as VOD. |
 
 ### HDHomeRun (Local Network Only)
 
@@ -629,6 +633,14 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 > **Note**: HDHomeRun endpoints are restricted to RFC1918 (local network) addresses only. Requests from public IPs will receive a 403 Forbidden response. If behind a reverse proxy, set `X-Forwarded-For` appropriately.
 
 ## Configuration Reference
+
+### Content Type Classification
+
+Each stream is classified as `live`, `vod`, or `series` so filters, XC catalog placement, and account content toggles apply correctly.
+
+- **XC sources**: content type comes directly from which XC API endpoint the entry was fetched from (`get_live_streams`, `get_vod_streams`, `get_series`) — not guessed. A live entry whose name contains `24/7` is still reclassified as series, matching the pattern used for M3U sources.
+- **M3U sources**: content type is inferred from the stream name, URL, and `group-title`/`tvg-group` attributes, in that order.
+- **group-title on XC sources**: reflects the provider's own category name for that stream, not the literal content type. A category with no usable name falls back to `live`, `vod`, or `series`.
 
 ### Global Settings
 
@@ -676,6 +688,8 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 | `seriesExcludeRegex` | No | Exclude series matching pattern | `""` |
 | `vodIncludeRegex` | No | Only include VOD matching pattern | `""` |
 | `vodExcludeRegex` | No | Exclude VOD matching pattern | `""` |
+
+For XC sources, the importer fetches live, series, and VOD catalogs plus each type's category list. `group-title` is set from the provider's category name where available, falling back to the content type name. The live/series/VOD include and exclude regexes are applied after the full catalog is fetched, so changing a filter takes effect on the next import without a re-fetch of the provider's data. Editing a source's filters also invalidates any previously compiled filter for that source immediately, rather than waiting for a restart.
 
 ### XC Output Account Settings
 
@@ -776,6 +790,10 @@ docker-compose logs kptv-proxy | grep WATCHER
 - ✅ HDHomeRun endpoints are restricted to RFC1918 addresses — public IPs are blocked
 - ✅ If behind a reverse proxy, ensure `X-Forwarded-For` is set to the client's real IP
 
+**Problem**: A group-filtered playlist (`/pl/{username}/{password}/{group}`) returns no channels for an XC source after upgrading
+
+- ✅ The `{group}` value must match the provider's category name now, not `live`/`vod`/`series`. Check `group-title` in the unfiltered playlist or the channel list in the admin interface for the current value.
+
 ## Client Configuration Examples
 
 ### VLC Media Player
@@ -840,6 +858,13 @@ Format: M3U8/HLS
   "ffmpegMode": false
 }
 ```
+
+## Upgrading
+
+- **XC cache is versioned.** The first import after upgrading re-fetches every XC source's full catalog rather than reusing anything cached under the old shape.
+- **A failed XC fetch is no longer cached.** If any of an XC source's six requests (live/series/vod streams plus their three category lists) fails, that import cycle isn't cached at all — it retries on the next `importRefreshInterval` instead of serving a partial catalog for the full cache lifetime.
+- **XC VOD is now imported.** If VOD content wasn't showing up from an XC source before, check `vodIncludeRegex`/`vodExcludeRegex` and the target XC output account's `enableVOD` setting after upgrading.
+- **Group-filtered playlists for XC sources use provider category names now**, not `live`/`vod`/`series`. Update any saved `/pl/{username}/{password}/{group}` links accordingly — see Common Issues & Solutions above.
 
 ## Supporting KPTV Proxy
 

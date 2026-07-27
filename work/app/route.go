@@ -40,7 +40,7 @@ func RegisterRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/player_api.php", handlers.HandleXCPlayerAPI(sp)).Methods("GET", "POST", "HEAD")
 	router.HandleFunc("/get.php", handlers.HandleXCGetPHP(sp)).Methods("GET", "HEAD")
 	router.HandleFunc("/xmltv.php", handlers.HandleXCXMLTV(sp)).Methods("GET", "HEAD")
-	router.HandleFunc("/live/{username}/{password}/{id}", handlers.HandleXCStream(sp)).Methods("GET", "HEAD")
+	router.HandleFunc("/live/{username}/{password}/{id}", handlers.HandleXCLiveStream(sp)).Methods("GET", "HEAD")
 	router.HandleFunc("/movie/{username}/{password}/{id}", handlers.HandleXCStream(sp)).Methods("GET", "HEAD")
 	router.HandleFunc("/series/{username}/{password}/{id}", handlers.HandleXCStream(sp)).Methods("GET", "HEAD")
 

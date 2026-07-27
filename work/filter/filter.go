@@ -19,6 +19,7 @@ type CompiledFilter struct {
 	SeriesExclude *regexp.Regexp
 	VODInclude    *regexp.Regexp
 	VODExclude    *regexp.Regexp
+	signature     string
 }
 
 // FilterManager manages compiled filters for sources
@@ -44,13 +45,27 @@ func (fm *FilterManager) GetOrCreateFilter(source *config.SourceConfig) *Compile
 	// Use source URL as key since it's unique
 	key := source.URL
 
-	// if it already exists
+	// the cache is keyed on URL, so a regex edit alone would otherwise keep serving the stale filter
+	signature := strings.Join([]string{
+		source.LiveIncludeRegex,
+		source.LiveExcludeRegex,
+		source.SeriesIncludeRegex,
+		source.SeriesExcludeRegex,
+		source.VODIncludeRegex,
+		source.VODExcludeRegex,
+	}, "\x00")
+
+	// if it already exists and nothing changed
 	if filter, exists := fm.filters[key]; exists {
-		return filter
+		if filter.signature == signature {
+			return filter
+		}
+		delete(fm.filters, key)
+		logger.Debug("{filter - GetOrCreateFilter} filter patterns changed, recompiling for: %s", source.Name)
 	}
 
 	// setup the compiled filter
-	filter := &CompiledFilter{}
+	filter := &CompiledFilter{signature: signature}
 
 	// Compile regex patterns (ignore errors, treat as no filter if invalid)
 	if source.LiveIncludeRegex != "" {
@@ -75,16 +90,40 @@ func (fm *FilterManager) GetOrCreateFilter(source *config.SourceConfig) *Compile
 		}
 	}
 	if source.SeriesIncludeRegex != "" {
-		filter.SeriesInclude, _ = regexp.Compile(source.SeriesIncludeRegex)
+		compiled, err := regexp.Compile(source.SeriesIncludeRegex)
+		if err != nil {
+			logger.Error("{filter - GetOrCreateFilter} failed to compile SeriesIncludeRegex '%s': %v\n", source.SeriesIncludeRegex, err)
+		} else {
+			filter.SeriesInclude = compiled
+			logger.Debug("{filter - GetOrCreateFilter} Compiled SeriesIncludeRegex: '%s'\n", source.SeriesIncludeRegex)
+		}
 	}
 	if source.SeriesExcludeRegex != "" {
-		filter.SeriesExclude, _ = regexp.Compile(source.SeriesExcludeRegex)
+		compiled, err := regexp.Compile(source.SeriesExcludeRegex)
+		if err != nil {
+			logger.Error("{filter - GetOrCreateFilter} failed to compile SeriesExcludeRegex '%s': %v\n", source.SeriesExcludeRegex, err)
+		} else {
+			filter.SeriesExclude = compiled
+			logger.Debug("{filter - GetOrCreateFilter} Compiled SeriesExcludeRegex: '%s'\n", source.SeriesExcludeRegex)
+		}
 	}
 	if source.VODIncludeRegex != "" {
-		filter.VODInclude, _ = regexp.Compile(source.VODIncludeRegex)
+		compiled, err := regexp.Compile(source.VODIncludeRegex)
+		if err != nil {
+			logger.Error("{filter - GetOrCreateFilter} failed to compile VODIncludeRegex '%s': %v\n", source.VODIncludeRegex, err)
+		} else {
+			filter.VODInclude = compiled
+			logger.Debug("{filter - GetOrCreateFilter} Compiled VODIncludeRegex: '%s'\n", source.VODIncludeRegex)
+		}
 	}
 	if source.VODExcludeRegex != "" {
-		filter.VODExclude, _ = regexp.Compile(source.VODExcludeRegex)
+		compiled, err := regexp.Compile(source.VODExcludeRegex)
+		if err != nil {
+			logger.Error("{filter - GetOrCreateFilter} failed to compile VODExcludeRegex '%s': %v\n", source.VODExcludeRegex, err)
+		} else {
+			filter.VODExclude = compiled
+			logger.Debug("{filter - GetOrCreateFilter} Compiled VODExcludeRegex: '%s'\n", source.VODExcludeRegex)
+		}
 	}
 
 	fm.filters[key] = filter
@@ -219,63 +258,7 @@ func shouldIncludeStream(stream *types.Stream, filter *CompiledFilter) bool {
 	return true
 }
 
-// getContentType determines the content type from stream attributes
+// getContentType determines the content type using the shared resolver.
 func getContentType(stream *types.Stream) string {
-	// First check using the same regex patterns used during import
-	streamName := stream.Name
-	streamURL := stream.URL
-
-	// Check both name and URL with series regex
-	seriesNameMatch := utils.SeriesRegex.MatchString(streamName)
-	vodNameMatch := utils.VodRegex.MatchString(streamName)
-	seriesURLMatch := utils.SeriesRegex.MatchString(streamURL)
-	vodURLMatch := utils.VodRegex.MatchString(streamURL)
-
-	logger.Debug("{filter - getContentType} Content type detection for '%s':\n", streamName)
-	logger.Debug("{filter - getContentType}   SeriesName: %v, VODName: %v, SeriesURL: %v, VODURL: %v\n",
-		seriesNameMatch, vodNameMatch, seriesURLMatch, vodURLMatch)
-
-	// Apply same logic as import parsing
-	if seriesNameMatch || seriesURLMatch {
-		logger.Debug("{filter - getContentType} Classified as SERIES\n")
-		return "series"
-	}
-	if vodNameMatch || vodURLMatch {
-		logger.Debug("{filter - getContentType} Classified as VOD\n")
-		return "vod"
-	}
-
-	// Fallback to attribute-based detection (secondary method)
-	if group, ok := stream.Attributes["group-title"]; ok {
-		groupLower := strings.ToLower(group)
-		logger.Debug("{filter - getContentType} Content type from group-title '%s': ", group)
-
-		switch {
-		case strings.Contains(groupLower, "series"):
-			return "series"
-		case strings.Contains(groupLower, "vod") || strings.Contains(groupLower, "movie"):
-			return "vod"
-		case strings.Contains(groupLower, "live") || strings.Contains(groupLower, "tv"):
-			return "live"
-		}
-	}
-
-	// Also check tvg-group attribute
-	if group, ok := stream.Attributes["tvg-group"]; ok {
-		groupLower := strings.ToLower(group)
-		logger.Debug("{filter - getContentType} Content type from tvg-group '%s': ", group)
-
-		switch {
-		case strings.Contains(groupLower, "series"):
-			return "series"
-		case strings.Contains(groupLower, "vod") || strings.Contains(groupLower, "movie"):
-			return "vod"
-		case strings.Contains(groupLower, "live") || strings.Contains(groupLower, "tv"):
-			return "live"
-		}
-	}
-
-	// Default to live
-	logger.Debug("{filter - getContentType} Defaulted to LIVE")
-	return "live"
+	return string(utils.ContentTypeOfStream(stream))
 }

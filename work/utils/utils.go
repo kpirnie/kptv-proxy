@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/types"
 	"net/url"
 	"regexp"
 	"strings"
@@ -17,8 +18,71 @@ var (
 
 // InitContentRegexes compiles content classification regexes once at startup
 func InitContentRegexes() {
-	SeriesRegex = regexp.MustCompile(`(?i)24\/7|247|\/series\/|\/shows\/|\/show\/`)
+	SeriesRegex = regexp.MustCompile(`(?i)24\/7|\/series\/|\/shows\/|\/show\/`)
 	VodRegex = regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
+}
+
+// EscapeM3UAttribute escapes a value for use inside a quoted M3U attribute.
+func EscapeM3UAttribute(value string) string {
+	return strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n", "\r", "\\r").Replace(value)
+}
+
+// SanitizeM3UDisplayName strips line breaks so a display name cannot split the record.
+func SanitizeM3UDisplayName(name string) string {
+	return strings.NewReplacer("\r", " ", "\n", " ").Replace(name)
+}
+
+// NormalizeContainerExtension returns a safe alphanumeric extension without a leading dot.
+func NormalizeContainerExtension(extension string) string {
+	extension = strings.TrimSpace(strings.TrimPrefix(extension, "."))
+	if extension == "" {
+		return "ts"
+	}
+
+	// reject anything non-alphanumeric so it can never escape the URL path segment
+	for _, r := range extension {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return "ts"
+		}
+	}
+	return strings.ToLower(extension)
+}
+
+// ContentTypeOfStream resolves a stream's content type. Explicit metadata wins;
+// legacy streams fall back to the name, URL, and group heuristics.
+func ContentTypeOfStream(stream *types.Stream) types.ContentType {
+	if stream == nil {
+		return types.ContentTypeLive
+	}
+
+	// an importer that knew the real type already set it
+	switch stream.ContentType {
+	case types.ContentTypeLive, types.ContentTypeVOD, types.ContentTypeSeries:
+		return stream.ContentType
+	}
+
+	// fall back to the import-time regexes
+	if SeriesRegex != nil && (SeriesRegex.MatchString(stream.Name) || SeriesRegex.MatchString(stream.URL)) {
+		return types.ContentTypeSeries
+	}
+	if VodRegex != nil && (VodRegex.MatchString(stream.Name) || VodRegex.MatchString(stream.URL)) {
+		return types.ContentTypeVOD
+	}
+
+	// last resort, sniff the group attributes
+	for _, key := range []string{"group-title", "tvg-group"} {
+		group := strings.ToLower(stream.Attributes[key])
+		switch {
+		case strings.Contains(group, "series"):
+			return types.ContentTypeSeries
+		case strings.Contains(group, "vod") || strings.Contains(group, "movie"):
+			return types.ContentTypeVOD
+		case strings.Contains(group, "live") || strings.Contains(group, "tv"):
+			return types.ContentTypeLive
+		}
+	}
+
+	return types.ContentTypeLive
 }
 
 // LogURL provides intelligent URL formatting for logging output based on application

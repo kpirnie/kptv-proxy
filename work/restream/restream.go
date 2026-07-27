@@ -1,6 +1,7 @@
 package restream
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -712,6 +713,13 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 
 	// Direct URL — sniff and stream from the already-open response,
 	// no second GET, preserving single-use token URLs
+	if liveResp == nil || cancelLive == nil {
+		logger.Error("{restream/restream - StreamFromSource} Channel %s: No live response returned for non-master stream %d", r.Channel.Name, index)
+		if cancelLive != nil {
+			cancelLive()
+		}
+		return false, 0
+	}
 	defer cancelLive()
 	return r.sniffAndStreamResponse(liveResp, stream.URL, stream.Source)
 }
@@ -778,16 +786,30 @@ func (r *Restream) getStreamVariants(url string, source *config.SourceConfig) ([
 	// Read the entire body for playlist parsing
 	body, err := io.ReadAll(resp.Body)
 	validationTimer.Stop()
-	cancel()
 	resp.Body.Close()
 	if err != nil {
+		cancel()
 		logger.Error("{restream/restream - getStreamVariants} Failed to read response body for channel %s: %v", r.Channel.Name, err)
 		return nil, false, nil, nil, err
 	}
 
 	// Parse the body as a master playlist and return variants
 	variants, isMaster, perr := masterHandler.ProcessMasterPlaylistVariants(string(body), url, r.Channel.Name)
-	return variants, isMaster, nil, nil, perr
+	if perr != nil {
+		cancel()
+		return nil, false, nil, nil, perr
+	}
+
+	// Detection consumed the body on a non-master response, so hand it back over the
+	// buffered bytes rather than forcing the caller to re-request the stream
+	if !isMaster {
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		logger.Debug("{restream/restream - getStreamVariants} Returning buffered response for direct streaming for channel %s", r.Channel.Name)
+		return variants, false, resp, cancel, nil
+	}
+
+	cancel()
+	return variants, true, nil, nil, nil
 }
 
 // testAndStreamVariant attempts to validate and stream from a variant URL.
