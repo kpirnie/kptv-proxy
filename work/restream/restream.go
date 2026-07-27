@@ -919,8 +919,14 @@ func (r *Restream) sniffAndStreamResponse(resp *http.Response, url string, sourc
 		strings.Contains(contentType, "audio/mpegurl") {
 		logger.Debug("{restream/restream - sniffAndStreamResponse} HLS playlist detected via Content-Type for channel %s: %s", r.Channel.Name, contentType)
 
+		body, err := io.ReadAll(resp.Body)
+		effectiveURL := resp.Request.URL.String()
 		resp.Body.Close()
-		return r.streamHLSSegments(url)
+		if err != nil {
+			logger.Warn("{restream/restream - sniffAndStreamResponse} Failed to read playlist body for channel %s, re-fetching: %v", r.Channel.Name, err)
+			return r.streamHLSSegments(url)
+		}
+		return r.streamHLSSegmentsFrom(url, body, effectiveURL)
 	}
 
 	// Content-Type ambiguous or missing - need to peek at content
@@ -943,8 +949,16 @@ func (r *Restream) sniffAndStreamResponse(resp *http.Response, url string, sourc
 	// If this looks like an HLS playlist (contains EXTINF tags)
 	if strings.Contains(content, "#EXTINF") || strings.Contains(content, "#EXTM3U") {
 		logger.Debug("{restream/restream - sniffAndStreamResponse} HLS playlist detected via content inspection for channel %s", r.Channel.Name)
+
+		rest, err := io.ReadAll(resp.Body)
+		effectiveURL := resp.Request.URL.String()
 		resp.Body.Close()
-		return r.streamHLSSegments(url)
+		if err != nil {
+			logger.Warn("{restream/restream - sniffAndStreamResponse} Failed to read remaining playlist body for channel %s, re-fetching: %v", r.Channel.Name, err)
+			return r.streamHLSSegments(url)
+		}
+		body := append(append([]byte{}, testBuffer[:n]...), rest...)
+		return r.streamHLSSegmentsFrom(url, body, effectiveURL)
 	}
 
 	logger.Debug("{restream/restream - sniffAndStreamResponse} Direct stream detected via content inspection for channel %s", r.Channel.Name)

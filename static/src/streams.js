@@ -35,7 +35,12 @@ function renderStreamSelector(data) {
 
     container.innerHTML = `
         <div class="mb-4 flex items-center gap-3">
-            <span class="text-sm text-gray-400">Drag to reorder streams</span>
+            <span class="text-sm text-gray-400">Drag to Reorder</span>
+            <br><button id="save-order-btn" type="button"
+                class="px-3 py-1 text-xs font-semibold bg-kptv-blue hover:bg-kptv-blue-light text-white rounded"
+                onclick="saveStreamOrder()">
+                Save
+            </button>
             <span id="order-save-status" class="text-xs text-gray-500"></span>
         </div>
         <div id="streams-container">
@@ -134,7 +139,7 @@ function renderStreamCards(data) {
 /**
  * Initializes drag-and-drop sorting on the streams container.
  * Attaches dragstart, dragover, and dragend events to stream cards.
- * Auto-saves order to server after a successful drop with 600ms debounce.
+ * Reveals the Save Order button after a drop; saving is manual.
  * @param {string} channelName - Channel name used when saving the new order
  */
 function initStreamDragDrop(channelName) {
@@ -142,7 +147,6 @@ function initStreamDragDrop(channelName) {
     if (!container) return;
 
     let dragCard = null;
-    let debounceTimer = null;
 
     container.addEventListener('dragstart', (e) => {
         dragCard = e.target.closest('.stream-card');
@@ -176,18 +180,10 @@ function initStreamDragDrop(channelName) {
             card.setAttribute('data-display-index', idx);
         });
 
-        // Debounced auto-save
-        clearTimeout(debounceTimer);
+        const saveBtn = document.getElementById('save-order-btn');
+        if (saveBtn) saveBtn.classList.remove('hidden');
         const statusEl = document.getElementById('order-save-status');
-        if (statusEl) statusEl.textContent = 'Saving...';
-
-        debounceTimer = setTimeout(async () => {
-            await saveStreamOrder();
-            if (statusEl) {
-                statusEl.textContent = 'Saved';
-                setTimeout(() => statusEl.textContent = '', 2000);
-            }
-        }, 600);
+        if (statusEl) statusEl.textContent = 'Unsaved changes';
     });
 }
 
@@ -195,11 +191,18 @@ function initStreamDragDrop(channelName) {
  * Saves the current stream card DOM order to the server.
  * Reads data-original-index from each card in current DOM order
  * and POSTs the resulting array to the channel order endpoint.
+ * On success, re-stamps each card's data-original-index to its new
+ * position so a subsequent reorder in the same session is computed
+ * against the order the server now actually has.
  * @returns {Promise<void>}
  */
 async function saveStreamOrder() {
     const cards = document.querySelectorAll('.stream-card');
     if (!cards.length) return;
+
+    const saveBtn = document.getElementById('save-order-btn');
+    const statusEl = document.getElementById('order-save-status');
+    if (statusEl) statusEl.textContent = 'Saving...';
 
     const newOrder = Array.from(cards).map(card =>
         parseInt(card.getAttribute('data-original-index'))
@@ -210,8 +213,16 @@ async function saveStreamOrder() {
             method: 'POST',
             body: JSON.stringify({ streamOrder: newOrder })
         });
+
+        cards.forEach((card, idx) => {
+            card.setAttribute('data-original-index', idx);
+        });
+
+        if (statusEl) {
+            statusEl.textContent = 'Saved';
+            setTimeout(() => statusEl.textContent = '', 2000);
+        }
     } catch (error) {
-        const statusEl = document.getElementById('order-save-status');
         if (statusEl) statusEl.textContent = 'Save failed';
         showNotification('Failed to save stream order: ' + error.message, 'danger');
     }
