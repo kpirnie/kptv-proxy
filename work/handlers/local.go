@@ -27,12 +27,18 @@ func HandleLocalStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		entry, ok := resolveLocalEntry(vars["hash"])
+		hash := vars["hash"]
+		if dotIdx := strings.LastIndex(hash, "."); dotIdx != -1 {
+			hash = hash[:dotIdx]
+		}
+
+		entry, ok := resolveLocalEntry(hash)
 		if !ok {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
 
+		logger.Debug("{handlers/local - HandleLocalStream} serving %s", entry.Path)
 		serveLocalFile(w, r, entry.Path)
 	}
 }

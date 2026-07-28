@@ -82,7 +82,7 @@ func formatEntry(e *MediaEntry, group, baseURL, username, password string) strin
 		duration,
 		buildAttrs(e, group, baseURL, username, password),
 		sanitize(e.Display),
-		streamURL(baseURL, username, password, e.Hash),
+		streamURL(baseURL, username, password, e.Hash, ContainerExtension(e)),
 	)
 }
 
@@ -94,7 +94,7 @@ func buildAttrs(e *MediaEntry, group, baseURL, username, password string) string
 	var pairs []kv
 
 	add := func(k, v string) {
-		if v = sanitize(v); v != "" {
+		if v = attrValue(sanitize(v)); v != "" {
 			pairs = append(pairs, kv{k, v})
 		}
 	}
@@ -157,9 +157,23 @@ func buildAttrs(e *MediaEntry, group, baseURL, username, password string) string
 	return strings.Join(parts, " ")
 }
 
-// streamURL builds the proxied playback URL for a local media entry.
-func streamURL(baseURL, username, password, hash string) string {
-	return fmt.Sprintf("%s/local/%s/%s/%s", baseURL, username, password, hash)
+// attrValue prepares a value for an EXTINF attribute. Commas are substituted
+// because VLC splits the line at the first comma to locate the display title,
+// so a comma inside a quoted attribute swallows the rest of the entry. Encoding
+// is not an option here — M3U parsers do not decode attribute values, so the
+// escape sequence would be displayed verbatim.
+func attrValue(s string) string {
+	return strings.ReplaceAll(s, ",", ";")
+}
+
+// streamURL builds the proxied playback URL for a local media entry. The
+// container extension is appended so clients can identify the media format
+// without issuing a request first.
+func streamURL(baseURL, username, password, hash, extension string) string {
+	if extension == "" {
+		return fmt.Sprintf("%s/local/%s/%s/%s", baseURL, username, password, hash)
+	}
+	return fmt.Sprintf("%s/local/%s/%s/%s.%s", baseURL, username, password, hash, extension)
 }
 
 // artworkURL builds the proxied artwork URL for a local media entry.
