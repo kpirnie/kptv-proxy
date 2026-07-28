@@ -460,6 +460,25 @@ func HandleXCPlayerAPI(sp *proxy.StreamProxy) http.HandlerFunc {
 			}
 			json.NewEncoder(w).Encode(buildStreamList(sp, "vod", sp.Config.BaseURL, username, password))
 
+		case "get_vod_info":
+			if !account.EnableVOD {
+				json.NewEncoder(w).Encode(map[string]any{})
+				return
+			}
+			vodID, err := strconv.Atoi(r.URL.Query().Get("vod_id"))
+			if err != nil {
+				json.NewEncoder(w).Encode(map[string]any{})
+				return
+			}
+			if entry := localscan.FindByXCStreamID(vodID); entry != nil {
+				json.NewEncoder(w).Encode(buildLocalVODInfo(entry, sp.Config.BaseURL, username, password))
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"user_info":   userInfo,
+				"server_info": serverInfo,
+			})
+
 		case "get_series_categories":
 			if !account.EnableSeries {
 				json.NewEncoder(w).Encode([]xcCategory{})
@@ -592,6 +611,86 @@ func handleXCStream(sp *proxy.StreamProxy, redirectM3U8 bool) http.HandlerFunc {
 
 		sp.HandleRestreamingClient(w, r, channel)
 	}
+}
+
+// buildLocalVODInfo assembles the get_vod_info response for a local media
+// entry. Unknown IDs are left to the caller — remote channels keep their
+// existing default response.
+func buildLocalVODInfo(e *localscan.MediaEntry, baseURL, username, password string) map[string]any {
+	extension := utils.NormalizeContainerExtension(localscan.ContainerExtension(e))
+	streamID := localscan.XCStreamID(e.Hash)
+
+	poster := ""
+	if e.Poster != "" {
+		poster = fmt.Sprintf("%s/localart/%s/%s/%s/poster", baseURL, username, password, e.Hash)
+	}
+
+	backdrops := []string{}
+	if e.Fanart != "" {
+		backdrops = append(backdrops, fmt.Sprintf("%s/localart/%s/%s/%s/fanart", baseURL, username, password, e.Hash))
+	}
+
+	cast := make([]string, 0, len(e.Cast))
+	for _, p := range e.Cast {
+		if p.Name != "" {
+			cast = append(cast, p.Name)
+		}
+	}
+
+	name := e.Title
+	if name == "" {
+		name = e.Display
+	}
+
+	duration := e.Duration
+	if duration < 0 {
+		duration = 0
+	}
+
+	return map[string]any{
+		"info": map[string]any{
+			"name":            name,
+			"o_name":          e.Display,
+			"movie_image":     poster,
+			"cover_big":       poster,
+			"backdrop_path":   backdrops,
+			"releasedate":     e.Premiered,
+			"director":        strings.Join(e.Directors, ", "),
+			"actors":          strings.Join(cast, ", "),
+			"cast":            strings.Join(cast, ", "),
+			"description":     e.Plot,
+			"plot":            e.Plot,
+			"genre":           strings.Join(e.Genres, ", "),
+			"country":         e.Country,
+			"age":             e.MPAA,
+			"mpaa_rating":     e.MPAA,
+			"rating":          fmt.Sprintf("%.1f", e.Rating),
+			"duration_secs":   duration,
+			"duration":        formatXCDuration(duration),
+			"youtube_trailer": "",
+			"tmdb_id":         e.TMDBID,
+			"video":           []any{},
+			"audio":           []any{},
+			"bitrate":         0,
+		},
+		"movie_data": map[string]any{
+			"stream_id":           streamID,
+			"name":                e.Display,
+			"added":               "0",
+			"category_id":         categoryIDFromName(e.GroupTitle),
+			"container_extension": extension,
+			"custom_sid":          "",
+			"direct_source":       buildXCStreamURL(baseURL, "vod", username, password, streamID, extension),
+		},
+	}
+}
+
+// formatXCDuration renders a second count as the HH:MM:SS string XC clients expect.
+func formatXCDuration(secs int) string {
+	if secs <= 0 {
+		return "00:00:00"
+	}
+	return fmt.Sprintf("%02d:%02d:%02d", secs/3600, (secs%3600)/60, secs%60)
 }
 
 // writeXCM3UPlaylist writes a sorted M3U playlist filtered by account content settings.
