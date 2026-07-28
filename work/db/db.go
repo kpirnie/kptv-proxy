@@ -164,12 +164,76 @@ func initSchema(db *sql.DB) error {
 		UNIQUE(channel, s_hash)
 	);
 
+	CREATE TABLE IF NOT EXISTS kp_local_sources (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		name          TEXT    NOT NULL,
+		path          TEXT    NOT NULL,
+		media_type    INTEGER NOT NULL DEFAULT 1,
+		group_prefix  TEXT    NOT NULL DEFAULT '',
+		sort_order    INTEGER NOT NULL DEFAULT 1,
+		enabled       INTEGER NOT NULL DEFAULT 1,
+		inc_regex     TEXT    NOT NULL DEFAULT '',
+		exc_regex     TEXT    NOT NULL DEFAULT '',
+		last_scan     INTEGER NOT NULL DEFAULT 0,
+		entry_count   INTEGER NOT NULL DEFAULT 0,
+		UNIQUE(path, media_type)
+	);
+
+	CREATE TABLE IF NOT EXISTS kp_local_media (
+		id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		local_source_id INTEGER NOT NULL REFERENCES kp_local_sources(id) ON DELETE CASCADE,
+		s_hash          TEXT    NOT NULL,
+		path            TEXT    NOT NULL,
+		media_type      INTEGER NOT NULL DEFAULT 1,
+		group_title     TEXT    NOT NULL DEFAULT '',
+		tvg_name        TEXT    NOT NULL DEFAULT '',
+		display         TEXT    NOT NULL DEFAULT '',
+		duration        INTEGER NOT NULL DEFAULT 0,
+		year            TEXT    NOT NULL DEFAULT '',
+		artist          TEXT    NOT NULL DEFAULT '',
+		album           TEXT    NOT NULL DEFAULT '',
+		disc            INTEGER NOT NULL DEFAULT 0,
+		track           INTEGER NOT NULL DEFAULT 0,
+		series          TEXT    NOT NULL DEFAULT '',
+		season          INTEGER NOT NULL DEFAULT 0,
+		episode         INTEGER NOT NULL DEFAULT 0,
+		episode_title   TEXT    NOT NULL DEFAULT '',
+		title           TEXT    NOT NULL DEFAULT '',
+		sort_title      TEXT    NOT NULL DEFAULT '',
+		plot            TEXT    NOT NULL DEFAULT '',
+		tagline         TEXT    NOT NULL DEFAULT '',
+		poster          TEXT    NOT NULL DEFAULT '',
+		fanart          TEXT    NOT NULL DEFAULT '',
+		rating          REAL    NOT NULL DEFAULT 0,
+		critic_rating   INTEGER NOT NULL DEFAULT 0,
+		mpaa            TEXT    NOT NULL DEFAULT '',
+		country         TEXT    NOT NULL DEFAULT '',
+		premiered       TEXT    NOT NULL DEFAULT '',
+		imdb_id         TEXT    NOT NULL DEFAULT '',
+		tmdb_id         TEXT    NOT NULL DEFAULT '',
+		tvdb_id         TEXT    NOT NULL DEFAULT '',
+		collection      TEXT    NOT NULL DEFAULT '',
+		genres          TEXT    NOT NULL DEFAULT '',
+		studios         TEXT    NOT NULL DEFAULT '',
+		tags            TEXT    NOT NULL DEFAULT '',
+		directors       TEXT    NOT NULL DEFAULT '',
+		writers         TEXT    NOT NULL DEFAULT '',
+		cast_json       TEXT    NOT NULL DEFAULT '',
+		sort_key        TEXT    NOT NULL DEFAULT '',
+		mod_time        INTEGER NOT NULL DEFAULT 0,
+		file_size       INTEGER NOT NULL DEFAULT 0,
+		UNIQUE(local_source_id, path)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_sd_lineups_account     ON kp_sd_lineups(sd_account_id);
 	CREATE INDEX IF NOT EXISTS idx_overrides_channel_hash ON kp_stream_overrides(channel, s_hash);	
 	CREATE INDEX IF NOT EXISTS idx_users_username ON kp_users(username);
 	CREATE INDEX IF NOT EXISTS idx_users_email    ON kp_users(email);
 	CREATE INDEX IF NOT EXISTS idx_tokens_hash    ON kp_api_tokens(token_hash);
 	CREATE INDEX IF NOT EXISTS idx_stream_order_channel ON kp_stream_order(channel, s_order);
+	CREATE INDEX IF NOT EXISTS idx_local_sources_order ON kp_local_sources(sort_order);
+	CREATE INDEX IF NOT EXISTS idx_local_media_source  ON kp_local_media(local_source_id, sort_key);
+	CREATE INDEX IF NOT EXISTS idx_local_media_hash    ON kp_local_media(s_hash);
 	`)
 
 	return err

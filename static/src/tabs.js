@@ -1,7 +1,25 @@
 /**
+ * Reads the saved main tab index from the kptv_active_tab cookie.
+ * @returns {number} Saved tab index, or 0 when unset
+ */
+function getActiveTabCookie() {
+    const match = document.cookie.match(/(?:^|;\s*)kptv_active_tab=([^;]*)/);
+    return match ? (parseInt(decodeURIComponent(match[1]), 10) || 0) : 0;
+}
+
+/**
+ * Writes the active main tab index to the kptv_active_tab cookie (session lifetime).
+ * @param {number} tabIndex
+ */
+function setActiveTabCookie(tabIndex) {
+    document.cookie = `kptv_active_tab=${encodeURIComponent(tabIndex)};path=/`;
+}
+
+/**
  * Initializes the main navigation tab system, attaching click handlers
  * to all tab buttons and managing active state for tab content panels.
- * Also initializes the source modal sub-tab system.
+ * Also initializes the source modal sub-tab system, and restores the
+ * previously active main tab from the kptv_active_tab cookie.
  */
 function initTabs() {
     const tabBtns = document.querySelectorAll('.tab-btn');
@@ -21,6 +39,7 @@ function initTabs() {
 
             tabContents.forEach(content => content.classList.remove('active'));
             tabContents[tabIndex].classList.add('active');
+            setActiveTabCookie(tabIndex);
         });
     });
 
@@ -42,6 +61,9 @@ function initTabs() {
             sourceTabContents[tabIndex].classList.add('active');
         });
     });
+
+    const savedTab = getActiveTabCookie();
+    if (savedTab > 0 && savedTab < tabBtns.length) switchTab(savedTab);
 }
 
 /**
@@ -64,4 +86,5 @@ function switchTab(tabIndex) {
 
     tabContents.forEach(content => content.classList.remove('active'));
     tabContents[tabIndex].classList.add('active');
+    setActiveTabCookie(tabIndex);
 }
