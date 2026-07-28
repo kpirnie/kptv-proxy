@@ -39,6 +39,11 @@ function renderMetadata() {
     list.innerHTML = metaEntries.map((entry, index) => `
         <div class="source-item">
             <div class="flex justify-between items-start gap-3">
+                <div class="shrink-0">
+                    ${entry.poster
+            ? `<img src="/api/local-media/${entry.hash}/art/poster" class="w-12 rounded border border-kptv-border" alt="">`
+            : '<div class="w-12 h-16 rounded border border-kptv-border bg-kptv-gray-light"></div>'}
+                </div>
                 <div class="flex-1 min-w-0">
                     <h4 class="text-base font-semibold mb-1">${escapeHtml(entry.display)}</h4>
                     <div class="text-gray-400 text-sm text-truncate">${escapeHtml(entry.group_title)}</div>
@@ -142,6 +147,11 @@ function showMetaModal(index) {
     document.getElementById('meta-tmdb-id').value = entry.tmdb_id || '';
     document.getElementById('meta-tvdb-id').value = entry.tvdb_id || '';
 
+    document.getElementById('meta-poster').value = entry.poster || '';
+    document.getElementById('meta-fanart').value = entry.fanart || '';
+    renderArtPreview('meta-poster-preview', entry, 'poster');
+    renderArtPreview('meta-fanart-preview', entry, 'fanart');
+
     const isMusic = entry.media_type === 'music';
     toggleMetaFields('meta-video-fields', !isMusic);
     toggleMetaFields('meta-movie-fields', entry.media_type === 'movies');
@@ -192,6 +202,8 @@ async function saveMetadata() {
         imdb_id: document.getElementById('meta-imdb-id').value.trim(),
         tmdb_id: document.getElementById('meta-tmdb-id').value.trim(),
         tvdb_id: document.getElementById('meta-tvdb-id').value.trim(),
+        poster: document.getElementById('meta-poster').value.trim(),
+        fanart: document.getElementById('meta-fanart').value.trim(),
         genres: splitMetaList(document.getElementById('meta-genres').value),
         tags: splitMetaList(document.getElementById('meta-tags').value),
         directors: splitMetaList(document.getElementById('meta-directors').value),
@@ -214,6 +226,26 @@ async function saveMetadata() {
         hideLoadingOverlay();
         showNotification('Failed to save metadata: ' + error.message, 'danger');
     }
+}
+
+/**
+ * Renders a thumbnail preview for an entry's poster or fanart, or a
+ * placeholder line when none is set.
+ * @param {string} containerId - Target element ID
+ * @param {Object} entry - Media entry
+ * @param {string} kind - Either 'poster' or 'fanart'
+ */
+function renderArtPreview(containerId, entry, kind) {
+    const container = document.getElementById(containerId);
+    const value = kind === 'poster' ? entry.poster : entry.fanart;
+
+    if (!value) {
+        container.innerHTML = '<div class="text-sm text-gray-500">None found</div>';
+        return;
+    }
+
+    container.innerHTML = `<img src="/api/local-media/${entry.hash}/art/${kind}"
+        class="max-h-40 rounded border border-kptv-border" alt="${kind}">`;
 }
 
 /**

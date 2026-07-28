@@ -3,8 +3,6 @@ package localscan
 
 import (
 	"fmt"
-	"kptv-proxy/work/db"
-	"kptv-proxy/work/logger"
 	"kptv-proxy/work/utils"
 	"strconv"
 	"strings"
@@ -35,22 +33,23 @@ func ContentTypeOf(mediaType string) string {
 // restricts output to entries whose group title matches it.
 //
 // Returns the number of entries written.
-func WritePlaylistEntries(sb *strings.Builder, baseURL, username, password, groupFilter string, enableVOD, enableSeries bool) int {
+func WritePlaylistEntries(sb *strings.Builder, baseURL, username, password, groupFilter, typeFilter string, enableVOD, enableSeries bool) int {
+
 	if !enableVOD && !enableSeries {
 		return 0
 	}
 
-	entries, err := ListAll()
-	if err != nil {
-		logger.Error("{localscan/playlist - WritePlaylistEntries} failed to load local media: %v", err)
-		return 0
-	}
-
-	prefixes := groupPrefixes()
+	entries := ExportEntries()
 
 	written := 0
 	for _, e := range entries {
-		switch ContentTypeOf(e.MediaType) {
+		contentType := ContentTypeOf(e.MediaType)
+
+		if typeFilter != "" && contentType != typeFilter {
+			continue
+		}
+
+		switch contentType {
 		case "series":
 			if !enableSeries {
 				continue
@@ -61,45 +60,15 @@ func WritePlaylistEntries(sb *strings.Builder, baseURL, username, password, grou
 			}
 		}
 
-		group := applyGroupPrefix(prefixes[e.LocalSourceID], e.GroupTitle)
-		if groupFilter != "" && !strings.EqualFold(group, groupFilter) {
+		if groupFilter != "" && !strings.EqualFold(e.GroupTitle, groupFilter) {
 			continue
 		}
 
-		sb.WriteString(formatEntry(e, group, baseURL, username, password))
+		sb.WriteString(formatEntry(e, e.GroupTitle, baseURL, username, password))
 		written++
 	}
 
 	return written
-}
-
-// groupPrefixes returns the configured group prefix for every enabled local
-// source, keyed by source ID.
-func groupPrefixes() map[int64]string {
-	out := make(map[int64]string)
-
-	sources, err := db.GetEnabledLocalSources()
-	if err != nil {
-		logger.Error("{localscan/playlist - groupPrefixes} failed to load local sources: %v", err)
-		return out
-	}
-
-	for _, s := range sources {
-		out[s.ID] = s.GroupPrefix
-	}
-	return out
-}
-
-// applyGroupPrefix prepends the source's configured prefix to an entry's group.
-func applyGroupPrefix(prefix, group string) string {
-	prefix = strings.TrimSpace(prefix)
-	if prefix == "" {
-		return group
-	}
-	if group == "" {
-		return prefix
-	}
-	return prefix + "/" + group
 }
 
 // formatEntry renders one entry as an #EXTINF line plus its proxied URL.

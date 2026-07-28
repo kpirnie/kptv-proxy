@@ -357,10 +357,20 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	logger.Debug("{proxy/stream - GeneratePlaylist} Playlist request from: %s (%s)",
 		r.RemoteAddr, r.Header.Get("User-Agent"))
 
-	// construct cache key per account with optional group filter suffix
+	// a group segment naming a content type filters by content type rather
+	// than by group title
+	typeFilter := ""
+	if t := strings.ToLower(groupFilter); t == "live" || t == "vod" || t == "series" {
+		typeFilter = t
+		groupFilter = ""
+	}
+
+	// construct cache key per account with optional group or content-type suffix
 	cacheKey := fmt.Sprintf("playlist_%s", account.Username)
 	if groupFilter != "" {
 		cacheKey = fmt.Sprintf("playlist_%s_%s", account.Username, strings.ToLower(groupFilter))
+	} else if typeFilter != "" {
+		cacheKey = fmt.Sprintf("playlist_%s_type_%s", account.Username, typeFilter)
 	}
 
 	// serve from cache if available
@@ -417,6 +427,12 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 			// determine content type from the importer's classification
 			contentType := streamContentType(stream)
 
+			// skip channels that don't match the requested content type
+			if typeFilter != "" && contentType != typeFilter {
+				ch.channel.Mu.RUnlock()
+				continue
+			}
+
 			// skip channels that don't match the account content settings
 			if contentType == "live" && !account.EnableLive {
 				ch.channel.Mu.RUnlock()
@@ -467,7 +483,7 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	// Local media is export-only — entries carry direct /local/ URLs so the
 	// client range-requests the file rather than going through the restreamer.
 	localCount := localscan.WritePlaylistEntries(&playlist, sp.Config.BaseURL,
-		account.Username, account.Password, groupFilter,
+		account.Username, account.Password, groupFilter, typeFilter,
 		account.EnableVOD, account.EnableSeries)
 	if localCount > 0 {
 		logger.Debug("{proxy/stream - GeneratePlaylist} Appended %d local media entries", localCount)

@@ -76,6 +76,7 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api/local-media", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(middleware.GzipMiddleware(handleGetLocalMedia(sp))))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/local-media/{hash}", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(middleware.GzipMiddleware(handleGetLocalMediaEntry(sp))))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/local-media/{hash}", users.RequireAuthWithPerm(users.PermConfigWrite, corsMiddleware(handleUpdateLocalMedia(sp)))).Methods("PUT", "OPTIONS")
+	router.HandleFunc("/api/local-media/{hash}/art/{kind}", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(handleGetLocalMediaArt(sp)))).Methods("GET", "OPTIONS")
 
 	// Schedules Direct endpoints
 	router.HandleFunc("/api/sd-accounts", users.RequireAuthWithPerm(users.PermSD, corsMiddleware(middleware.GzipMiddleware(handleGetSDAccounts(sp))))).Methods("GET", "OPTIONS")

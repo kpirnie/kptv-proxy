@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/epgindex"
+	"kptv-proxy/work/localscan"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/types"
@@ -323,6 +324,33 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 		num++
 	}
 
+	for _, e := range localscan.EntriesForContentType(contentType) {
+		extension := utils.NormalizeContainerExtension(localscan.ContainerExtension(e))
+		streamID := localscan.XCStreamID(e.Hash)
+
+		logo := ""
+		if e.Poster != "" {
+			logo = fmt.Sprintf("%s/localart/%s/%s/%s/poster", baseURL, username, password, e.Hash)
+		}
+
+		streams = append(streams, xcStream{
+			Num:                num,
+			Name:               e.Display,
+			StreamType:         contentType,
+			StreamID:           streamID,
+			StreamIcon:         logo,
+			EPGChannelID:       "",
+			Added:              "0",
+			CategoryID:         categoryIDFromName(e.GroupTitle),
+			CustomSid:          "",
+			TVArchive:          0,
+			DirectSource:       buildXCStreamURL(baseURL, contentType, username, password, streamID, extension),
+			TVArchiveDuration:  0,
+			ContainerExtension: extension,
+		})
+		num++
+	}
+
 	return streams
 }
 
@@ -352,6 +380,18 @@ func buildCategoryList(sp *proxy.StreamProxy, contentType string) []xcCategory {
 		categories = append(categories, xcCategory{
 			CategoryID:   categoryIDFromName(group),
 			CategoryName: group,
+			ParentID:     0,
+		})
+	}
+
+	for _, e := range localscan.EntriesForContentType(contentType) {
+		if e.GroupTitle == "" || seen[e.GroupTitle] {
+			continue
+		}
+		seen[e.GroupTitle] = true
+		categories = append(categories, xcCategory{
+			CategoryID:   categoryIDFromName(e.GroupTitle),
+			CategoryName: e.GroupTitle,
 			ParentID:     0,
 		})
 	}
@@ -517,6 +557,16 @@ func handleXCStream(sp *proxy.StreamProxy, redirectM3U8 bool) http.HandlerFunc {
 
 		channelName := findChannelByStreamID(sp, streamID)
 		if channelName == "" {
+			// Local media is not a channel — resolve it and serve from disk.
+			if entry := localscan.FindByXCStreamID(streamID); entry != nil {
+				if !localscan.PathWithinSource(entry.LocalSourceID, entry.Path) {
+					logger.Warn("{handlers/xcoutput - handleXCStream} entry path outside source root, refusing: %s", entry.Path)
+					http.Error(w, "Stream not found", http.StatusNotFound)
+					return
+				}
+				serveLocalFile(w, r, entry.Path)
+				return
+			}
 			http.Error(w, "Stream not found", http.StatusNotFound)
 			return
 		}
@@ -592,6 +642,30 @@ func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *c
 			epgAttrs, utils.EscapeM3UAttribute(displayName), utils.EscapeM3UAttribute(logo), utils.EscapeM3UAttribute(group), displayName)
 		fmt.Fprintln(w, buildXCStreamURL(sp.Config.BaseURL, contentType, account.Username, account.Password, streamID, extension))
 
+	}
+
+	for _, e := range localscan.ExportEntries() {
+		contentType := localscan.ContentTypeOf(e.MediaType)
+		if contentType == "vod" && !account.EnableVOD {
+			continue
+		}
+		if contentType == "series" && !account.EnableSeries {
+			continue
+		}
+
+		extension := utils.NormalizeContainerExtension(localscan.ContainerExtension(e))
+		streamID := localscan.XCStreamID(e.Hash)
+
+		logo := ""
+		if e.Poster != "" {
+			logo = fmt.Sprintf("%s/localart/%s/%s/%s/poster", sp.Config.BaseURL, account.Username, account.Password, e.Hash)
+		}
+
+		displayName := utils.SanitizeM3UDisplayName(e.Display)
+		fmt.Fprintf(w, "#EXTINF:-1 tvg-name=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n",
+			utils.EscapeM3UAttribute(displayName), utils.EscapeM3UAttribute(logo),
+			utils.EscapeM3UAttribute(e.GroupTitle), displayName)
+		fmt.Fprintln(w, buildXCStreamURL(sp.Config.BaseURL, contentType, account.Username, account.Password, streamID, extension))
 	}
 }
 

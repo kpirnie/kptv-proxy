@@ -7,6 +7,8 @@ import (
 	"kptv-proxy/work/localscan"
 	"kptv-proxy/work/proxy"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -321,6 +323,62 @@ func handleUpdateLocalMedia(_ *proxy.StreamProxy) http.HandlerFunc {
 		addLogEntry("info", fmt.Sprintf("Metadata updated: %s", existing.Display))
 
 		json.NewEncoder(w).Encode(updated)
+	}
+}
+
+// handleGetLocalMediaArt serves the poster or fanart image for a local media
+// entry to the admin UI, which has no XC credentials for the public
+// /localart/ route.
+func handleGetLocalMediaArt(_ *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+
+		entry, err := localscan.GetByHash(vars["hash"])
+		if err != nil {
+			http.Error(w, "Entry not found", http.StatusNotFound)
+			return
+		}
+
+		var art string
+		switch vars["kind"] {
+		case "poster":
+			art = entry.Poster
+		case "fanart":
+			art = entry.Fanart
+		default:
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+
+		if art == "" {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+
+		if strings.HasPrefix(art, "http://") || strings.HasPrefix(art, "https://") {
+			http.Redirect(w, r, art, http.StatusFound)
+			return
+		}
+
+		if !localscan.PathWithinSource(entry.LocalSourceID, art) {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+
+		f, err := os.Open(art)
+		if err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		defer f.Close()
+
+		fi, err := f.Stat()
+		if err != nil || fi.IsDir() {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+
+		http.ServeContent(w, r, filepath.Base(art), fi.ModTime(), f)
 	}
 }
 

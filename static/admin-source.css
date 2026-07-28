@@ -48,6 +48,14 @@
         @apply block;
     }
 
+    .srctype-tab-content>div {
+        @apply hidden;
+    }
+
+    .srctype-tab-content>div.active {
+        @apply block;
+    }
+
     .stat-card {
         @apply bg-gradient-to-br from-kptv-blue to-kptv-blue-light text-white;
     }

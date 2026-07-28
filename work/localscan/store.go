@@ -8,6 +8,8 @@ import (
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/utils"
+	"path/filepath"
+	"strings"
 )
 
 const localMediaColumns = `
@@ -225,6 +227,30 @@ func DeleteAllForSource(localSourceID int64) error {
 		logger.Error("{localscan/store - DeleteAllForSource} id=%d: %v", localSourceID, err)
 	}
 	return err
+}
+
+// PathWithinSource reports whether path resolves inside the configured root of
+// the given local source, after symlink resolution.
+func PathWithinSource(localSourceID int64, path string) bool {
+	src, err := db.GetLocalSource(localSourceID)
+	if err != nil {
+		return false
+	}
+
+	root, err := filepath.EvalSymlinks(src.Path)
+	if err != nil {
+		return false
+	}
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // scanMediaRows iterates a *sql.Rows result into a MediaEntry slice.
