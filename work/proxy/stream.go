@@ -10,6 +10,7 @@ import (
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/filter"
+	"kptv-proxy/work/localscan"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/restream"
@@ -461,6 +462,15 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 			playlist.WriteByte('\n')
 		}
 		ch.channel.Mu.RUnlock()
+	}
+
+	// Local media is export-only — entries carry direct /local/ URLs so the
+	// client range-requests the file rather than going through the restreamer.
+	localCount := localscan.WritePlaylistEntries(&playlist, sp.Config.BaseURL,
+		account.Username, account.Password, groupFilter,
+		account.EnableVOD, account.EnableSeries)
+	if localCount > 0 {
+		logger.Debug("{proxy/stream - GeneratePlaylist} Appended %d local media entries", localCount)
 	}
 
 	result := playlist.String()

@@ -62,6 +62,25 @@ function initTabs() {
         });
     });
 
+    document.querySelectorAll('.srctype-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabIndex = btn.getAttribute('data-tab');
+            const srcTypeBtns = document.querySelectorAll('.srctype-tab-btn');
+            const srcTypeContents = document.querySelectorAll('.srctype-tab-content > div');
+
+            srcTypeBtns.forEach(b => {
+                b.classList.remove('active', 'border-kptv-blue', 'text-kptv-blue');
+                b.classList.add('border-transparent');
+            });
+
+            btn.classList.add('active', 'border-kptv-blue', 'text-kptv-blue');
+            btn.classList.remove('border-transparent');
+
+            srcTypeContents.forEach(content => content.classList.remove('active'));
+            srcTypeContents[tabIndex].classList.add('active');
+        });
+    });
+
     const savedTab = getActiveTabCookie();
     if (savedTab > 0 && savedTab < tabBtns.length) switchTab(savedTab);
 }

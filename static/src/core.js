@@ -12,6 +12,12 @@ let currentChannelName = null;
 let currentStreamData = null;
 let refreshInterval = null;
 let activeGroupFilter = null;
+let allLocalSources = null;
+let metaEntries = [];
+let metaCurrent = null;
+let metaPage = 1;
+let metaPageSize = 50;
+let metaTotal = 0;
 
 /**
  * Performs an authenticated API call to the given endpoint,
@@ -335,6 +341,17 @@ function setupEventListeners() {
     document.getElementById('add-epg-btn').addEventListener('click', () => showEPGModal());
     document.getElementById('save-epg-btn').addEventListener('click', () => saveEPG());
 
+    // Local source buttons
+    document.getElementById('add-local-source-btn').addEventListener('click', () => showLocalSourceModal());
+    document.getElementById('save-local-source-btn').addEventListener('click', () => saveLocalSource());
+    document.getElementById('scan-all-local-btn').addEventListener('click', () => scanAllLocalSources());
+
+    // Metadata controls
+    document.getElementById('refresh-meta').addEventListener('click', () => { metaPage = 1; loadMetadata(); });
+    document.getElementById('save-meta-btn').addEventListener('click', () => saveMetadata());
+    document.getElementById('meta-source-filter').addEventListener('change', () => { metaPage = 1; loadMetadata(); });
+    document.getElementById('meta-search').addEventListener('input', () => { metaPage = 1; loadMetadata(); });
+
     // Channel refresh buttons
     document.getElementById('refresh-channels').addEventListener('click', () => loadActiveChannels());
     document.getElementById('refresh-all-channels').addEventListener('click', () => {
@@ -413,6 +430,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadGlobalSettings();
     loadSources();
     loadEPGs();
+    loadLocalSources();
+    loadMetadata();
     loadStats();
     loadActiveChannels();
     loadAllChannels();

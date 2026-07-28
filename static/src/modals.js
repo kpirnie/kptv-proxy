@@ -13,6 +13,8 @@ function initModals() {
         { id: 'token-modal', closeId: 'close-token-modal', cancelId: 'cancel-token-btn' },
         { id: 'token-reveal-modal', closeId: 'close-token-reveal-modal', cancelId: 'close-token-reveal-btn' },
         { id: 'epg-channel-modal', closeId: 'close-epg-channel-modal', cancelId: 'cancel-epg-channel-btn' },
+        { id: 'local-source-modal', closeId: 'close-local-source-modal', cancelId: 'cancel-local-source-btn' },
+        { id: 'meta-modal', closeId: 'close-meta-modal', cancelId: 'cancel-meta-btn' },
     ];
 
     modals.forEach(({ id, closeId, cancelId }) => {

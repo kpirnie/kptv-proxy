@@ -64,6 +64,19 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api/channels/epg-mappings", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(middleware.GzipMiddleware(handleGetAllChannelEPGs(sp))))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/epgs/refresh", users.RequireAuthWithPerm(users.PermEPGs, corsMiddleware(handleRefreshEPG(sp)))).Methods("POST", "OPTIONS")
 
+	// Local source endpoints
+	router.HandleFunc("/api/local-sources", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(middleware.GzipMiddleware(handleGetLocalSources(sp))))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/local-sources", users.RequireAuthWithPerm(users.PermConfigWrite, corsMiddleware(handleCreateLocalSource(sp)))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/local-sources/scan", users.RequireAuthWithPerm(users.PermConfigWrite, corsMiddleware(handleScanAllLocalSources(sp)))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/local-sources/{id}", users.RequireAuthWithPerm(users.PermConfigWrite, corsMiddleware(handleUpdateLocalSource(sp)))).Methods("PUT", "OPTIONS")
+	router.HandleFunc("/api/local-sources/{id}", users.RequireAuthWithPerm(users.PermConfigWrite, corsMiddleware(handleDeleteLocalSource(sp)))).Methods("DELETE", "OPTIONS")
+	router.HandleFunc("/api/local-sources/{id}/scan", users.RequireAuthWithPerm(users.PermConfigWrite, corsMiddleware(handleScanLocalSource(sp)))).Methods("POST", "OPTIONS")
+
+	// Local media endpoints
+	router.HandleFunc("/api/local-media", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(middleware.GzipMiddleware(handleGetLocalMedia(sp))))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/local-media/{hash}", users.RequireAuthWithPerm(users.PermRead, corsMiddleware(middleware.GzipMiddleware(handleGetLocalMediaEntry(sp))))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/local-media/{hash}", users.RequireAuthWithPerm(users.PermConfigWrite, corsMiddleware(handleUpdateLocalMedia(sp)))).Methods("PUT", "OPTIONS")
+
 	// Schedules Direct endpoints
 	router.HandleFunc("/api/sd-accounts", users.RequireAuthWithPerm(users.PermSD, corsMiddleware(middleware.GzipMiddleware(handleGetSDAccounts(sp))))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/sd-accounts", users.RequireAuthWithPerm(users.PermSD, corsMiddleware(handleCreateSDAccount(sp)))).Methods("POST", "OPTIONS")

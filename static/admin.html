@@ -79,7 +79,10 @@
                     data-tab="5">Channels</button>
                 <button
                     class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
-                    data-tab="6">Logs</button>
+                    data-tab="6">Metadata</button>
+                <button
+                    class="tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                    data-tab="7">Logs</button>
             </nav>
         </div>
 
@@ -438,18 +441,54 @@
 
             <!-- source -->
             <div>
-                <div class="mb-4">
-                    <button
-                        class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"
-                        id="add-source-btn">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
-                            </path>
-                        </svg>
-                        <span>Add Source</span>
-                    </button>
+                <div class="border-b border-kptv-border mb-4">
+                    <nav class="flex flex-wrap -mb-px text-sm font-medium">
+                        <button class="srctype-tab-btn active px-4 py-3 border-b-2 border-kptv-blue text-kptv-blue"
+                            data-tab="0">Remote Sources</button>
+                        <button
+                            class="srctype-tab-btn px-4 py-3 border-b-2 border-transparent hover:text-gray-300 hover:border-gray-300"
+                            data-tab="1">Local Sources</button>
+                    </nav>
                 </div>
-                <div id="sources-container"></div>
+                <div class="srctype-tab-content">
+                    <div class="active">
+                        <div class="mb-4">
+                            <button
+                                class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"
+                                id="add-source-btn">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
+                                    </path>
+                                </svg>
+                                <span>Add Source</span>
+                            </button>
+                        </div>
+                        <div id="sources-container"></div>
+                    </div>
+                    <div>
+                        <div class="mb-4 flex gap-2">
+                            <button
+                                class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"
+                                id="add-local-source-btn">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
+                                    </path>
+                                </svg>
+                                <span>Add Local Source</span>
+                            </button>
+                            <button
+                                class="px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition-colors flex items-center space-x-2"
+                                id="scan-all-local-btn">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                <span>Scan All</span>
+                            </button>
+                        </div>
+                        <div id="local-sources-container"></div>
+                    </div>
+                </div>
             </div>
 
             <!-- epg -->
@@ -547,6 +586,43 @@
                                 <div class="mt-2 text-sm">Loading channels...</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- metadata -->
+            <div>
+                <div class="bg-kptv-gray rounded border border-kptv-border">
+                    <div
+                        class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <h3 class="text-lg font-semibold">Local Media Metadata</h3>
+                        <div class="flex w-full sm:w-auto gap-2">
+                            <select
+                                class="flex-1 sm:flex-initial bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 text-sm"
+                                id="meta-source-filter">
+                                <option value="">All Local Sources</option>
+                            </select>
+                            <input
+                                class="flex-1 sm:flex-initial bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 text-sm"
+                                type="text" id="meta-search" placeholder="Search title or group...">
+                            <button class="px-3 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
+                                id="refresh-meta">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                    </path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <div id="meta-list">
+                            <div class="text-center py-8">
+                                <div class="spinner mx-auto"></div>
+                                <div class="mt-2 text-sm">Loading metadata...</div>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex justify-between items-center text-sm" id="meta-pagination"></div>
                     </div>
                 </div>
             </div>
@@ -883,6 +959,85 @@
         </div>
     </div>
 
+    <!-- local source modal -->
+    <div id="local-source-modal" class="modal">
+        <div
+            class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-lg max-h-[90vh] overflow-y-auto m-4">
+            <div
+                class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="local-source-modal-title">Add Local Source</h2>
+                <button class="text-gray-400 hover:text-white" id="close-local-source-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <form id="local-source-form">
+                    <input type="hidden" id="local-source-id" value="">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Name</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="local-source-name" placeholder="Local Source Name" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Path</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="local-source-path" placeholder="/media/Movies" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Media Type</label>
+                        <select
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            id="local-source-media-type">
+                            <option value="movies">Movies</option>
+                            <option value="shows">Shows</option>
+                            <option value="music">Music</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Group Prefix</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="local-source-group-prefix" placeholder="Local">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Include Regex</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="local-source-inc-regex" placeholder="Leave blank to include everything">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Exclude Regex</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="local-source-exc-regex" placeholder="Leave blank to exclude nothing">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Order</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="number" id="local-source-order" min="1" value="1">
+                    </div>
+                    <div class="mb-4 flex items-center gap-2">
+                        <input type="checkbox" id="local-source-enabled" checked>
+                        <label class="text-sm font-medium" for="local-source-enabled">Enabled</label>
+                    </div>
+                </form>
+            </div>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-end gap-2">
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-local-source-btn" type="button">Cancel</button>
+                <button class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
+                    id="save-local-source-btn" type="button">Save</button>
+            </div>
+        </div>
+    </div>
+
     <!-- sd account modal -->
     <div id="sd-account-modal" class="modal">
         <div
@@ -1166,6 +1321,240 @@
                 <button
                     class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
                     id="close-token-reveal-btn" type="button">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- meta data modal -->
+    <div id="meta-modal" class="modal">
+        <div
+            class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+            <div
+                class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="meta-modal-title">Edit Metadata</h2>
+                <button class="text-gray-400 hover:text-white" id="close-meta-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <form id="meta-form">
+                    <input type="hidden" id="meta-hash" value="">
+                    <div class="mb-4">
+                        <div class="text-sm text-gray-400">Path</div>
+                        <div class="text-sm text-truncate" id="meta-path"></div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Title</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-title">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Sort Title</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-sort-title">
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Tagline</label>
+                        <input
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="meta-tagline">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Plot</label>
+                        <textarea rows="4"
+                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            id="meta-plot"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Year</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-year">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Premiered</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-premiered" placeholder="YYYY-MM-DD">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Rating</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="number" step="0.1" min="0" max="10" id="meta-rating">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Genres</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-genres" placeholder="Comma separated">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Tags</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-tags" placeholder="Comma separated">
+                        </div>
+                    </div>
+
+                    <div id="meta-video-fields">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">MPAA</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="meta-mpaa">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Country</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="meta-country">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Critic Rating</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="number" min="0" max="100" id="meta-critic-rating">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Directors</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="meta-directors" placeholder="Comma separated">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Writers</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="meta-writers" placeholder="Comma separated">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Studios</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="meta-studios" placeholder="Comma separated">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Cast</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="meta-cast" placeholder="Name as Role, comma separated">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="meta-movie-fields">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">Collection</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-collection">
+                        </div>
+                    </div>
+
+                    <div id="meta-show-fields">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Series</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="meta-series">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Season</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="number" min="0" id="meta-season">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Episode</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="number" min="0" id="meta-episode">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">Episode Title</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-episode-title">
+                        </div>
+                    </div>
+
+                    <div id="meta-music-fields">
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
+                            <div class="sm:col-span-2">
+                                <label class="block text-sm font-medium mb-1">Artist</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="meta-artist">
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-sm font-medium mb-1">Album</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="text" id="meta-album">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Disc</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="number" min="0" id="meta-disc">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Track</label>
+                                <input
+                                    class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                    type="number" min="0" id="meta-track">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">IMDB ID</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-imdb-id">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">TMDB ID</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-tmdb-id">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">TVDB ID</label>
+                            <input
+                                class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                type="text" id="meta-tvdb-id">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-end gap-2">
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-meta-btn" type="button">Cancel</button>
+                <button class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors"
+                    id="save-meta-btn" type="button">Save</button>
             </div>
         </div>
     </div>
