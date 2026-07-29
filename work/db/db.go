@@ -52,12 +52,18 @@ func Close() {
 // initSchema applies PRAGMA settings and creates all tables and indexes
 // if they do not already exist. Safe to call on every startup.
 func initSchema(db *sql.DB) error {
-	_, err := db.Exec(`PRAGMA foreign_keys = ON;`)
-	if err != nil {
-		return err
+	for _, pragma := range []string{
+		`PRAGMA journal_mode = WAL;`,
+		`PRAGMA busy_timeout = 5000;`,
+		`PRAGMA synchronous = NORMAL;`,
+		`PRAGMA foreign_keys = ON;`,
+	} {
+		if _, err := db.Exec(pragma); err != nil {
+			return err
+		}
 	}
 
-	_, err = db.Exec(`
+	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS kp_settings (
 		id        INTEGER PRIMARY KEY AUTOINCREMENT,
 		the_key   TEXT    NOT NULL UNIQUE,
