@@ -55,6 +55,8 @@ type Config struct {
 	FFmpegPreOutput        []string          `json:"ffmpegPreOutput"`
 	ResponseHeaderTimeout  time.Duration     `json:"responseHeaderTimeout"`
 	SlowClientBufferChunks int               `json:"slowClientBufferChunks"` // Number of chunks to queue per client before considering them too slow
+	TMDBEnabled            bool              `json:"tmdbEnabled"`
+	TMDBAPIKey             string            `json:"tmdbApiKey"`
 }
 
 // SourceConfig represents the configuration for a single stream source.
@@ -149,6 +151,8 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 		ResponseHeaderTimeout  string        `json:"responseHeaderTimeout"`
 		Sources                []SourceAlias `json:"sources"`
 		SlowClientBufferChunks int           `json:"slowClientBufferChunks"`
+		TMDBEnabled            bool          `json:"tmdbEnabled"`
+		TMDBAPIKey             string        `json:"tmdbApiKey"`
 	}{}
 
 	if err := json.Unmarshal(data, aux); err != nil {
@@ -170,6 +174,8 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	c.FFmpegPreInput = aux.FFmpegPreInput
 	c.FFmpegPreOutput = aux.FFmpegPreOutput
 	c.SlowClientBufferChunks = aux.SlowClientBufferChunks
+	c.TMDBEnabled = aux.TMDBEnabled
+	c.TMDBAPIKey = aux.TMDBAPIKey
 
 	var err error
 	if aux.CacheDuration != "" {
@@ -353,6 +359,13 @@ func loadFromDB() (*Config, error) {
 		}
 	}
 
+	if v, ok := settings["tmdbEnabled"]; ok {
+		cfg.TMDBEnabled = v == "true"
+	}
+	if v, ok := settings["tmdbApiKey"]; ok {
+		cfg.TMDBAPIKey = v
+	}
+
 	cfg.Sources, err = loadSourcesFromDB()
 	if err != nil {
 		return nil, err
@@ -495,6 +508,8 @@ func PersistConfig(cfg *Config) error {
 		"ffmpegPreOutput":        strings.Join(cfg.FFmpegPreOutput, " "),
 		"responseHeaderTimeout":  cfg.ResponseHeaderTimeout.String(),
 		"slowClientBufferChunks": strconv.Itoa(cfg.SlowClientBufferChunks),
+		"tmdbEnabled":            strconv.FormatBool(cfg.TMDBEnabled),
+		"tmdbApiKey":             cfg.TMDBAPIKey,
 	}
 
 	for k, v := range settings {

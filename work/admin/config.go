@@ -81,6 +81,8 @@ func handleGetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			"ffmpegPreOutput":        cfg.FFmpegPreOutput,
 			"responseHeaderTimeout":  cfg.ResponseHeaderTimeout.String(),
 			"slowClientBufferChunks": cfg.SlowClientBufferChunks,
+			"tmdbEnabled":            cfg.TMDBEnabled,
+			"tmdbApiKey":             cfg.TMDBAPIKey,
 			"sources":                sources,
 		}
 
