@@ -152,6 +152,16 @@ Tokens support granular permission bitmasks:
 - **XMLTV EPG**: Full EPG passthrough
 - **Quick Copy**: Copy base URL, username, password, and playlist URLs directly from the admin interface
 
+### 📼 **Local Media Library**
+
+- **Local Source Scanning**: Index local movie, TV show, and music libraries directly into the proxy's VOD/series catalog
+- **Emby/Jellyfin/Plex-Compatible Layout**: Reads standard folder structures — series/season folders, NFO sidecars, poster/fanart artwork
+- **NFO & Embedded Tag Enrichment**: Parses `.nfo` metadata and embedded audio tags, with ffprobe fallback when available
+- **Manual Scanning**: Scan a single source or all sources on demand from the admin interface — no cron integration
+- **Metadata Editing**: Edit title, plot, cast, genres, and artwork associations from the admin UI; writes changes back to `.nfo` sidecars (and embedded tags for music)
+- **Direct File Serving**: Local files stream straight from disk with range request support, not proxied through the aggregation pipeline
+- **XC Catalog Integration**: Local movies and shows are appended to Xtream Codes VOD/series output; music rides in VOD under categories
+
 ---
 
 ## 🤝 Acknowledgments & 👥 Contributors
@@ -410,6 +420,15 @@ Quick copy buttons on each account card:
 - **Priority Management**: Reorder sources by priority for failover
 - **XC API Sources**: Set username and password for Xtream Codes API sources
 
+### Local Sources
+
+Managed as a sub-tab under Source Management, alongside Remote Sources.
+
+- **Add/Edit Local Sources**: Configure a filesystem path, media type (Music, Movies, or Shows), and group prefix
+- **Include/Exclude Filtering**: Per-source regex filters for what gets scanned
+- **Manual Scan**: Scan an individual source or all enabled sources on demand
+- **Scan Status**: Last scan time and entry count shown per source
+
 ### Channel Monitoring
 
 - **All Channels View**: Complete list of available channels with status
@@ -418,6 +437,13 @@ Quick copy buttons on each account card:
 - **Real-Time Status**: Active/inactive indicators with client counts
 - **Search & Filter**: Find channels by name or group
 - **Auto-Refresh**: Live updates of channel status
+
+### Metadata
+
+- **Local Media Browser**: Search and filter scanned local entries by source and free-text query
+- **Metadata Editing**: Edit title, plot, tagline, cast, genres, studios, ratings, and identifiers (IMDB/TMDB/TVDB) per entry
+- **Artwork Preview**: View poster and fanart associated with each entry
+- **Writes Back to Disk**: Saved edits update the `.nfo` sidecar (and embedded tags for music) and re-scan the file
 
 ### Live Logs
 
@@ -523,6 +549,8 @@ The Stream Watcher runs as a background service monitoring active streams every 
 | `GET /s/{username}/{password}/{channel}` | Stream proxy with automatic failover (XC account auth) |
 | `GET /epg/{username}/{password}` | EPG (XC account auth) |
 | `GET /epg.xml/{username}/{password}` | EPG XML (XC account auth) |
+| `GET /local/{username}/{password}/{hash}` | Local media file stream, range requests supported (XC account auth) |
+| `GET /localart/{username}/{password}/{hash}/{kind}` | Local media artwork — poster or fanart (XC account auth) |
 
 ## API Endpoints
 
@@ -561,6 +589,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 | `/api/channels/{channel}/kill-stream` | POST | Streams | Mark stream as dead |
 | `/api/channels/{channel}/revive-stream` | POST | Streams | Revive dead stream |
 | `/api/channels/{channel}/order` | POST | Streams | Set stream order |
+| `/api/channels/{channel}/order` | DELETE | Streams | Reset channel to default stream order |
 
 ### Logs
 
@@ -586,6 +615,37 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 | `/api/epgs` | POST | EPGs | Create EPG source |
 | `/api/epgs/{id}` | PUT | EPGs | Update EPG source |
 | `/api/epgs/{id}` | DELETE | EPGs | Delete EPG source |
+
+### EPG Channel Mapping
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|-----------|-------------|
+| `/api/channels/{channel}/epg` | GET | Read | Get EPG mapping for a channel |
+| `/api/channels/{channel}/epg` | POST | EPGs | Set EPG mapping for a channel |
+| `/api/channels/{channel}/epg` | DELETE | EPGs | Clear EPG mapping for a channel |
+| `/api/epg/search` | GET | Read | Fuzzy search the EPG channel index (`?q=`) |
+| `/api/channels/epg-mappings` | GET | Read | All channel → EPG ID mappings |
+| `/api/epgs/refresh` | POST | EPGs | Trigger an immediate EPG cache refresh |
+
+### Local Sources
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|-----------|-------------|
+| `/api/local-sources` | GET | Read | List configured local media sources |
+| `/api/local-sources` | POST | Config Write | Create a local media source |
+| `/api/local-sources/{id}` | PUT | Config Write | Update a local media source |
+| `/api/local-sources/{id}` | DELETE | Config Write | Delete a local media source |
+| `/api/local-sources/{id}/scan` | POST | Config Write | Scan a single local source |
+| `/api/local-sources/scan` | POST | Config Write | Scan all enabled local sources |
+
+### Local Media
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|-----------|-------------|
+| `/api/local-media` | GET | Read | List scanned local media entries (`?source=`, `?q=`, `?page=`, `?size=`) |
+| `/api/local-media/{hash}` | GET | Read | Get a single local media entry |
+| `/api/local-media/{hash}` | PUT | Config Write | Edit metadata for a local media entry |
+| `/api/local-media/{hash}/art/{kind}` | GET | Read | Get poster or fanart for a local media entry (`kind`: `poster` or `fanart`) |
 
 ### Schedules Direct
 

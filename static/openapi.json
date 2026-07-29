@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "KPTV Proxy API",
-    "version": "1.1.111",
+    "version": "1.1.2",
     "description": "REST API for the KPTV Proxy admin interface. All endpoints require either a session cookie or a Bearer token with appropriate permissions."
   },
   "servers": [
@@ -246,6 +246,86 @@
           "sd":          { "type": "integer", "example": 128 },
           "all":         { "type": "integer", "example": 255 }
         }
+      },
+      "LocalSource": {
+        "type": "object",
+        "required": ["name","path","mediaType"],
+        "properties": {
+          "id":          { "type": "integer" },
+          "name":        { "type": "string" },
+          "path":        { "type": "string" },
+          "mediaType":   { "type": "string", "enum": ["music","movies","shows"] },
+          "groupPrefix": { "type": "string" },
+          "order":       { "type": "integer", "example": 1 },
+          "enabled":     { "type": "boolean" },
+          "incRegex":    { "type": "string" },
+          "excRegex":    { "type": "string" },
+          "lastScan":    { "type": "integer", "description": "Unix timestamp of the last completed scan" },
+          "entryCount":  { "type": "integer" }
+        }
+      },
+
+      "Person": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "role": { "type": "string" }
+        }
+      },
+
+      "ChannelEPGMapping": {
+        "type": "object",
+        "properties": {
+          "epg_id":   { "type": "string" },
+          "epg_name": { "type": "string" }
+        }
+      },
+
+      "LocalMediaEntry": {
+        "type": "object",
+        "properties": {
+          "id":              { "type": "integer" },
+          "local_source_id": { "type": "integer" },
+          "hash":            { "type": "string" },
+          "path":            { "type": "string" },
+          "media_type":      { "type": "string", "enum": ["music","movies","shows"] },
+          "group_title":     { "type": "string" },
+          "tvg_name":        { "type": "string" },
+          "display":         { "type": "string" },
+          "duration":        { "type": "integer" },
+          "year":            { "type": "string" },
+          "artist":          { "type": "string" },
+          "album":           { "type": "string" },
+          "disc":            { "type": "integer" },
+          "track":           { "type": "integer" },
+          "series":          { "type": "string" },
+          "season":          { "type": "integer" },
+          "episode":         { "type": "integer" },
+          "episode_title":   { "type": "string" },
+          "title":           { "type": "string" },
+          "sort_title":      { "type": "string" },
+          "plot":            { "type": "string" },
+          "tagline":         { "type": "string" },
+          "poster":          { "type": "string" },
+          "fanart":          { "type": "string" },
+          "rating":          { "type": "number" },
+          "critic_rating":   { "type": "integer" },
+          "mpaa":            { "type": "string" },
+          "country":         { "type": "string" },
+          "premiered":       { "type": "string" },
+          "imdb_id":         { "type": "string" },
+          "tmdb_id":         { "type": "string" },
+          "tvdb_id":         { "type": "string" },
+          "collection":      { "type": "string" },
+          "genres":          { "type": "array", "items": { "type": "string" } },
+          "studios":         { "type": "array", "items": { "type": "string" } },
+          "tags":            { "type": "array", "items": { "type": "string" } },
+          "directors":       { "type": "array", "items": { "type": "string" } },
+          "writers":         { "type": "array", "items": { "type": "string" } },
+          "cast":            { "type": "array", "items": { "$ref": "#/components/schemas/Person" } },
+          "mod_time":        { "type": "integer" },
+          "file_size":       { "type": "integer" }
+        }
       }
     }
   },
@@ -397,10 +477,20 @@
         "operationId": "setChannelOrder",
         "tags": ["Channels"],
         "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamOrder": { "type": "array", "items": { "type": "integer" } } }, "required": ["streamOrder"] } } } },
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamOrder": { "type": "array", "items": { "type": "string" } } }, "required": ["streamOrder"] } } } },
         "responses": {
           "200": { "description": "Order applied" },
           "400": { "description": "Length mismatch" },
+          "404": { "description": "Channel not found" }
+        }
+      },
+      "delete": {
+        "summary": "Reset channel to default stream order",
+        "operationId": "resetChannelOrder",
+        "tags": ["Channels"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Order reset" },
           "404": { "description": "Channel not found" }
         }
       }
@@ -570,6 +660,190 @@
         "responses": {
           "200": { "description": "Lineups discovered" },
           "401": { "description": "SD authentication failed" }
+        }
+      }
+    },
+    "/api/channels/{channel}/epg": {
+      "get": {
+        "summary": "Get EPG mapping for a channel",
+        "operationId": "getChannelEPG",
+        "tags": ["EPG Channel Mapping"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "EPG mapping", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChannelEPGMapping" } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "summary": "Set EPG mapping for a channel",
+        "operationId": "setChannelEPG",
+        "tags": ["EPG Channel Mapping"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChannelEPGMapping" } } } },
+        "responses": {
+          "200": { "description": "Saved" },
+          "400": { "description": "Invalid payload" }
+        }
+      },
+      "delete": {
+        "summary": "Clear EPG mapping for a channel",
+        "operationId": "deleteChannelEPG",
+        "tags": ["EPG Channel Mapping"],
+        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Cleared" }
+        }
+      }
+    },
+    "/api/epg/search": {
+      "get": {
+        "summary": "Fuzzy search the EPG channel index",
+        "operationId": "searchEPGChannels",
+        "tags": ["EPG Channel Mapping"],
+        "parameters": [{ "name": "q", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Search term; empty returns an empty list" }],
+        "responses": {
+          "200": { "description": "Up to 50 matching EPG channels", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } }
+        }
+      }
+    },
+    "/api/channels/epg-mappings": {
+      "get": {
+        "summary": "All channel to EPG ID mappings",
+        "operationId": "getAllChannelEPGs",
+        "tags": ["EPG Channel Mapping"],
+        "responses": {
+          "200": { "description": "Map of channel name to epg_id", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": { "type": "string" } } } } }
+        }
+      }
+    },
+    "/api/epgs/refresh": {
+      "post": {
+        "summary": "Trigger an immediate EPG cache refresh",
+        "operationId": "refreshEPG",
+        "tags": ["EPGs"],
+        "responses": {
+          "200": { "description": "Refresh triggered", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } }
+        }
+      }
+    },
+    "/api/local-sources": {
+      "get": {
+        "summary": "List configured local media sources",
+        "operationId": "getLocalSources",
+        "tags": ["Local Sources"],
+        "responses": {
+          "200": { "description": "Local source list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/LocalSource" } } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "summary": "Create a local media source",
+        "operationId": "createLocalSource",
+        "tags": ["Local Sources"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalSource" } } } },
+        "responses": {
+          "200": { "description": "Created" },
+          "400": { "description": "Invalid payload" }
+        }
+      }
+    },
+    "/api/local-sources/scan": {
+      "post": {
+        "summary": "Scan all enabled local sources",
+        "operationId": "scanAllLocalSources",
+        "tags": ["Local Sources"],
+        "responses": {
+          "200": { "description": "Scan complete", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string" }, "count": { "type": "integer" } } } } } },
+          "500": { "description": "Scan failed" }
+        }
+      }
+    },
+    "/api/local-sources/{id}": {
+      "put": {
+        "summary": "Update a local media source",
+        "operationId": "updateLocalSource",
+        "tags": ["Local Sources"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalSource" } } } },
+        "responses": {
+          "200": { "description": "Updated" },
+          "404": { "description": "Local source not found" }
+        }
+      },
+      "delete": {
+        "summary": "Delete a local media source",
+        "operationId": "deleteLocalSource",
+        "tags": ["Local Sources"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Deleted" }
+        }
+      }
+    },
+    "/api/local-sources/{id}/scan": {
+      "post": {
+        "summary": "Scan a single local source",
+        "operationId": "scanLocalSource",
+        "tags": ["Local Sources"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Scan complete", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string" }, "count": { "type": "integer" } } } } } },
+          "500": { "description": "Scan failed" }
+        }
+      }
+    },
+    "/api/local-media": {
+      "get": {
+        "summary": "List scanned local media entries",
+        "operationId": "getLocalMedia",
+        "tags": ["Local Media"],
+        "parameters": [
+          { "name": "source", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Filter to a single local source ID" },
+          { "name": "q", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Free-text filter against display title and group" },
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "required": false, "schema": { "type": "integer", "default": 100 }, "description": "Max 1000" }
+        ],
+        "responses": {
+          "200": { "description": "Paged entries", "content": { "application/json": { "schema": { "type": "object", "properties": { "total": { "type": "integer" }, "page": { "type": "integer" }, "size": { "type": "integer" }, "entries": { "type": "array", "items": { "$ref": "#/components/schemas/LocalMediaEntry" } } } } } } }
+        }
+      }
+    },
+    "/api/local-media/{hash}": {
+      "get": {
+        "summary": "Get a single local media entry",
+        "operationId": "getLocalMediaEntry",
+        "tags": ["Local Media"],
+        "parameters": [{ "name": "hash", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Media entry", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalMediaEntry" } } } },
+          "404": { "description": "Entry not found" }
+        }
+      },
+      "put": {
+        "summary": "Edit metadata for a local media entry",
+        "operationId": "updateLocalMedia",
+        "tags": ["Local Media"],
+        "parameters": [{ "name": "hash", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalMediaEntry" } } }, "description": "Identity and location fields (id, local_source_id, hash, path, media_type) are ignored and taken from the stored row" },
+        "responses": {
+          "200": { "description": "Updated entry", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalMediaEntry" } } } },
+          "404": { "description": "Entry not found" },
+          "500": { "description": "Edit failed" }
+        }
+      }
+    },
+    "/api/local-media/{hash}/art/{kind}": {
+      "get": {
+        "summary": "Get poster or fanart for a local media entry",
+        "operationId": "getLocalMediaArt",
+        "tags": ["Local Media"],
+        "parameters": [
+          { "name": "hash", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "kind", "in": "path", "required": true, "schema": { "type": "string", "enum": ["poster", "fanart"] } }
+        ],
+        "responses": {
+          "200": { "description": "Image bytes, or a 302 redirect for remote artwork URLs" },
+          "404": { "description": "Not found" }
         }
       }
     },
