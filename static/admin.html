@@ -238,42 +238,49 @@
                         </div>
                         <div class="p-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!--base url-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Base URL</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                         type="url" name="baseURL" placeholder="http://localhost:8080">
                                 </div>
+                                <!--import refresh-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Import Refresh Interval</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                         type="text" name="importRefreshInterval" placeholder="12h">
                                 </div>
+                                <!--buffersize per stream-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Buffer Size Per Stream (MB)</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                         type="number" name="bufferSizePerStream" min="1" max="256">
                                 </div>
+                                <!--cache duration-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Cache Duration</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                         type="text" name="cacheDuration" placeholder="30m">
                                 </div>
+                                <!--worker threads-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Worker Threads</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                         type="number" name="workerThreads" min="1" max="32">
                                 </div>
+                                <!--max connections-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Max Connections to App</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                         type="number" name="maxConnectionsToApp" min="1" max="1000">
                                 </div>
+                                <!--default sort-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Sort Field</label>
                                     <select
@@ -298,18 +305,21 @@
                                         <option value="desc">Descending</option>
                                     </select>
                                 </div>
+                                <!--stream timeout-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Global Stream Timeout</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                         type="text" name="streamTimeout" placeholder="30s">
                                 </div>
+                                <!--response header timeout-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Response Header Timeout</label>
                                     <input
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                         type="text" name="responseHeaderTimeout" placeholder="10s">
                                 </div>
+                                <!--slow client buffer-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Slow Client Buffer (chunks)</label>
                                     <input
@@ -317,6 +327,10 @@
                                         type="number" name="slowClientBufferChunks" min="4" max="128">
                                     <div class="text-xs text-gray-400 mt-1">Chunks to queue per client before dropping slow connections (default: 16, ~0.5s at HD bitrates)</div>
                                 </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 py-6">
+                                <!--ffmpeg-->
                                 <div>
                                     <h4 class="text-base font-semibold mb-3 pb-2 border-b border-kptv-border">FFMPEG
                                         Settings</h4>
@@ -342,6 +356,24 @@
                                         </div>
                                     </div>
                                 </div>
+                                <!--tmdb setting-->
+                                <div>
+                                    <h4 class="text-base font-semibold mb-3 pb-2 border-b border-kptv-border">TMDB
+                                        Metadata</h4>
+                                    <label class="flex items-center mb-3">
+                                        <input class="mr-2" type="checkbox" name="tmdbEnabled">
+                                        <span>Enable TMDB Remote Enrichment</span>
+                                    </label>
+                                    <div>
+                                        <label class="block text-sm font-medium mb-1">TMDB API Key</label>
+                                        <input
+                                            class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                            type="text" name="tmdbApiKey" placeholder="TMDB v3 API key">
+                                        <div class="text-xs text-gray-400 mt-1">Used to fill missing local media
+                                            metadata and download posters/fanart during a scan</div>
+                                    </div>
+                                </div>
+                                <!--system settings-->
                                 <div>
                                     <h4 class="text-base font-semibold mb-3 pb-2 border-b border-kptv-border">System
                                         Settings</h4>
@@ -383,6 +415,7 @@
                                 </div>
                             </div>
                         </div>
+                        <!--button-->
                         <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex flex-wrap gap-2">
                             <button
                                 class="px-4 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded transition-colors flex items-center space-x-2"

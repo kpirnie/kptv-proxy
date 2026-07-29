@@ -18,6 +18,7 @@ func Enrich(e *MediaEntry) {
 	case "movies", "shows":
 		enrichVideo(e)
 		enrichNFO(e)
+		enrichRemote(e)
 	}
 }
 

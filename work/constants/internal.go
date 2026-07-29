@@ -240,6 +240,16 @@ type InternalConstants struct {
 	SDBatchSize          int           // Max program/schedule IDs per SD API batch request
 
 	// -------------------------------------------------------------------------
+	// work/tmdb/client.go — newClient()
+	// -------------------------------------------------------------------------
+	TMDBBaseUrl      string        // Base URL for TMDB API requests
+	TMDBImageBaseUrl string        // Base URL for TMDB image downloads
+	TMDBTimeout      time.Duration // HTTP timeout for TMDB API requests
+	TMDBPosterSize   string        // Image size segment used for poster downloads
+	TMDBBackdropSize string        // Image size segment used for fanart/backdrop downloads
+	TMDBRateLimit    int           // Max TMDB API requests per second, shared across all scan workers
+
+	// -------------------------------------------------------------------------
 	// work/admin/logs.go
 	// -------------------------------------------------------------------------
 	AdminMaxLogEntries int // Maximum entries retained in the admin log circular buffer
@@ -423,6 +433,16 @@ var Internal = InternalConstants{
 	SDDefaultDaysToFetch: 3 * 24 * time.Hour, // 3 days
 	SDBatchSize:          1000,
 	SDBaseUrl:            "https://json.schedulesdirect.org/20141201",
+
+	// -------------------------------------------------------------------------
+	// TMDB
+	// -------------------------------------------------------------------------
+	TMDBBaseUrl:      "https://api.themoviedb.org/3",
+	TMDBImageBaseUrl: "https://image.tmdb.org/t/p",
+	TMDBTimeout:      15 * time.Second,
+	TMDBPosterSize:   "w780",
+	TMDBBackdropSize: "w1280",
+	TMDBRateLimit:    4,
 
 	// -------------------------------------------------------------------------
 	// Admin

@@ -40,6 +40,7 @@ func (s *Scanner) Scan() (int, error) {
 
 	// reset the filesystem scanner cache
 	ResetFSCache()
+	resetTMDBSeriesCache()
 
 	mediaType := MediaTypeFromInt[s.Source.MediaType]
 	if mediaType == "" {
@@ -115,6 +116,7 @@ func (s *Scanner) ScanFile(path string) (*MediaEntry, error) {
 
 	// reset the filesystem scanner cache
 	ResetFSCache()
+	resetTMDBSeriesCache()
 
 	mediaType := MediaTypeFromInt[s.Source.MediaType]
 	root, err := filepath.Abs(s.Source.Path)
