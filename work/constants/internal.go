@@ -247,6 +247,7 @@ type InternalConstants struct {
 	TMDBTimeout      time.Duration // HTTP timeout for TMDB API requests
 	TMDBPosterSize   string        // Image size segment used for poster downloads
 	TMDBBackdropSize string        // Image size segment used for fanart/backdrop downloads
+	TMDBRateLimit    int           // Max TMDB API requests per second, shared across all scan workers
 
 	// -------------------------------------------------------------------------
 	// work/admin/logs.go
@@ -441,6 +442,7 @@ var Internal = InternalConstants{
 	TMDBTimeout:      15 * time.Second,
 	TMDBPosterSize:   "w780",
 	TMDBBackdropSize: "w1280",
+	TMDBRateLimit:    4,
 
 	// -------------------------------------------------------------------------
 	// Admin

@@ -37,13 +37,11 @@ type TVDetails struct {
 	} `json:"external_ids"`
 }
 
-// SearchTV returns the best-guess match for a series name (and first-air
-// year, if given) from TMDB's TV search, or nil when nothing matched.
+// SearchTV returns the best-guess match for a series name from TMDB's TV
+// search, or nil when nothing matched. Unlike movies, a season/episode year
+// rarely matches a show's own first-air year, so no year filter is applied.
 func SearchTV(c *Client, name, year string) (*TVResult, error) {
 	params := url.Values{"query": {name}}
-	if year != "" {
-		params.Set("first_air_date_year", year)
-	}
 
 	var out tvSearchResponse
 	if err := c.get("/search/tv", params, &out); err != nil {

@@ -8,7 +8,13 @@ import (
 	"kptv-proxy/work/logger"
 	"net/http"
 	"net/url"
+
+	"go.uber.org/ratelimit"
 )
+
+// limiter paces every TMDB API request across all Client instances — a scan
+// constructs a new Client per file, so limiting has to live above that.
+var limiter = ratelimit.New(constants.Internal.TMDBRateLimit)
 
 // Client wraps HTTP operations for the TMDB API, injecting the API key on
 // every request.
@@ -25,8 +31,8 @@ func NewClient(apiKey string) *Client {
 	}
 }
 
-// get performs an authenticated GET request to the given TMDB API path and
-// decodes the JSON response into dest.
+// get performs an authenticated, rate-limited GET request to the given TMDB
+// API path and decodes the JSON response into dest.
 func (c *Client) get(path string, params url.Values, dest any) error {
 	if params == nil {
 		params = url.Values{}
@@ -34,6 +40,8 @@ func (c *Client) get(path string, params url.Values, dest any) error {
 	params.Set("api_key", c.apiKey)
 
 	full := constants.Internal.TMDBBaseUrl + path + "?" + params.Encode()
+
+	limiter.Take()
 
 	resp, err := c.httpClient.Get(full)
 	if err != nil {

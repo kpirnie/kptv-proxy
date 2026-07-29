@@ -120,31 +120,50 @@ func enrichShowRemote(client *tmdb.Client, e *MediaEntry) {
 }
 
 // lookupSeries returns cached series details for name+year, searching and
-// fetching from TMDB on a cache miss.
+// fetching from TMDB on a cache miss. The lock is held across the fetch
+// itself so concurrent workers hitting the same series (multiple episodes
+// scanned in parallel) block on the first lookup instead of all racing to
+// search TMDB independently.
 func lookupSeries(client *tmdb.Client, name, year string) *tmdb.TVDetails {
 	key := strings.ToLower(strings.TrimSpace(name)) + "|" + year
 
 	seriesCache.mu.Lock()
+	defer seriesCache.mu.Unlock()
+
 	if details, ok := seriesCache.entries[key]; ok {
-		seriesCache.mu.Unlock()
 		return details
 	}
-	seriesCache.mu.Unlock()
 
 	details := fetchSeries(client, name, year)
-
-	seriesCache.mu.Lock()
 	seriesCache.entries[key] = details
-	seriesCache.mu.Unlock()
-
 	return details
 }
 
-// fetchSeries performs the actual TMDB search and details calls for a series.
+// fetchSeries performs the actual TMDB search and details calls for a
+// series. If the literal name doesn't match, it retries once with a
+// leading "The " added or removed — TMDB's search doesn't reliably resolve
+// that gap on its own, and it's a common mismatch between on-disk naming
+// and canonical titles ("Amazing World of Gumball" vs "The Amazing World
+// of Gumball").
 func fetchSeries(client *tmdb.Client, name, year string) *tmdb.TVDetails {
 	result, err := tmdb.SearchTV(client, name, year)
-	if err != nil || result == nil {
-		logger.Debug("{localscan/tmdbenrich - fetchSeries} no match for %s (%s): %v", name, year, err)
+	if err != nil {
+		logger.Debug("{localscan/tmdbenrich - fetchSeries} search failed for %s (%s): %v", name, year, err)
+		return nil
+	}
+
+	if result == nil {
+		if alt := theVariant(name); alt != "" {
+			result, err = tmdb.SearchTV(client, alt, year)
+			if err != nil {
+				logger.Debug("{localscan/tmdbenrich - fetchSeries} search failed for %s (%s): %v", alt, year, err)
+				return nil
+			}
+		}
+	}
+
+	if result == nil {
+		logger.Debug("{localscan/tmdbenrich - fetchSeries} no match for %s (%s)", name, year)
 		return nil
 	}
 
@@ -154,6 +173,15 @@ func fetchSeries(client *tmdb.Client, name, year string) *tmdb.TVDetails {
 		return nil
 	}
 	return details
+}
+
+// theVariant returns name with a leading "The " added or removed, or "" if
+// neither applies (name already has one form or the other tried already).
+func theVariant(name string) string {
+	if strings.HasPrefix(strings.ToLower(name), "the ") {
+		return strings.TrimSpace(name[4:])
+	}
+	return "The " + name
 }
 
 // genreNames flattens TMDB genre references to their names.
@@ -174,19 +202,29 @@ func castFrom(cast []tmdb.CastMember) []Person {
 	return people
 }
 
-// downloadArt saves TMDB poster/backdrop images to the same directory the
-// scanner already looks for local art in, using the filenames it already
-// recognizes (poster.jpg/fanart.jpg) so a re-scan picks them up as local
-// art. tmdb.DownloadImage itself skips the request when the file already
-// exists on disk.
+// downloadArt saves TMDB poster/backdrop images to disk when the entry does
+// not already have local art. Movies use a filename unique to the file
+// itself (matching the "<base>-poster" pattern the scanner already looks
+// for), since a movie library is commonly a flat directory of many files
+// sharing one folder — a shared poster.jpg there would collide across every
+// movie in it. Shows use the shared poster.jpg/fanart.jpg names in the
+// series folder, since that art is legitimately shared across every
+// episode. tmdb.DownloadImage itself skips the request when the file
+// already exists on disk.
 func downloadArt(e *MediaEntry, posterPath, backdropPath string) {
 	dir := artDir(e)
 	if dir == "" {
 		return
 	}
 
+	posterName, fanartName := "poster.jpg", "fanart.jpg"
+	if e.MediaType == "movies" {
+		base := strings.TrimSuffix(filepath.Base(e.Path), filepath.Ext(e.Path))
+		posterName, fanartName = base+"-poster.jpg", base+"-fanart.jpg"
+	}
+
 	if e.Poster == "" && posterPath != "" {
-		dest := filepath.Join(dir, "poster.jpg")
+		dest := filepath.Join(dir, posterName)
 		if err := tmdb.DownloadImage(posterPath, "poster", dest); err != nil {
 			logger.Debug("{localscan/tmdbenrich - downloadArt} poster download failed for %s: %v", e.Path, err)
 		} else {
@@ -195,7 +233,7 @@ func downloadArt(e *MediaEntry, posterPath, backdropPath string) {
 	}
 
 	if e.Fanart == "" && backdropPath != "" {
-		dest := filepath.Join(dir, "fanart.jpg")
+		dest := filepath.Join(dir, fanartName)
 		if err := tmdb.DownloadImage(backdropPath, "backdrop", dest); err != nil {
 			logger.Debug("{localscan/tmdbenrich - downloadArt} fanart download failed for %s: %v", e.Path, err)
 		} else {
