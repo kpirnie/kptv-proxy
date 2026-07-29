@@ -12,19 +12,6 @@
 
 A high-performance Go-based IPTV proxy server that intelligently aggregates streams from multiple sources, provides automatic channel deduplication, failover capabilities, and serves them through a unified M3U8 playlist with advanced streaming options including FFmpeg integration.
 
-## Screenshots
-
-<p align="center">
-  <img src="screenshots/login.png" alt="Login" width="30%">
-  &nbsp;&nbsp;
-  <img src="screenshots/register.png" alt="Initial Setup" width="30%">
-  &nbsp;&nbsp;
-  <img src="screenshots/home.png" alt="Dashboard" width="30%">
-</p>
-<p align="center">
-  <em>Login &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Initial Setup &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Dashboard</em>
-</p>
-
 ## Key Features
 
 ### 🔒 **Authentication & Security**

@@ -2,10 +2,12 @@
 package localscan
 
 import (
+	"fmt"
 	"hash/fnv"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -101,4 +103,69 @@ func applyGroupPrefix(prefix, group string) string {
 		return prefix
 	}
 	return prefix + "/" + group
+}
+
+// EpisodesForSeries returns every stored episode belonging to the same series
+// and local source as the supplied entry, in season then episode order.
+func EpisodesForSeries(e *MediaEntry) []*MediaEntry {
+	if e.MediaType != "shows" {
+		return nil
+	}
+
+	all := ExportEntries()
+
+	out := make([]*MediaEntry, 0, 32)
+	for _, c := range all {
+		if c.MediaType == "shows" && c.LocalSourceID == e.LocalSourceID && c.Series == e.Series {
+			out = append(out, c)
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Season != out[j].Season {
+			return out[i].Season < out[j].Season
+		}
+		return out[i].Episode < out[j].Episode
+	})
+
+	return out
+}
+
+// SeriesCategory returns the category a local show belongs to, which is its
+// group title with the trailing series name removed. Without this every show
+// becomes its own category in the XC output.
+func SeriesCategory(e *MediaEntry) string {
+	if idx := strings.LastIndex(e.GroupTitle, "/"); idx > 0 {
+		return e.GroupTitle[:idx]
+	}
+	return e.GroupTitle
+}
+
+// SeriesForExport returns one representative entry per local series, used to
+// build the XC series list. The representative is the first episode in season
+// then episode order, and its hash supplies the series ID that get_series_info
+// resolves back to the full tree.
+func SeriesForExport() []*MediaEntry {
+	all := ExportEntries()
+
+	seen := make(map[string]bool)
+	out := make([]*MediaEntry, 0, 32)
+
+	for _, e := range all {
+		if e.MediaType != "shows" {
+			continue
+		}
+		key := fmt.Sprintf("%d|%s", e.LocalSourceID, e.Series)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, e)
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Series) < strings.ToLower(out[j].Series)
+	})
+
+	return out
 }

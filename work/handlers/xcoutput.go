@@ -54,6 +54,7 @@ type xcStream struct {
 	Name               string `json:"name"`
 	StreamType         string `json:"stream_type"`
 	StreamID           int    `json:"stream_id"`
+	SeriesID           int    `json:"series_id,omitempty"`
 	StreamIcon         string `json:"stream_icon"`
 	EPGChannelID       string `json:"epg_channel_id"`
 	Added              string `json:"added"`
@@ -324,6 +325,32 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 		num++
 	}
 
+	if contentType == "series" {
+		for _, e := range localscan.SeriesForExport() {
+			seriesID := localscan.XCStreamID(e.Hash)
+
+			name := e.Series
+			if name == "" {
+				name = e.Display
+			}
+
+			streams = append(streams, xcStream{
+				Num:          num,
+				Name:         name,
+				StreamType:   "series",
+				SeriesID:     seriesID,
+				StreamIcon:   localArtURL(baseURL, username, password, e, "poster"),
+				EPGChannelID: "",
+				Added:        "0",
+				CategoryID:   categoryIDFromName(localscan.SeriesCategory(e)),
+				CustomSid:    "",
+				DirectSource: "",
+			})
+			num++
+		}
+		return streams
+	}
+
 	for _, e := range localscan.EntriesForContentType(contentType) {
 		extension := utils.NormalizeContainerExtension(localscan.ContainerExtension(e))
 		streamID := localscan.XCStreamID(e.Hash)
@@ -382,6 +409,22 @@ func buildCategoryList(sp *proxy.StreamProxy, contentType string) []xcCategory {
 			CategoryName: group,
 			ParentID:     0,
 		})
+	}
+
+	if contentType == "series" {
+		for _, e := range localscan.SeriesForExport() {
+			group := localscan.SeriesCategory(e)
+			if group == "" || seen[group] {
+				continue
+			}
+			seen[group] = true
+			categories = append(categories, xcCategory{
+				CategoryID:   categoryIDFromName(group),
+				CategoryName: group,
+				ParentID:     0,
+			})
+		}
+		return categories
 	}
 
 	for _, e := range localscan.EntriesForContentType(contentType) {
@@ -492,6 +535,25 @@ func HandleXCPlayerAPI(sp *proxy.StreamProxy) http.HandlerFunc {
 				return
 			}
 			json.NewEncoder(w).Encode(buildStreamList(sp, "series", sp.Config.BaseURL, username, password))
+
+		case "get_series_info":
+			if !account.EnableSeries {
+				json.NewEncoder(w).Encode(map[string]any{})
+				return
+			}
+			seriesID, err := strconv.Atoi(r.URL.Query().Get("series_id"))
+			if err != nil {
+				json.NewEncoder(w).Encode(map[string]any{})
+				return
+			}
+			if entry := localscan.FindByXCStreamID(seriesID); entry != nil && entry.MediaType == "shows" {
+				json.NewEncoder(w).Encode(buildLocalSeriesInfo(entry, sp.Config.BaseURL, username, password))
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"user_info":   userInfo,
+				"server_info": serverInfo,
+			})
 
 		case "get_short_epg":
 			limit := 4
@@ -691,6 +753,135 @@ func formatXCDuration(secs int) string {
 		return "00:00:00"
 	}
 	return fmt.Sprintf("%02d:%02d:%02d", secs/3600, (secs%3600)/60, secs%60)
+}
+
+// buildLocalSeriesInfo assembles the get_series_info response for a local show,
+// expanding the entry the client drilled into to the full season and episode
+// tree for its series. Remote series keep their existing default response.
+func buildLocalSeriesInfo(e *localscan.MediaEntry, baseURL, username, password string) map[string]any {
+	episodes := localscan.EpisodesForSeries(e)
+	if len(episodes) == 0 {
+		episodes = []*localscan.MediaEntry{e}
+	}
+
+	bySeason := make(map[string][]map[string]any)
+	seasonCounts := make(map[int]int)
+	var seasonOrder []int
+
+	for _, ep := range episodes {
+		key := strconv.Itoa(ep.Season)
+		if _, seen := seasonCounts[ep.Season]; !seen {
+			seasonOrder = append(seasonOrder, ep.Season)
+		}
+		seasonCounts[ep.Season]++
+
+		extension := utils.NormalizeContainerExtension(localscan.ContainerExtension(ep))
+		streamID := localscan.XCStreamID(ep.Hash)
+
+		title := ep.EpisodeTitle
+		if title == "" {
+			title = ep.Display
+		}
+
+		duration := ep.Duration
+		if duration < 0 {
+			duration = 0
+		}
+
+		bySeason[key] = append(bySeason[key], map[string]any{
+			"id":                  strconv.Itoa(streamID),
+			"episode_num":         ep.Episode,
+			"title":               title,
+			"container_extension": extension,
+			"season":              ep.Season,
+			"custom_sid":          "",
+			"added":               "0",
+			"direct_source":       buildXCStreamURL(baseURL, "series", username, password, streamID, extension),
+			"info": map[string]any{
+				"movie_image":   localArtURL(baseURL, username, password, ep, "poster"),
+				"plot":          ep.Plot,
+				"releasedate":   ep.Premiered,
+				"rating":        fmt.Sprintf("%.1f", ep.Rating),
+				"season":        ep.Season,
+				"tmdb_id":       ep.TMDBID,
+				"duration_secs": duration,
+				"duration":      formatXCDuration(duration),
+				"bitrate":       0,
+				"video":         []any{},
+				"audio":         []any{},
+			},
+		})
+	}
+
+	seasons := make([]map[string]any, 0, len(seasonOrder))
+	for _, num := range seasonOrder {
+		seasons = append(seasons, map[string]any{
+			"id":            num,
+			"season_number": num,
+			"name":          fmt.Sprintf("Season %d", num),
+			"episode_count": seasonCounts[num],
+			"overview":      "",
+			"air_date":      "",
+			"cover":         localArtURL(baseURL, username, password, e, "poster"),
+			"cover_big":     localArtURL(baseURL, username, password, e, "poster"),
+		})
+	}
+
+	cast := make([]string, 0, len(e.Cast))
+	for _, p := range e.Cast {
+		if p.Name != "" {
+			cast = append(cast, p.Name)
+		}
+	}
+
+	name := e.Series
+	if name == "" {
+		name = e.Display
+	}
+
+	backdrops := []string{}
+	if url := localArtURL(baseURL, username, password, e, "fanart"); url != "" {
+		backdrops = append(backdrops, url)
+	}
+
+	return map[string]any{
+		"seasons":  seasons,
+		"episodes": bySeason,
+		"info": map[string]any{
+			"name":             name,
+			"cover":            localArtURL(baseURL, username, password, e, "poster"),
+			"plot":             e.Plot,
+			"cast":             strings.Join(cast, ", "),
+			"director":         strings.Join(e.Directors, ", "),
+			"genre":            strings.Join(e.Genres, ", "),
+			"releaseDate":      e.Premiered,
+			"last_modified":    "0",
+			"rating":           fmt.Sprintf("%.1f", e.Rating),
+			"rating_5based":    e.Rating / 2,
+			"backdrop_path":    backdrops,
+			"youtube_trailer":  "",
+			"episode_run_time": 0,
+			"category_id":      categoryIDFromName(e.GroupTitle),
+		},
+	}
+}
+
+// localArtURL builds the proxied artwork URL for a local entry, or an empty
+// string when the entry carries no artwork of that kind.
+func localArtURL(baseURL, username, password string, e *localscan.MediaEntry, kind string) string {
+	switch kind {
+	case "poster":
+		if e.Poster == "" {
+			return ""
+		}
+	case "fanart":
+		if e.Fanart == "" {
+			return ""
+		}
+	default:
+		return ""
+	}
+	return fmt.Sprintf("%s/localart/%s/%s/%s/%s", baseURL, username, password, e.Hash, kind)
 }
 
 // writeXCM3UPlaylist writes a sorted M3U playlist filtered by account content settings.
