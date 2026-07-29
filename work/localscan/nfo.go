@@ -92,8 +92,9 @@ type nfoData struct {
 var (
 	posterNames = []string{"poster.jpg", "poster.png", "folder.jpg", "folder.png",
 		"cover.jpg", "cover.png", "movie.jpg", "default.jpg"}
-	fanartNames = []string{"fanart.jpg", "fanart.png", "backdrop.jpg", "background.jpg"}
-	posterExts  = []string{".jpg", ".jpeg", ".png", ".webp"}
+	fanartNames = []string{"fanart.jpg", "fanart.png", "backdrop.jpg",
+		"background.jpg", "landscape.jpg", "landscape.png"}
+	posterExts = []string{".jpg", ".jpeg", ".png", ".webp"}
 )
 
 // enrichNFO fills extended metadata on the entry from .nfo sidecars and sibling
@@ -300,24 +301,19 @@ func isRemoteURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
-// findArtwork probes for sibling poster and backdrop images when the .nfo did
-// not supply usable art. Music looks one directory up as well, so tracks in a
-// Disc N subfolder still resolve to the album cover.
+// findArtwork probes for poster and backdrop images when the .nfo did not
+// supply usable art, dispatching to the layout appropriate to the media type.
 func findArtwork(e *MediaEntry) {
+	if e.MediaType == "shows" {
+		findShowArtwork(e)
+		return
+	}
+
 	dir := filepath.Dir(e.Path)
 	base := strings.TrimSuffix(filepath.Base(e.Path), filepath.Ext(e.Path))
 
 	if e.Poster == "" {
-		for _, ext := range posterExts {
-			if p := existingFile(filepath.Join(dir, base+"-poster"+ext)); p != "" {
-				e.Poster = p
-				break
-			}
-			if p := existingFile(filepath.Join(dir, base+ext)); p != "" {
-				e.Poster = p
-				break
-			}
-		}
+		e.Poster = firstStem(dir, base+"-poster", base)
 	}
 	if e.Poster == "" {
 		e.Poster = firstExisting(dir, posterNames)
@@ -329,6 +325,74 @@ func findArtwork(e *MediaEntry) {
 	if e.Fanart == "" {
 		e.Fanart = firstExisting(dir, fanartNames)
 	}
+}
+
+// findShowArtwork resolves episode artwork against the Kodi/Jellyfin/Emby show
+// layout: episode-level art sits beside the media file, season art is either in
+// the season folder or named season<NN>-poster in the series folder, and
+// series-level art sits in the series folder. Each field falls through from the
+// most specific match to the least.
+func findShowArtwork(e *MediaEntry) {
+	dir := filepath.Dir(e.Path)
+	base := strings.TrimSuffix(filepath.Base(e.Path), filepath.Ext(e.Path))
+	seriesDir := findSeriesDir(e.Path)
+
+	if e.Poster == "" {
+		e.Poster = firstStem(dir, base+"-thumb", base+"-poster", base)
+	}
+	if e.Poster == "" {
+		e.Poster = firstExisting(dir, posterNames)
+	}
+	if e.Poster == "" && seriesDir != "" && e.Season > 0 {
+		e.Poster = firstStem(seriesDir, fmt.Sprintf("season%02d-poster", e.Season))
+	}
+	if e.Poster == "" && seriesDir != "" {
+		e.Poster = firstExisting(seriesDir, posterNames)
+	}
+
+	if e.Fanart == "" {
+		e.Fanart = firstExisting(dir, fanartNames)
+	}
+	if e.Fanart == "" && seriesDir != "" {
+		e.Fanart = firstExisting(seriesDir, fanartNames)
+	}
+}
+
+// findSeriesDir locates the series root for an episode, preferring the
+// directory holding tvshow.nfo so it agrees with findSeriesNFO. Without a
+// sidecar it falls back to the parent of a recognised season folder, and
+// returns an empty string when neither applies.
+func findSeriesDir(path string) string {
+	dir := filepath.Dir(path)
+	for i := 0; i < 4; i++ {
+		if existingFile(filepath.Join(dir, "tvshow.nfo")) != "" {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	episodeDir := filepath.Dir(path)
+	if seasonFolderRE.MatchString(filepath.Base(episodeDir)) {
+		return filepath.Dir(episodeDir)
+	}
+	return ""
+}
+
+// firstStem returns the first stem that resolves to an image file in dir,
+// trying every supported image extension for each stem in turn.
+func firstStem(dir string, stems ...string) string {
+	for _, stem := range stems {
+		for _, ext := range posterExts {
+			if p := existingFile(filepath.Join(dir, stem+ext)); p != "" {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 // firstExisting returns the first candidate name that resolves to a file in dir.

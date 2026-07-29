@@ -250,7 +250,10 @@ func buildNFOOut(e *MediaEntry) *nfoOut {
 
 // relativeArt shortens an artwork path to a bare filename when it sits beside
 // the media file, keeping the sidecar portable across mount points. Remote URLs
-// are written verbatim.
+// are written verbatim. Artwork inherited from a season or series folder
+// returns an empty string — it is not this file's own art, it is rediscovered
+// on every scan, and writing its absolute path would pin the sidecar to one
+// mount layout.
 func relativeArt(mediaPath, art string) string {
 	if art == "" || isRemoteURL(art) {
 		return art
@@ -258,7 +261,7 @@ func relativeArt(mediaPath, art string) string {
 	if filepath.Dir(art) == filepath.Dir(mediaPath) {
 		return filepath.Base(art)
 	}
-	return art
+	return ""
 }
 
 // firstNonEmpty returns the first trimmed non-blank candidate.
