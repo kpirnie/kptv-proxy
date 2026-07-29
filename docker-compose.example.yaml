@@ -1,6 +1,7 @@
 services:
   kptv-proxy:
     image: ghcr.io/kpirnie/kptv-proxy:latest
+    #image: ghcr.io/kpirnie/kptv-proxy:dev
     container_name: kptv_proxy
     restart: unless-stopped
     ports:
