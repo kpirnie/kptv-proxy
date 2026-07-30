@@ -27,9 +27,6 @@ import (
 func classifyStreamContent(streamName, streamURL string, existingGroup string) types.ContentType {
 
 	logger.Debug("{parser/m3u8 - classifyStreamContent} classify the stream content")
-	if utils.SeriesRegex.MatchString(streamName) || utils.SeriesRegex.MatchString(streamURL) {
-		return types.ContentTypeSeries
-	}
 	if utils.VodRegex.MatchString(streamName) || utils.VodRegex.MatchString(streamURL) {
 		return types.ContentTypeVOD
 	}

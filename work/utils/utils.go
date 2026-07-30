@@ -12,8 +12,7 @@ import (
 
 // hold the series and vod regex
 var (
-	SeriesRegex *regexp.Regexp
-	VodRegex    *regexp.Regexp
+	VodRegex *regexp.Regexp
 )
 
 // InitContentRegexes compiles content classification regexes once at startup
@@ -61,9 +60,6 @@ func ContentTypeOfStream(stream *types.Stream) types.ContentType {
 	}
 
 	// fall back to the import-time regexes
-	if SeriesRegex != nil && (SeriesRegex.MatchString(stream.Name) || SeriesRegex.MatchString(stream.URL)) {
-		return types.ContentTypeSeries
-	}
 	if VodRegex != nil && (VodRegex.MatchString(stream.Name) || VodRegex.MatchString(stream.URL)) {
 		return types.ContentTypeVOD
 	}
