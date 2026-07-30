@@ -510,7 +510,7 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 
 // GetChannelGroup extracts the group classification from channel attributes by checking
 // for the standard "tvg-group" attribute first, then falling back to "group-title".
-// Returns an empty string if no group classification is found in either attribute.
+// Uncategorized channels default to All so they always land in a real category.
 func (sp *StreamProxy) GetChannelGroup(attrs map[string]string) string {
 	if group, exists := attrs["tvg-group"]; exists && group != "" {
 		return group
@@ -518,7 +518,7 @@ func (sp *StreamProxy) GetChannelGroup(attrs map[string]string) string {
 	if group, exists := attrs["group-title"]; exists && group != "" {
 		return group
 	}
-	return ""
+	return "All"
 }
 
 // StartImportRefresh initiates periodic background import refresh at the interval
