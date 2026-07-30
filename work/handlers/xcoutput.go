@@ -171,6 +171,18 @@ func categoryIDFromName(name string) string {
 	return fmt.Sprintf("%d", id)
 }
 
+// groupTitleOf returns a channel's category label, falling back to the source's
+// tvg-group and then to All so uncategorized channels still land in a real category.
+func groupTitleOf(attrs map[string]string) string {
+	if group := attrs["group-title"]; group != "" {
+		return group
+	}
+	if group := attrs["tvg-group"]; group != "" {
+		return group
+	}
+	return "All"
+}
+
 // buildXCStreamURL constructs an XC direct-source URL for a content type, using the
 // stream's real container extension rather than assuming MPEG-TS.
 func buildXCStreamURL(baseURL, contentType, username, password string, streamID int, extension string) string {
@@ -297,7 +309,7 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 		item.channel.Mu.RUnlock()
 
 		streamID := streamIDFromName(item.name)
-		group := attrs["group-title"]
+		group := groupTitleOf(attrs)
 		logo := attrs["tvg-logo"]
 		tvgID := proxy.EPGIDForChannel(item.name, epgMap)
 
@@ -396,10 +408,10 @@ func buildCategoryList(sp *proxy.StreamProxy, contentType string) []xcCategory {
 		}
 
 		chType := getChannelContentType(item.channel)
-		group := item.channel.Streams[0].Attributes["group-title"]
+		group := groupTitleOf(item.channel.Streams[0].Attributes)
 		item.channel.Mu.RUnlock()
 
-		if chType != contentType || group == "" || seen[group] {
+		if chType != contentType || seen[group] {
 			continue
 		}
 
@@ -917,7 +929,7 @@ func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *c
 
 		streamID := streamIDFromName(item.name)
 		logo := attrs["tvg-logo"]
-		group := attrs["group-title"]
+		group := groupTitleOf(attrs)
 		tvgID := proxy.EPGIDForChannel(item.name, epgMap)
 
 		// mapped channels advertise the raw mapped epg id on all three

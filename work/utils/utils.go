@@ -18,7 +18,6 @@ var (
 
 // InitContentRegexes compiles content classification regexes once at startup
 func InitContentRegexes() {
-	SeriesRegex = regexp.MustCompile(`(?i)24\/7|\/series\/|\/shows\/|\/show\/`)
 	VodRegex = regexp.MustCompile(`(?i)\/vods\/|\/vod\/|\/movies\/|\/movie\/`)
 }
 

@@ -85,8 +85,7 @@ type XCVODStream struct {
 }
 
 // processLiveBatchWorker processes a batch of XC live streams into internal Stream
-// objects. Category labels are resolved from the provider's flat category list, and
-// 24/7 style pseudo-channels are reclassified off live by name.
+// objects. Category labels are resolved from the provider's flat category list.
 //
 // Parameters:
 //   - batch: slice of XCLiveStream objects to process
@@ -102,11 +101,9 @@ func processLiveBatchWorker(batch []XCLiveStream, categoryMap map[string]string,
 	for _, stream := range batch {
 		streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
 
-		// name only, the URL is ours and its numeric ID would false-match the 247 pattern
+		// live endpoint never carries real series; only VOD can false-classify here
 		contentType := types.ContentTypeLive
-		if utils.SeriesRegex != nil && (utils.SeriesRegex.MatchString(stream.Name) || utils.SeriesRegex.MatchString(streamURL)) {
-			contentType = types.ContentTypeSeries
-		} else if utils.VodRegex != nil && (utils.VodRegex.MatchString(stream.Name) || utils.VodRegex.MatchString(streamURL)) {
+		if utils.VodRegex != nil && (utils.VodRegex.MatchString(stream.Name) || utils.VodRegex.MatchString(streamURL)) {
 			contentType = types.ContentTypeVOD
 		}
 

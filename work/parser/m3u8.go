@@ -21,44 +21,28 @@ import (
 	"go.uber.org/ratelimit"
 )
 
-// classifyStreamContent applies the same content classification logic as XC API parsing
-func classifyStreamContent(streamName, streamURL string, existingGroup string) string {
+// classifyStreamContent resolves a stream's content type from its name and URL,
+// falling back to the source's group label when neither pattern matches. The
+// group label itself is never rewritten; it belongs to the source.
+func classifyStreamContent(streamName, streamURL string, existingGroup string) types.ContentType {
 
-	// If there's already a meaningful group-title, preserve it unless we have a better classification
-	if existingGroup != "" && !strings.EqualFold(existingGroup, "uncategorized") {
-
-		// Still check if our regex patterns suggest a different classification
-		seriesNameMatch := utils.SeriesRegex.MatchString(streamName)
-		vodNameMatch := utils.VodRegex.MatchString(streamName)
-		seriesURLMatch := utils.SeriesRegex.MatchString(streamURL)
-		vodURLMatch := utils.VodRegex.MatchString(streamURL)
-		logger.Debug("{parser/m3u8 - classifyStreamContent} classify the stream content - group")
-		if seriesNameMatch || seriesURLMatch {
-			return "series"
-		}
-		if vodNameMatch || vodURLMatch {
-			return "vod"
-		}
-
-		// Keep existing group if our patterns don't match
-		return existingGroup
-	}
-
-	// Apply regex-based classification
-	seriesNameMatch := utils.SeriesRegex.MatchString(streamName)
-	vodNameMatch := utils.VodRegex.MatchString(streamName)
-	seriesURLMatch := utils.SeriesRegex.MatchString(streamURL)
-	vodURLMatch := utils.VodRegex.MatchString(streamURL)
 	logger.Debug("{parser/m3u8 - classifyStreamContent} classify the stream content")
-	if seriesNameMatch || seriesURLMatch {
-		return "series"
+	if utils.SeriesRegex.MatchString(streamName) || utils.SeriesRegex.MatchString(streamURL) {
+		return types.ContentTypeSeries
 	}
-	if vodNameMatch || vodURLMatch {
-		return "vod"
+	if utils.VodRegex.MatchString(streamName) || utils.VodRegex.MatchString(streamURL) {
+		return types.ContentTypeVOD
 	}
 
-	// Default to live
-	return "live"
+	group := strings.ToLower(existingGroup)
+	switch {
+	case strings.Contains(group, "series"):
+		return types.ContentTypeSeries
+	case strings.Contains(group, "vod") || strings.Contains(group, "movie"):
+		return types.ContentTypeVOD
+	}
+
+	return types.ContentTypeLive
 }
 
 // ParseM3U8 fetches and parses an M3U8 playlist from a specified URL, extracting stream information
@@ -213,8 +197,7 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 			Attributes: make(map[string]string),
 		}
 
-		group := classifyStreamContent(stream.Name, stream.URL, "")
-		stream.Attributes["group-title"] = group
+		stream.ContentType = classifyStreamContent(stream.Name, stream.URL, "")
 
 		// append the streams
 		streams = append(streams, stream)
@@ -249,8 +232,8 @@ func ParseWithGrafov(playlist m3u8.Playlist, listType m3u8.ListType, source *con
 				stream.Attributes["resolution"] = variant.Resolution
 			}
 
-			group := classifyStreamContent(stream.Name, stream.URL, "")
-			stream.Attributes["group-title"] = group
+			stream.ContentType = classifyStreamContent(stream.Name, stream.URL, "")
+
 			// append the streams
 			streams = append(streams, stream)
 			logger.Debug("{parser/m3u8 - ParseWithGrafov} parse a master playlist")
@@ -347,16 +330,15 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 				stream.Name = "Unknown"
 			}
 
-			// Apply content classification, preserving existing group-title if meaningful
+			// classify without disturbing the source's own group-title
 			existingGroup := currentAttrs["group-title"]
 			if existingGroup == "" {
 				existingGroup = currentAttrs["tvg-group"] // Also check tvg-group
 			}
 
-			group := classifyStreamContent(stream.Name, stream.URL, existingGroup)
-			stream.Attributes["group-title"] = group
+			stream.ContentType = classifyStreamContent(stream.Name, stream.URL, existingGroup)
 
-			logger.Debug("{parser/m3u8 - ParseM3U8Fallback} Classified stream '%s' as '%s' (URL: %s)", stream.Name, group, utils.LogURL(cfg, stream.URL))
+			logger.Debug("{parser/m3u8 - ParseM3U8Fallback} Classified stream '%s' as '%s' (URL: %s)", stream.Name, stream.ContentType, utils.LogURL(cfg, stream.URL))
 
 			streams = append(streams, stream)
 			logger.Debug("{parser/m3u8 - ParseM3U8Fallback} Added stream: %s (URL: %s)", stream.Name, utils.LogURL(cfg, stream.URL))
