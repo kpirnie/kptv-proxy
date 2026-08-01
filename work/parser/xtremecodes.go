@@ -54,7 +54,7 @@ type XCCategory struct {
 // categorization, and EPG (Electronic Program Guide) integration information.
 // This structure maps directly to the JSON response format from the get_live_streams endpoint.
 type XCLiveStream struct {
-	StreamID     int    `json:"stream_id"`      // Unique identifier for the live stream used in stream URL construction
+	StreamID     XCID   `json:"stream_id"`      // Unique identifier for the live stream used in stream URL construction
 	Name         string `json:"name"`           // Display name of the live channel for user interfaces and playlists
 	CategoryID   XCID   `json:"category_id"`    // Category identifier for grouping related channels
 	StreamIcon   string `json:"stream_icon"`    // URL to channel logo/icon image for display purposes
@@ -66,7 +66,7 @@ type XCLiveStream struct {
 // categorization, and artwork information. This structure maps to the JSON response
 // format from the get_series endpoint.
 type XCSeries struct {
-	SeriesID   int    `json:"series_id"`   // Unique identifier for the series used in stream URL construction
+	SeriesID   XCID   `json:"series_id"`   // Unique identifier for the series used in stream URL construction
 	Name       string `json:"name"`        // Display name of the series for user interfaces and playlists
 	CategoryID XCID   `json:"category_id"` // Category identifier for grouping related series content
 	Cover      string `json:"cover"`       // URL to series cover artwork/poster image for display purposes
@@ -77,7 +77,7 @@ type XCSeries struct {
 // categorization, artwork, and format information. This structure maps to the JSON response
 // format from the get_vod_streams endpoint.
 type XCVODStream struct {
-	StreamID           int    `json:"stream_id"`           // Unique identifier for the VOD stream used in stream URL construction
+	StreamID           XCID   `json:"stream_id"`           // Unique identifier for the VOD stream used in stream URL construction
 	Name               string `json:"name"`                // Display name of the video content for user interfaces and playlists
 	CategoryID         XCID   `json:"category_id"`         // Category identifier for grouping related video content
 	StreamIcon         string `json:"stream_icon"`         // URL to video thumbnail/poster image for display purposes
@@ -99,7 +99,7 @@ func processLiveBatchWorker(batch []XCLiveStream, categoryMap map[string]string,
 	logger.Debug("{parser/xtremecodes - processLiveBatchWorker} process the live batch")
 
 	for _, stream := range batch {
-		streamURL := fmt.Sprintf("%s/live/%s/%s/%d.ts", source.URL, source.Username, source.Password, stream.StreamID)
+		streamURL := fmt.Sprintf("%s/live/%s/%s/%s.ts", source.URL, source.Username, source.Password, stream.StreamID)
 
 		// live endpoint never carries real series; only VOD can false-classify here
 		contentType := types.ContentTypeLive
@@ -115,7 +115,7 @@ func processLiveBatchWorker(batch []XCLiveStream, categoryMap map[string]string,
 			Attributes: map[string]string{
 				"tvg-name":    stream.Name,
 				"group-title": categoryName(categoryMap, string(stream.CategoryID), "live"),
-				"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
+				"tvg-id":      fmt.Sprintf("%s", stream.StreamID),
 				"category-id": string(stream.CategoryID),
 			},
 		}
@@ -147,7 +147,7 @@ func processSeriesBatchWorker(batch []XCSeries, categoryMap map[string]string, s
 	logger.Debug("{parser/xtremecodes - processSeriesBatchWorker} process the series batch")
 
 	for _, serie := range batch {
-		streamURL := fmt.Sprintf("%s/series/%s/%s/%d.ts", source.URL, source.Username, source.Password, serie.SeriesID)
+		streamURL := fmt.Sprintf("%s/series/%s/%s/%s.ts", source.URL, source.Username, source.Password, serie.SeriesID)
 
 		s := &types.Stream{
 			URL:                streamURL,
@@ -158,7 +158,7 @@ func processSeriesBatchWorker(batch []XCSeries, categoryMap map[string]string, s
 			Attributes: map[string]string{
 				"tvg-name":    serie.Name,
 				"group-title": categoryName(categoryMap, string(serie.CategoryID), "series"),
-				"tvg-id":      fmt.Sprintf("%d", serie.SeriesID),
+				"tvg-id":      fmt.Sprintf("%s", serie.SeriesID),
 				"category-id": string(serie.CategoryID),
 			},
 		}
@@ -188,7 +188,7 @@ func processVODBatchWorker(batch []XCVODStream, categoryMap map[string]string, s
 
 	for _, stream := range batch {
 		extension := utils.NormalizeContainerExtension(stream.ContainerExtension)
-		streamURL := fmt.Sprintf("%s/movie/%s/%s/%d.%s", source.URL, source.Username, source.Password, stream.StreamID, extension)
+		streamURL := fmt.Sprintf("%s/movie/%s/%s/%s.%s", source.URL, source.Username, source.Password, stream.StreamID, extension)
 
 		s := &types.Stream{
 			URL:                streamURL,
@@ -199,7 +199,7 @@ func processVODBatchWorker(batch []XCVODStream, categoryMap map[string]string, s
 			Attributes: map[string]string{
 				"tvg-name":    stream.Name,
 				"group-title": categoryName(categoryMap, string(stream.CategoryID), "vod"),
-				"tvg-id":      fmt.Sprintf("%d", stream.StreamID),
+				"tvg-id":      fmt.Sprintf("%s", stream.StreamID),
 				"category-id": string(stream.CategoryID),
 			},
 		}

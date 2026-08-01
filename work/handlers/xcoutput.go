@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"hash/fnv"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/db"
 	"kptv-proxy/work/epgindex"
 	"kptv-proxy/work/localscan"
 	"kptv-proxy/work/logger"
+	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
@@ -16,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -95,6 +98,15 @@ type xcEPGListing struct {
 	NowPlaying     int    `json:"now_playing,omitempty"`
 	HasArchive     int    `json:"has_archive"`
 }
+
+// episodeChannels holds the synthetic channels minted for remote series
+// episodes. Episodes are not part of the imported channel map, but they still
+// need a channel to hang a restreamer off so repeat viewers share one upstream
+// connection instead of opening their own.
+var (
+	episodeChannels   = make(map[int]*types.Channel)
+	episodeChannelsMu sync.Mutex
+)
 
 // getSortedChannels snapshots the channel map and returns it sorted alphabetically
 // by channel name. All XC output functions must use this instead of ranging the
@@ -320,6 +332,7 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 			Name:              item.name,
 			StreamType:        contentType,
 			StreamID:          streamID,
+			SeriesID:          seriesIDForType(contentType, streamID),
 			StreamIcon:        logo,
 			EPGChannelID:      tvgID,
 			Added:             "0",
@@ -562,6 +575,10 @@ func HandleXCPlayerAPI(sp *proxy.StreamProxy) http.HandlerFunc {
 				json.NewEncoder(w).Encode(buildLocalSeriesInfo(entry, sp.Config.BaseURL, username, password))
 				return
 			}
+			if payload, ok := buildRemoteSeriesInfo(sp, seriesID, sp.Config.BaseURL, username, password); ok {
+				json.NewEncoder(w).Encode(payload)
+				return
+			}
 			json.NewEncoder(w).Encode(map[string]any{
 				"user_info":   userInfo,
 				"server_info": serverInfo,
@@ -650,6 +667,14 @@ func handleXCStream(sp *proxy.StreamProxy, redirectM3U8 bool) http.HandlerFunc {
 
 		channelName := findChannelByStreamID(sp, streamID)
 		if channelName == "" {
+
+			// Remote series episodes are not channels — resolve the episode
+			// mapping and stream it from the upstream provider.
+			if episode, found := episodeChannel(sp, streamID); found {
+				sp.HandleRestreamingClient(w, r, episode)
+				return
+			}
+
 			// Local media is not a channel — resolve it and serve from disk.
 			if entry := localscan.FindByXCStreamID(streamID); entry != nil {
 				if !localscan.PathWithinSource(entry.LocalSourceID, entry.Path) {
@@ -876,6 +901,229 @@ func buildLocalSeriesInfo(e *localscan.MediaEntry, baseURL, username, password s
 			"category_id":      categoryIDFromName(e.GroupTitle),
 		},
 	}
+}
+
+// seriesIDForType returns the series_id an XC client needs to drill into a
+// series entry, leaving every other content type's value omitted.
+func seriesIDForType(contentType string, streamID int) int {
+	if contentType == "series" {
+		return streamID
+	}
+	return 0
+}
+
+// episodeIDFromUpstream mints a stable proxy episode ID from a source and the
+// provider's own episode identifier, so the same episode keeps the same ID
+// across restarts and re-imports.
+func episodeIDFromUpstream(sourceURL, upstreamID string) int {
+	return streamIDFromName(fmt.Sprintf("%s|episode|%s", sourceURL, upstreamID))
+}
+
+// remoteSeriesOrigin resolves a proxy series ID to the source and provider-side
+// series identifier it was built from. Only Xtreme Codes sources carry an
+// episode tree; M3U sources have no info endpoint to ask.
+func remoteSeriesOrigin(sp *proxy.StreamProxy, seriesID int) (*config.SourceConfig, string, map[string]string, string, bool) {
+	channelName := findChannelByStreamID(sp, seriesID)
+	if channelName == "" {
+		return nil, "", nil, "", false
+	}
+
+	channel, exists := sp.Channels.Load(channelName)
+	if !exists {
+		return nil, "", nil, "", false
+	}
+
+	channel.Mu.RLock()
+	defer channel.Mu.RUnlock()
+
+	if len(channel.Streams) == 0 || getChannelContentType(channel) != "series" {
+		return nil, "", nil, "", false
+	}
+
+	stream := channel.Streams[0]
+	if stream.Source == nil || stream.Source.Username == "" || stream.Source.Password == "" {
+		return nil, "", nil, "", false
+	}
+
+	upstreamID := stream.Attributes["tvg-id"]
+	if upstreamID == "" {
+		return nil, "", nil, "", false
+	}
+
+	return stream.Source, upstreamID, stream.Attributes, channelName, true
+}
+
+// buildRemoteSeriesInfo assembles the get_series_info response for a series
+// carried by an upstream Xtreme Codes source. The provider's season and info
+// blocks pass through untouched; the episode tree is rewritten so every ID and
+// source URL points back at this proxy, and the mapping is persisted so
+// playback still resolves after a restart. Payloads are cached for the
+// configured cache duration, and a stale payload is preferred over an error
+// when the provider is unreachable.
+func buildRemoteSeriesInfo(sp *proxy.StreamProxy, seriesID int, baseURL, username, password string) (map[string]any, bool) {
+	source, upstreamID, attrs, channelName, ok := remoteSeriesOrigin(sp, seriesID)
+	if !ok {
+		return nil, false
+	}
+
+	ttl := sp.Config.CacheDuration
+	if !sp.Config.CacheEnabled {
+		ttl = 0
+	}
+
+	cached, fresh := db.GetSeriesInfo(source.URL, upstreamID, ttl)
+	if fresh && cached != "" {
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(cached), &payload); err == nil {
+			logger.Debug("{handlers/xcoutput - buildRemoteSeriesInfo} Serving cached series info for %s (series %s)", channelName, upstreamID)
+			return payload, true
+		}
+	}
+
+	info, err := parser.FetchXCSeriesInfo(sp.HttpClient, sp.Config, source, sp.RateLimiterForSource(source), upstreamID)
+	if err != nil {
+		if cached != "" {
+			var payload map[string]any
+			if jsonErr := json.Unmarshal([]byte(cached), &payload); jsonErr == nil {
+				logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Upstream fetch failed for %s, serving stale cache: %v", channelName, err)
+				return payload, true
+			}
+		}
+		logger.Error("{handlers/xcoutput - buildRemoteSeriesInfo} No series info available for %s: %v", channelName, err)
+		return nil, false
+	}
+
+	episodes := make(map[string][]map[string]any, len(info.Episodes))
+	mappings := make([]db.SeriesEpisode, 0, 64)
+
+	for season, seasonEpisodes := range info.Episodes {
+		rendered := make([]map[string]any, 0, len(seasonEpisodes))
+		for _, ep := range seasonEpisodes {
+			if string(ep.ID) == "" {
+				continue
+			}
+
+			extension := utils.NormalizeContainerExtension(ep.ContainerExtension)
+			episodeID := episodeIDFromUpstream(source.URL, string(ep.ID))
+
+			entry := map[string]any{
+				"id":                  strconv.Itoa(episodeID),
+				"episode_num":         string(ep.EpisodeNum),
+				"title":               ep.Title,
+				"container_extension": extension,
+				"season":              season,
+				"custom_sid":          ep.CustomSID,
+				"added":               ep.Added,
+				"direct_source":       buildXCStreamURL(baseURL, "series", username, password, episodeID, extension),
+			}
+			if len(ep.Info) > 0 {
+				var epInfo any
+				if err := json.Unmarshal(ep.Info, &epInfo); err == nil {
+					entry["info"] = epInfo
+				}
+			}
+
+			rendered = append(rendered, entry)
+			mappings = append(mappings, db.SeriesEpisode{
+				EpisodeID:  episodeID,
+				SourceURL:  source.URL,
+				SeriesID:   upstreamID,
+				UpstreamID: string(ep.ID),
+				Extension:  extension,
+			})
+		}
+		if len(rendered) > 0 {
+			episodes[season] = rendered
+		}
+	}
+
+	payload := map[string]any{
+		"seasons":  json.RawMessage("[]"),
+		"info":     json.RawMessage("{}"),
+		"episodes": episodes,
+	}
+	if len(info.Seasons) > 0 {
+		payload["seasons"] = info.Seasons
+	}
+	if len(info.Info) > 0 {
+		payload["info"] = info.Info
+	}
+
+	if cover := attrs["tvg-logo"]; cover != "" {
+		if infoBlock, isMap := payload["info"].(map[string]any); isMap && infoBlock["cover"] == nil {
+			infoBlock["cover"] = cover
+		}
+	}
+
+	if err := db.SetSeriesEpisodes(source.URL, upstreamID, mappings); err != nil {
+		logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Failed to persist episode mappings for %s: %v", channelName, err)
+	}
+	if encoded, err := json.Marshal(payload); err == nil {
+		if err := db.SetSeriesInfo(source.URL, upstreamID, string(encoded)); err != nil {
+			logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Failed to cache series info for %s: %v", channelName, err)
+		}
+	}
+
+	logger.Debug("{handlers/xcoutput - buildRemoteSeriesInfo} Built series info for %s: %d seasons, %d episodes", channelName, len(episodes), len(mappings))
+	return payload, true
+}
+
+// findSourceByURL locates a configured source by its URL.
+func findSourceByURL(cfg *config.Config, url string) *config.SourceConfig {
+	for i := range cfg.Sources {
+		if cfg.Sources[i].URL == url {
+			return &cfg.Sources[i]
+		}
+	}
+	return nil
+}
+
+// episodeChannel resolves a proxy episode ID to a streamable channel backed by
+// the upstream provider's episode URL, reusing the channel across requests so
+// its restreamer is shared.
+func episodeChannel(sp *proxy.StreamProxy, episodeID int) (*types.Channel, bool) {
+	episodeChannelsMu.Lock()
+	defer episodeChannelsMu.Unlock()
+
+	if channel, exists := episodeChannels[episodeID]; exists {
+		return channel, true
+	}
+
+	mapping, found := db.GetSeriesEpisode(episodeID)
+	if !found {
+		return nil, false
+	}
+
+	source := findSourceByURL(sp.Config, mapping.SourceURL)
+	if source == nil {
+		logger.Warn("{handlers/xcoutput - episodeChannel} Episode %d references a source that no longer exists: %s", episodeID, mapping.SourceURL)
+		return nil, false
+	}
+
+	extension := utils.NormalizeContainerExtension(mapping.Extension)
+	name := fmt.Sprintf("episode-%d", episodeID)
+	streamURL := fmt.Sprintf("%s/series/%s/%s/%s.%s", source.URL, source.Username, source.Password, mapping.UpstreamID, extension)
+
+	stream := &types.Stream{
+		URL:                streamURL,
+		Name:               name,
+		Source:             source,
+		ContentType:        types.ContentTypeSeries,
+		ContainerExtension: extension,
+		URLHash:            utils.HashURL(streamURL),
+		Attributes:         map[string]string{"tvg-name": name},
+	}
+
+	channel := &types.Channel{
+		Name:                 name,
+		Streams:              []*types.Stream{stream},
+		PreferredStreamIndex: 0,
+	}
+
+	episodeChannels[episodeID] = channel
+	logger.Debug("{handlers/xcoutput - episodeChannel} Resolved episode %d to upstream series %s on %s", episodeID, mapping.SeriesID, source.Name)
+
+	return channel, true
 }
 
 // localArtURL builds the proxied artwork URL for a local entry, or an empty

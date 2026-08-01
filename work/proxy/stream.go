@@ -923,6 +923,13 @@ func (sp *StreamProxy) GetChannelNameFromStream(stream *types.Stream) string {
 	return stream.Name
 }
 
+// RateLimiterForSource exposes a source's rate limiter to callers outside the
+// proxy package, so out-of-band API requests obey the same per-source pacing
+// that imports and restreaming do.
+func (sp *StreamProxy) RateLimiterForSource(source *config.SourceConfig) ratelimit.Limiter {
+	return sp.getRateLimiterForSource(source)
+}
+
 // getRateLimiterForSource retrieves the pre-initialized rate limiter for a given source.
 // It performs a double-checked lock pattern: first attempting a read-only lookup, then
 // falling back to a write-locked creation if the limiter doesn't exist yet. This handles

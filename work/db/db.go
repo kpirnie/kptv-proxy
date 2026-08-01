@@ -231,6 +231,24 @@ func initSchema(db *sql.DB) error {
 		UNIQUE(local_source_id, path)
 	);
 
+	CREATE TABLE IF NOT EXISTS kp_series_info (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		source_url TEXT    NOT NULL,
+		series_id  TEXT    NOT NULL,
+		payload    TEXT    NOT NULL DEFAULT '',
+		fetched_at INTEGER NOT NULL DEFAULT 0,
+		UNIQUE(source_url, series_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS kp_series_episodes (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		episode_id  INTEGER NOT NULL UNIQUE,
+		source_url  TEXT    NOT NULL,
+		series_id   TEXT    NOT NULL,
+		upstream_id TEXT    NOT NULL,
+		extension   TEXT    NOT NULL DEFAULT 'mp4'
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_sd_lineups_account     ON kp_sd_lineups(sd_account_id);
 	CREATE INDEX IF NOT EXISTS idx_overrides_channel_hash ON kp_stream_overrides(channel, s_hash);	
 	CREATE INDEX IF NOT EXISTS idx_users_username ON kp_users(username);
@@ -240,6 +258,8 @@ func initSchema(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_local_sources_order ON kp_local_sources(sort_order);
 	CREATE INDEX IF NOT EXISTS idx_local_media_source  ON kp_local_media(local_source_id, sort_key);
 	CREATE INDEX IF NOT EXISTS idx_local_media_hash    ON kp_local_media(s_hash);
+	CREATE INDEX IF NOT EXISTS idx_series_info_lookup ON kp_series_info(source_url, series_id);
+	CREATE INDEX IF NOT EXISTS idx_series_episodes_series ON kp_series_episodes(source_url, series_id);
 	`)
 
 	return err
