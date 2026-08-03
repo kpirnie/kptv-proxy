@@ -135,6 +135,33 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 			return true
 		})
 
+		sessions := make(map[string]*ChannelResponse)
+		proxy.RangeFileSessions(func(session *proxy.FileSession) bool {
+			existing, seen := sessions[session.ChannelName]
+			if !seen {
+				logoURL := session.LogoURL
+				if logoURL == "" {
+					logoURL = "https://cdn.kcp.im/tv/kptv-icon.png"
+				}
+				sessions[session.ChannelName] = &ChannelResponse{
+					Name:             session.ChannelName,
+					Active:           true,
+					Clients:          1,
+					CurrentSource:    session.SourceName,
+					BytesTransferred: session.Bytes.Load(),
+					LogoURL:          logoURL,
+				}
+				return true
+			}
+			existing.Clients++
+			existing.BytesTransferred += session.Bytes.Load()
+			return true
+		})
+
+		for _, session := range sessions {
+			channels = append(channels, *session)
+		}
+
 		if err := json.NewEncoder(w).Encode(channels); err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to encode active channels: %v", err))
 			http.Error(w, "Failed to encode active channels", http.StatusInternalServerError)

@@ -43,6 +43,14 @@ func handleGetStats(sp *proxy.StreamProxy) http.HandlerFunc {
 			return true
 		})
 
+		proxy.RangeFileSessions(func(_ *proxy.FileSession) bool {
+			activeStreams++
+			activeChannels++
+			connectedClients++
+			upstreamConnections++
+			return true
+		})
+
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		memoryUsage := utils.FormatBytes(int64(m.Alloc))

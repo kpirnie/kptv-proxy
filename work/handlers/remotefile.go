@@ -3,19 +3,23 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/logger"
+	"kptv-proxy/work/metrics"
 	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
+	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"mime"
 	"net/http"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 )
 
@@ -36,6 +40,22 @@ var remoteFileResponseHeaders = []string{
 	"Content-Disposition",
 }
 
+// sessionWriter counts bytes delivered to the client so a passthrough session
+// reports throughput the same way a restreamed channel does.
+type sessionWriter struct {
+	http.ResponseWriter
+	bytes *atomic.Int64
+}
+
+func (sw *sessionWriter) Write(b []byte) (int, error) {
+	n, err := sw.ResponseWriter.Write(b)
+	if n > 0 {
+		sw.bytes.Add(int64(n))
+		metrics.TotalBytesTransferred.Add(int64(n))
+	}
+	return n, err
+}
+
 // serveSeriesEpisode plays a proxy episode ID, walking every provider carrying
 // it in the series channel's own stream order. Each candidate is retried once
 // against the same provider — episode URLs hand out a single-use CDN token, so a
@@ -44,6 +64,15 @@ var remoteFileResponseHeaders = []string{
 // exhausted the offline video is served so the player shows something rather
 // than erroring.
 func serveSeriesEpisode(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, episodeID int) bool {
+
+	// make sure we aren't overloading the server with too many concurrent clients
+	release, ok := sp.AcquireClientSlot()
+	if !ok {
+		http.Error(w, "Server at capacity", http.StatusServiceUnavailable)
+		return true
+	}
+	defer release()
+
 	mappings := db.GetSeriesEpisodeSources(episodeID)
 	if len(mappings) == 0 {
 		return false
@@ -68,13 +97,23 @@ func serveSeriesEpisode(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Re
 		}
 
 		streamURL := upstreamEpisodeURL(origin.Source, upstreamID, extension)
+		sessionID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
+		session := proxy.StartFileSession(sessionID, channelName, origin.Source.Name, origin.Attributes["tvg-logo"])
+
+		delivered := false
 		for attempt := 0; attempt <= constants.Internal.RemoteFileRetries; attempt++ {
-			if attemptRemoteFile(sp, w, r, streamURL, origin.Source, extension) {
-				return true
+			if attemptRemoteFile(sp, w, r, streamURL, origin.Source, extension, session) {
+				delivered = true
+				break
 			}
 			if r.Context().Err() != nil {
-				return true
+				delivered = true
+				break
 			}
+		}
+		proxy.EndFileSession(sessionID)
+		if delivered {
+			return true
 		}
 
 		if err := deadstreams.MarkStreamDeadByHash(channelName, origin.StreamHash, "series episode unplayable"); err != nil {
@@ -90,7 +129,9 @@ func serveSeriesEpisode(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Re
 
 // episodeOnSource resolves the provider-side episode identifier for one source,
 // preferring a stored mapping and falling back to that source's own episode tree
-// when the series has not been opened on it yet.
+// when the series has not been opened on it yet. A tree fetched here is persisted
+// in full, so failing over to this provider costs one provider call per series
+// rather than one per playback.
 func episodeOnSource(sp *proxy.StreamProxy, origin seriesOrigin, mappings []db.SeriesEpisode, season, episode int) (string, string, bool) {
 	for _, mapping := range mappings {
 		if mapping.SourceURL == origin.Source.URL && mapping.UpstreamID != "" {
@@ -104,26 +145,58 @@ func episodeOnSource(sp *proxy.StreamProxy, origin seriesOrigin, mappings []db.S
 		return "", "", false
 	}
 
+	learned := make([]db.SeriesEpisode, 0, 64)
+	upstreamID := ""
+	extension := ""
+
 	for seasonKey, seasonEpisodes := range info.Episodes {
-		seasonNum, convErr := strconv.Atoi(seasonKey)
-		if convErr != nil {
-			continue
-		}
-		if seasonNum != season {
-			continue
-		}
-		for index, ep := range seasonEpisodes {
+		count := 0
+		for _, ep := range seasonEpisodes {
+			if string(ep.ID) == "" {
+				continue
+			}
+
+			seasonNum, convErr := strconv.Atoi(seasonKey)
+			if convErr != nil {
+				seasonNum, _ = strconv.Atoi(string(ep.Season))
+			}
+
 			episodeNum, convErr := strconv.Atoi(string(ep.EpisodeNum))
 			if convErr != nil || episodeNum == 0 {
-				episodeNum = index + 1
+				episodeNum = count + 1
 			}
-			if episodeNum == episode && string(ep.ID) != "" {
-				return string(ep.ID), utils.NormalizeContainerExtension(ep.ContainerExtension), true
+			count++
+
+			epExtension := utils.NormalizeContainerExtension(ep.ContainerExtension)
+
+			learned = append(learned, db.SeriesEpisode{
+				EpisodeID:   episodeIDFromChannel(origin.ChannelName, seasonNum, episodeNum),
+				ChannelName: origin.ChannelName,
+				Season:      seasonNum,
+				Episode:     episodeNum,
+				SourceURL:   origin.Source.URL,
+				SeriesID:    origin.UpstreamID,
+				UpstreamID:  string(ep.ID),
+				Extension:   epExtension,
+			})
+
+			if seasonNum == season && episodeNum == episode {
+				upstreamID = string(ep.ID)
+				extension = epExtension
 			}
 		}
 	}
 
-	return "", "", false
+	if len(learned) > 0 {
+		if err := db.SetSeriesEpisodes(origin.Source.URL, origin.UpstreamID, learned); err != nil {
+			logger.Warn("{handlers/remotefile - episodeOnSource} Failed to persist episode mappings for %s on %s: %v", origin.ChannelName, origin.Source.Name, err)
+		}
+	}
+
+	if upstreamID == "" {
+		return "", "", false
+	}
+	return upstreamID, extension, true
 }
 
 // upstreamEpisodeURL builds a provider's own episode URL from its credentials.
@@ -137,7 +210,7 @@ func upstreamEpisodeURL(source *config.SourceConfig, upstreamID, extension strin
 // and the caller may try another candidate. The header phase carries its own
 // deadline so a stalled provider is abandoned while the player is still waiting,
 // rather than losing the race to the player's own timeout.
-func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, streamURL string, source *config.SourceConfig, extension string) bool {
+func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, streamURL string, source *config.SourceConfig, extension string, session *proxy.FileSession) bool {
 	if limiter := sp.RateLimiterForSource(source); limiter != nil {
 		limiter.Take()
 	}
@@ -202,7 +275,7 @@ func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	if _, err := io.Copy(w, resp.Body); err != nil {
+	if _, err := io.Copy(&sessionWriter{ResponseWriter: w, bytes: &session.Bytes}, resp.Body); err != nil {
 		logger.Debug("{handlers/remotefile - attemptRemoteFile} client copy ended for %s: %v", utils.LogURL(sp.Config, streamURL), err)
 	}
 	return true
@@ -243,4 +316,70 @@ func serveFallbackVideo(w http.ResponseWriter, r *http.Request) {
 		case <-time.After(constants.Internal.FallbackVideoLoopDelay):
 		}
 	}
+}
+
+// serveVODChannel plays a movie channel by walking its streams from the
+// preferred index, skipping dead and blocked entries, so the admin's ordering
+// and kill controls govern which provider answers. Each candidate is retried
+// once before being marked dead and the next one tried; when all are exhausted
+// the offline video is served. VOD is a finite file and cannot go through the
+// live restreamer, which serves no length and cannot seek.
+func serveVODChannel(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, channel *types.Channel) {
+
+	// make sure we aren't overloading the server with too many concurrent clients
+	release, ok := sp.AcquireClientSlot()
+	if !ok {
+		http.Error(w, "Server at capacity", http.StatusServiceUnavailable)
+		return
+	}
+	defer release()
+
+	channel.Mu.RLock()
+	total := len(channel.Streams)
+	preferred := int(atomic.LoadInt32(&channel.PreferredStreamIndex))
+	if preferred < 0 || preferred >= total {
+		preferred = 0
+	}
+
+	candidates := make([]*types.Stream, 0, total)
+	for i := 0; i < total; i++ {
+		stream := channel.Streams[(preferred+i)%total]
+		if stream.Source == nil {
+			continue
+		}
+		if deadstreams.IsStreamDead(channel.Name, stream.URLHash) || atomic.LoadInt32(&stream.Blocked) == 1 {
+			continue
+		}
+		candidates = append(candidates, stream)
+	}
+	channel.Mu.RUnlock()
+
+	for _, stream := range candidates {
+		sessionID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
+		session := proxy.StartFileSession(sessionID, channel.Name, stream.Source.Name, stream.Attributes["tvg-logo"])
+
+		delivered := false
+		for attempt := 0; attempt <= constants.Internal.RemoteFileRetries; attempt++ {
+			if attemptRemoteFile(sp, w, r, stream.URL, stream.Source, stream.ContainerExtension, session) {
+				delivered = true
+				break
+			}
+			if r.Context().Err() != nil {
+				delivered = true
+				break
+			}
+		}
+		proxy.EndFileSession(sessionID)
+		if delivered {
+			return
+		}
+
+		if err := deadstreams.MarkStreamDeadByHash(channel.Name, stream.URLHash, "vod unplayable"); err != nil {
+			logger.Error("{handlers/remotefile - serveVODChannel} Failed to mark %s dead on %s: %v", stream.Source.Name, channel.Name, err)
+		}
+		logger.Warn("{handlers/remotefile - serveVODChannel} %s failed on %s, trying next provider", channel.Name, stream.Source.Name)
+	}
+
+	logger.Error("{handlers/remotefile - serveVODChannel} %s failed on every provider", channel.Name)
+	serveFallbackVideo(w, r)
 }

@@ -648,6 +648,17 @@ func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 // for the active restreaming session to enable automatic failover on quality degradation.
 func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Request, channel *types.Channel) {
 
+	// a HEAD probe wants headers only; answering it before the semaphore,
+	// restreamer, and client registration keeps a probing player from
+	// consuming a connection slot and an upstream stream it will never read
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Type", streamResponseContentType(channel))
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: HEAD probe from %s", channel.Name, r.RemoteAddr)
+		return
+	}
+
 	// Acquire global connection slot
 	select {
 	case globalClientSemaphore <- struct{}{}:
@@ -943,6 +954,20 @@ func RegisterChannelSource(source func(func(*types.Channel) bool)) {
 	externalChannelSourcesMu.Lock()
 	defer externalChannelSourcesMu.Unlock()
 	externalChannelSources = append(externalChannelSources, source)
+}
+
+// AcquireClientSlot takes a slot in the app-wide connection ceiling for a
+// delivery that does not go through the restreamer, returning a release func and
+// whether a slot was available. Passthrough responses hold a connection for as
+// long as a restreamed one does and must count against the same limit.
+func (sp *StreamProxy) AcquireClientSlot() (func(), bool) {
+	select {
+	case globalClientSemaphore <- struct{}{}:
+		return func() { <-globalClientSemaphore }, true
+	default:
+		logger.Debug("{proxy/stream - AcquireClientSlot} Max connections reached (%d), rejecting client", sp.Config.MaxConnectionsToApp)
+		return func() {}, false
+	}
 }
 
 // rangeExternalChannels walks every registered external channel collection.

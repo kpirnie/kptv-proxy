@@ -110,6 +110,15 @@ type seriesOrigin struct {
 	StreamHash  string
 }
 
+// cachedSeriesEpisode is the subset of a cached get_series_info episode entry
+// needed to write an M3U line for it.
+type cachedSeriesEpisode struct {
+	ID                 string      `json:"id"`
+	Title              string      `json:"title"`
+	EpisodeNum         parser.XCID `json:"episode_num"`
+	ContainerExtension string      `json:"container_extension"`
+}
+
 // getSortedChannels snapshots the channel map and returns it sorted alphabetically
 // by channel name. All XC output functions must use this instead of ranging the
 // map directly to guarantee consistent ordering across every response.
@@ -683,6 +692,12 @@ func handleXCStream(sp *proxy.StreamProxy, redirectM3U8 bool) http.HandlerFunc {
 					http.Error(w, "Stream not found", http.StatusNotFound)
 					return
 				}
+				release, ok := sp.AcquireClientSlot()
+				if !ok {
+					http.Error(w, "Server at capacity", http.StatusServiceUnavailable)
+					return
+				}
+				defer release()
 				serveLocalFile(w, r, entry.Path)
 				return
 			}
@@ -703,6 +718,17 @@ func handleXCStream(sp *proxy.StreamProxy, redirectM3U8 bool) http.HandlerFunc {
 			}
 			w.Header().Set("Location", location)
 			w.WriteHeader(http.StatusTemporaryRedirect)
+			return
+		}
+
+		channel.Mu.RLock()
+		isVOD := getChannelContentType(channel) == "vod"
+		channel.Mu.RUnlock()
+
+		if isVOD {
+			logger.Debug("{handlers/xcoutput - handleXCStream} XC VOD: account=%s, id=%d, channel=%s",
+				account.Name, streamID, channelName)
+			serveVODChannel(sp, w, r, channel)
 			return
 		}
 
@@ -1157,7 +1183,11 @@ func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *c
 		if contentType == "vod" && !account.EnableVOD {
 			continue
 		}
-		if contentType == "series" && !account.EnableSeries {
+		if contentType == "series" {
+			if !account.EnableSeries {
+				continue
+			}
+			writeSeriesEpisodeEntries(w, sp, account, item.name, attrs)
 			continue
 		}
 
@@ -1267,4 +1297,91 @@ func buildXCEPGListings(sp *proxy.StreamProxy, streamIDStr string, limit int, ma
 	}
 
 	return map[string]any{"epg_listings": listings}
+}
+
+// writeSeriesEpisodeEntries expands a series channel into one M3U line per
+// episode, read from the stored get_series_info payload. M3U carries no episode
+// tree of its own, so a bare series entry points at the provider's series
+// container and cannot play. The payload is used at whatever age it has and is
+// never fetched here — building a playlist must not trigger a provider call per
+// series — so a series no XC client has opened yet contributes nothing.
+func writeSeriesEpisodeEntries(w http.ResponseWriter, sp *proxy.StreamProxy, account *config.XCOutputAccount, channelName string, attrs map[string]string) {
+	origins, ok := remoteSeriesOrigins(sp, streamIDFromName(channelName))
+	if !ok {
+		return
+	}
+
+	var payload struct {
+		Episodes map[string][]cachedSeriesEpisode `json:"episodes"`
+	}
+
+	found := false
+	for _, origin := range origins {
+		cached, _ := db.GetSeriesInfo(origin.Source.URL, origin.UpstreamID, 0)
+		if cached == "" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(cached), &payload); err != nil {
+			continue
+		}
+		if len(payload.Episodes) > 0 {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		logger.Debug("{handlers/xcoutput - writeSeriesEpisodeEntries} No cached episode tree for %s, omitting from playlist", channelName)
+		return
+	}
+
+	seasons := make([]string, 0, len(payload.Episodes))
+	for season := range payload.Episodes {
+		seasons = append(seasons, season)
+	}
+	sort.Slice(seasons, func(i, j int) bool {
+		a, aErr := strconv.Atoi(seasons[i])
+		b, bErr := strconv.Atoi(seasons[j])
+		if aErr == nil && bErr == nil {
+			return a < b
+		}
+		return seasons[i] < seasons[j]
+	})
+
+	logo := attrs["tvg-logo"]
+	group := groupTitleOf(attrs)
+
+	for _, season := range seasons {
+		seasonNum, _ := strconv.Atoi(season)
+		episodes := payload.Episodes[season]
+
+		sort.SliceStable(episodes, func(i, j int) bool {
+			a, aErr := strconv.Atoi(string(episodes[i].EpisodeNum))
+			b, bErr := strconv.Atoi(string(episodes[j].EpisodeNum))
+			if aErr == nil && bErr == nil {
+				return a < b
+			}
+			return false
+		})
+
+		for _, ep := range episodes {
+			episodeID, err := strconv.Atoi(ep.ID)
+			if err != nil {
+				continue
+			}
+
+			episodeNum, _ := strconv.Atoi(string(ep.EpisodeNum))
+			extension := utils.NormalizeContainerExtension(ep.ContainerExtension)
+
+			name := fmt.Sprintf("%s - S%02dE%02d", channelName, seasonNum, episodeNum)
+			if ep.Title != "" {
+				name += " - " + ep.Title
+			}
+
+			displayName := utils.SanitizeM3UDisplayName(name)
+			fmt.Fprintf(w, "#EXTINF:-1 tvg-name=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n",
+				utils.EscapeM3UAttribute(displayName), utils.EscapeM3UAttribute(logo), utils.EscapeM3UAttribute(group), displayName)
+			fmt.Fprintln(w, buildXCStreamURL(sp.Config.BaseURL, "series", account.Username, account.Password, episodeID, extension))
+		}
+	}
 }
