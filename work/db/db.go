@@ -241,12 +241,16 @@ func initSchema(db *sql.DB) error {
 	);
 
 	CREATE TABLE IF NOT EXISTS kp_series_episodes (
-		id          INTEGER PRIMARY KEY AUTOINCREMENT,
-		episode_id  INTEGER NOT NULL UNIQUE,
-		source_url  TEXT    NOT NULL,
-		series_id   TEXT    NOT NULL,
-		upstream_id TEXT    NOT NULL,
-		extension   TEXT    NOT NULL DEFAULT 'mp4'
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		episode_id   INTEGER NOT NULL,
+		channel_name TEXT    NOT NULL DEFAULT '',
+		season       INTEGER NOT NULL DEFAULT 0,
+		episode      INTEGER NOT NULL DEFAULT 0,
+		source_url   TEXT    NOT NULL,
+		series_id    TEXT    NOT NULL,
+		upstream_id  TEXT    NOT NULL,
+		extension    TEXT    NOT NULL DEFAULT 'mp4',
+		UNIQUE(episode_id, source_url)
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_sd_lineups_account     ON kp_sd_lineups(sd_account_id);
@@ -259,8 +263,63 @@ func initSchema(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_local_media_source  ON kp_local_media(local_source_id, sort_key);
 	CREATE INDEX IF NOT EXISTS idx_local_media_hash    ON kp_local_media(s_hash);
 	CREATE INDEX IF NOT EXISTS idx_series_info_lookup ON kp_series_info(source_url, series_id);
-	CREATE INDEX IF NOT EXISTS idx_series_episodes_series ON kp_series_episodes(source_url, series_id);
+	CREATE INDEX IF NOT EXISTS idx_series_episodes_episode ON kp_series_episodes(episode_id);
+	CREATE INDEX IF NOT EXISTS idx_series_episodes_series  ON kp_series_episodes(source_url, series_id);
 	`)
 
+	if err != nil {
+		return err
+	}
+
+	return rebuildSeriesEpisodes(db)
+}
+
+// rebuildSeriesEpisodes drops a pre-rekey kp_series_episodes and recreates it in
+// its current shape. Episode IDs were once minted per source and constrained
+// UNIQUE, which cannot hold now that one ID maps to every provider carrying the
+// episode. The table is a cache of get_series_info, so nothing is carried over.
+func rebuildSeriesEpisodes(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(kp_series_episodes)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	current := false
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, colType string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "season" {
+			current = true
+		}
+	}
+	if current {
+		return nil
+	}
+
+	logger.Info("Rebuilding kp_series_episodes for source-independent episode IDs...")
+	_, err = db.Exec(`
+	DROP TABLE IF EXISTS kp_series_episodes;
+
+	CREATE TABLE kp_series_episodes (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		episode_id   INTEGER NOT NULL,
+		channel_name TEXT    NOT NULL DEFAULT '',
+		season       INTEGER NOT NULL DEFAULT 0,
+		episode      INTEGER NOT NULL DEFAULT 0,
+		source_url   TEXT    NOT NULL,
+		series_id    TEXT    NOT NULL,
+		upstream_id  TEXT    NOT NULL,
+		extension    TEXT    NOT NULL DEFAULT 'mp4',
+		UNIQUE(episode_id, source_url)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_series_episodes_episode ON kp_series_episodes(episode_id);
+	CREATE INDEX IF NOT EXISTS idx_series_episodes_series  ON kp_series_episodes(source_url, series_id);
+	`)
 	return err
 }

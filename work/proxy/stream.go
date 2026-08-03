@@ -39,6 +39,15 @@ var (
 	semaphoreOnce         sync.Once
 )
 
+// externalChannelSources holds channel collections owned outside the proxy that
+// still need restreamer maintenance. Episode channels are not part of the
+// imported channel map, so without this their restreamers and buffers would
+// never be reclaimed.
+var (
+	externalChannelSources   []func(func(*types.Channel) bool)
+	externalChannelSourcesMu sync.RWMutex
+)
+
 // StreamProxy represents the core application orchestrator responsible for managing
 // the complete IPTV proxy lifecycle. It coordinates stream discovery, playlist
 // generation, client connection handling, restreaming, and background maintenance
@@ -577,88 +586,12 @@ func (sp *StreamProxy) RestreamCleanup() {
 		now := time.Now().Unix()
 
 		sp.Channels.Range(func(key string, channel *types.Channel) bool {
-			channel.Mu.Lock()
+			sp.cleanupChannelRestreamer(channel, now)
+			return true
+		})
 
-			if channel.Restreamer != nil {
-				if !channel.Restreamer.Running.Load() {
-					lastActivity := channel.Restreamer.LastActivity.Load()
-
-					if now-lastActivity > constants.Internal.ProxyInactiveRestreamerTimeout {
-						select {
-						case <-channel.Restreamer.Context().Done():
-							// context already cancelled, force clean after 60 seconds
-							if now-lastActivity > constants.Internal.ProxyForceCleanTimeout {
-								logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Force cleaning cancelled context after 60s", channel.Name)
-
-								if b := channel.Restreamer.LoadBuffer(); b != nil && !b.IsDestroyed() {
-									b.Destroy()
-								}
-								channel.Restreamer.CancelStream()
-								channel.Restreamer = nil
-							}
-						default:
-							// only clean up if ManualSwitch is not in progress
-							// during a switch Running briefly goes false but the restreamer is still needed
-							if channel.Restreamer.ManualSwitch.Load() {
-								logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Skipping cleanup, manual switch in progress", channel.Name)
-								break
-							}
-
-							if b := channel.Restreamer.LoadBuffer(); b != nil && !b.IsDestroyed() {
-								logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Safely destroying buffer", channel.Name)
-								b.Destroy()
-							}
-							channel.Restreamer.CancelStream()
-							channel.Restreamer = nil
-							logger.Debug("{proxy/stream - RestreamCleanup} Cleaned up inactive restreamer for channel: %s (idle %ds)", channel.Name, now-lastActivity)
-						}
-					}
-
-				} else {
-					// check individual client activity on running restreamers
-					clientCount := 0
-					channel.Restreamer.Clients.Range(func(ckey string, cvalue *types.RestreamClient) bool {
-						client := cvalue
-						lastSeen := client.LastSeen.Load()
-
-						if now-lastSeen > constants.Internal.ProxyClientInactivityTimeout {
-							logger.Debug("{proxy/stream - RestreamCleanup} Removing inactive client: %s (last seen %ds ago)", ckey, now-lastSeen)
-							// LoadAndDelete makes map removal the single ownership gate so
-							// exactly one path closes Done (avoids a double-close race with
-							// RemoveClient). WriteChan is never closed — drainClient exits on
-							// Done, and closing WriteChan would race with an in-flight send
-							// in DistributeToClients and panic.
-							if c, ok := channel.Restreamer.Clients.LoadAndDelete(ckey); ok {
-								select {
-								case <-c.Done:
-								default:
-									close(c.Done)
-								}
-							}
-						} else {
-							clientCount++
-						}
-						return true
-					})
-
-					// stop the restreamer entirely if no active clients remain
-					if clientCount == 0 && channel.Restreamer.Running.Load() {
-						lastActivity := channel.Restreamer.LastActivity.Load()
-						if now-lastActivity > constants.Internal.ProxyClientInactivityTimeout {
-							logger.Debug("{proxy/stream - RestreamCleanup} No active clients for channel %s (idle %ds), stopping restreamer", channel.Name, now-lastActivity)
-							channel.Restreamer.CancelStream()
-							channel.Restreamer.Running.Store(false)
-
-							if b := channel.Restreamer.LoadBuffer(); b != nil && !b.IsDestroyed() {
-								logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Safely destroying buffer", channel.Name)
-								b.Destroy()
-							}
-						}
-					}
-				}
-			}
-
-			channel.Mu.Unlock()
+		rangeExternalChannels(func(channel *types.Channel) bool {
+			sp.cleanupChannelRestreamer(channel, now)
 			return true
 		})
 
@@ -1000,4 +933,115 @@ func (sp *StreamProxy) ChannelCount() int {
 		return true
 	})
 	return count
+}
+
+// RegisterChannelSource registers a channel collection for restreamer cleanup.
+// The supplied function must call the visitor for every channel it holds, and
+// is responsible for its own locking and for discarding entries it no longer
+// needs once their restreamer has been torn down.
+func RegisterChannelSource(source func(func(*types.Channel) bool)) {
+	externalChannelSourcesMu.Lock()
+	defer externalChannelSourcesMu.Unlock()
+	externalChannelSources = append(externalChannelSources, source)
+}
+
+// rangeExternalChannels walks every registered external channel collection.
+func rangeExternalChannels(visit func(*types.Channel) bool) {
+	externalChannelSourcesMu.RLock()
+	sources := make([]func(func(*types.Channel) bool), len(externalChannelSources))
+	copy(sources, externalChannelSources)
+	externalChannelSourcesMu.RUnlock()
+
+	for _, source := range sources {
+		source(visit)
+	}
+}
+
+// cleanupChannelRestreamer performs one maintenance pass over a single channel's
+// restreamer, tearing down inactive restreamers and evicting stale clients.
+func (sp *StreamProxy) cleanupChannelRestreamer(channel *types.Channel, now int64) {
+	channel.Mu.Lock()
+	defer channel.Mu.Unlock()
+
+	if channel.Restreamer == nil {
+		return
+	}
+
+	if !channel.Restreamer.Running.Load() {
+		lastActivity := channel.Restreamer.LastActivity.Load()
+
+		if now-lastActivity > constants.Internal.ProxyInactiveRestreamerTimeout {
+			select {
+			case <-channel.Restreamer.Context().Done():
+				// context already cancelled, force clean after 60 seconds
+				if now-lastActivity > constants.Internal.ProxyForceCleanTimeout {
+					logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Force cleaning cancelled context after 60s", channel.Name)
+
+					if b := channel.Restreamer.LoadBuffer(); b != nil && !b.IsDestroyed() {
+						b.Destroy()
+					}
+					channel.Restreamer.CancelStream()
+					channel.Restreamer = nil
+				}
+			default:
+				// only clean up if ManualSwitch is not in progress
+				// during a switch Running briefly goes false but the restreamer is still needed
+				if channel.Restreamer.ManualSwitch.Load() {
+					logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Skipping cleanup, manual switch in progress", channel.Name)
+					break
+				}
+
+				if b := channel.Restreamer.LoadBuffer(); b != nil && !b.IsDestroyed() {
+					logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Safely destroying buffer", channel.Name)
+					b.Destroy()
+				}
+				channel.Restreamer.CancelStream()
+				channel.Restreamer = nil
+				logger.Debug("{proxy/stream - RestreamCleanup} Cleaned up inactive restreamer for channel: %s (idle %ds)", channel.Name, now-lastActivity)
+			}
+		}
+
+		return
+	}
+
+	// check individual client activity on running restreamers
+	clientCount := 0
+	channel.Restreamer.Clients.Range(func(ckey string, cvalue *types.RestreamClient) bool {
+		client := cvalue
+		lastSeen := client.LastSeen.Load()
+
+		if now-lastSeen > constants.Internal.ProxyClientInactivityTimeout {
+			logger.Debug("{proxy/stream - RestreamCleanup} Removing inactive client: %s (last seen %ds ago)", ckey, now-lastSeen)
+			// LoadAndDelete makes map removal the single ownership gate so
+			// exactly one path closes Done (avoids a double-close race with
+			// RemoveClient). WriteChan is never closed — drainClient exits on
+			// Done, and closing WriteChan would race with an in-flight send
+			// in DistributeToClients and panic.
+			if c, ok := channel.Restreamer.Clients.LoadAndDelete(ckey); ok {
+				select {
+				case <-c.Done:
+				default:
+					close(c.Done)
+				}
+			}
+		} else {
+			clientCount++
+		}
+		return true
+	})
+
+	// stop the restreamer entirely if no active clients remain
+	if clientCount == 0 && channel.Restreamer.Running.Load() {
+		lastActivity := channel.Restreamer.LastActivity.Load()
+		if now-lastActivity > constants.Internal.ProxyClientInactivityTimeout {
+			logger.Debug("{proxy/stream - RestreamCleanup} No active clients for channel %s (idle %ds), stopping restreamer", channel.Name, now-lastActivity)
+			channel.Restreamer.CancelStream()
+			channel.Restreamer.Running.Store(false)
+
+			if b := channel.Restreamer.LoadBuffer(); b != nil && !b.IsDestroyed() {
+				logger.Debug("{proxy/stream - RestreamCleanup} Channel %s: Safely destroying buffer", channel.Name)
+				b.Destroy()
+			}
+		}
+	}
 }

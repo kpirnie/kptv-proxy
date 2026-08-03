@@ -553,7 +553,12 @@ func syncSourcesToDB(sources []SourceConfig) error {
 			return err
 		}
 	}
-	return nil
+
+	keep := make([]string, 0, len(sources))
+	for i := range sources {
+		keep = append(keep, sources[i].URL)
+	}
+	return db.PruneSeriesInfo(keep)
 }
 
 // syncEPGsToDB replaces all kp_epgs rows to match cfg.

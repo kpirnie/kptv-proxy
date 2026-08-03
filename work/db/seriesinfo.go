@@ -2,19 +2,25 @@
 package db
 
 import (
+	"fmt"
 	"kptv-proxy/work/logger"
+	"strings"
 	"time"
 )
 
-// SeriesEpisode maps a proxy episode ID back to the upstream series episode it
-// was minted from, so playback can be resolved long after the get_series_info
-// call that created it.
+// SeriesEpisode maps a proxy episode ID to one provider's copy of that episode.
+// The ID is minted from the series channel and the season/episode numbers rather
+// than from any single provider, so every source carrying the episode resolves
+// through the same ID and playback can fail over between them.
 type SeriesEpisode struct {
-	EpisodeID  int
-	SourceURL  string
-	SeriesID   string
-	UpstreamID string
-	Extension  string
+	EpisodeID   int
+	ChannelName string
+	Season      int
+	Episode     int
+	SourceURL   string
+	SeriesID    string
+	UpstreamID  string
+	Extension   string
 }
 
 // GetSeriesInfo returns the cached get_series_info payload for a source's series,
@@ -54,19 +60,46 @@ func SetSeriesInfo(sourceURL, seriesID, payload string) error {
 	return err
 }
 
-// GetSeriesEpisode resolves a proxy episode ID to its upstream origin.
+// GetSeriesEpisode resolves a proxy episode ID to a single upstream origin,
+// preferring the earliest recorded mapping.
 func GetSeriesEpisode(episodeID int) (SeriesEpisode, bool) {
 	row := Get().QueryRow(
-		`SELECT episode_id, source_url, series_id, upstream_id, extension
-		 FROM kp_series_episodes WHERE episode_id = ?`,
+		`SELECT episode_id, channel_name, season, episode, source_url, series_id, upstream_id, extension
+		 FROM kp_series_episodes WHERE episode_id = ? ORDER BY id LIMIT 1`,
 		episodeID,
 	)
 
 	var e SeriesEpisode
-	if err := row.Scan(&e.EpisodeID, &e.SourceURL, &e.SeriesID, &e.UpstreamID, &e.Extension); err != nil {
+	if err := row.Scan(&e.EpisodeID, &e.ChannelName, &e.Season, &e.Episode, &e.SourceURL, &e.SeriesID, &e.UpstreamID, &e.Extension); err != nil {
 		return SeriesEpisode{}, false
 	}
 	return e, true
+}
+
+// GetSeriesEpisodeSources returns every provider mapping recorded for a proxy
+// episode ID, so playback can walk them in the channel's own stream order.
+func GetSeriesEpisodeSources(episodeID int) []SeriesEpisode {
+	rows, err := Get().Query(
+		`SELECT episode_id, channel_name, season, episode, source_url, series_id, upstream_id, extension
+		 FROM kp_series_episodes WHERE episode_id = ? ORDER BY id`,
+		episodeID,
+	)
+	if err != nil {
+		logger.Error("{db/seriesinfo - GetSeriesEpisodeSources} query episode=%d: %v", episodeID, err)
+		return nil
+	}
+	defer rows.Close()
+
+	var mappings []SeriesEpisode
+	for rows.Next() {
+		var e SeriesEpisode
+		if err := rows.Scan(&e.EpisodeID, &e.ChannelName, &e.Season, &e.Episode, &e.SourceURL, &e.SeriesID, &e.UpstreamID, &e.Extension); err != nil {
+			logger.Error("{db/seriesinfo - GetSeriesEpisodeSources} scan episode=%d: %v", episodeID, err)
+			return mappings
+		}
+		mappings = append(mappings, e)
+	}
+	return mappings
 }
 
 // SetSeriesEpisodes replaces the stored episode mappings for a source's series
@@ -85,9 +118,9 @@ func SetSeriesEpisodes(sourceURL, seriesID string, episodes []SeriesEpisode) err
 		return err
 	}
 
-	stmt, err := tx.Prepare(`INSERT INTO kp_series_episodes (episode_id, source_url, series_id, upstream_id, extension)
-		 VALUES (?, ?, ?, ?, ?)
-		 ON CONFLICT(episode_id) DO UPDATE SET source_url = excluded.source_url, series_id = excluded.series_id, upstream_id = excluded.upstream_id, extension = excluded.extension`)
+	stmt, err := tx.Prepare(`INSERT INTO kp_series_episodes (episode_id, channel_name, season, episode, source_url, series_id, upstream_id, extension)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(episode_id, source_url) DO UPDATE SET channel_name = excluded.channel_name, season = excluded.season, episode = excluded.episode, series_id = excluded.series_id, upstream_id = excluded.upstream_id, extension = excluded.extension`)
 	if err != nil {
 		logger.Error("{db/seriesinfo - SetSeriesEpisodes} prepare source=%s series=%s: %v", sourceURL, seriesID, err)
 		return err
@@ -98,7 +131,7 @@ func SetSeriesEpisodes(sourceURL, seriesID string, episodes []SeriesEpisode) err
 		if e.EpisodeID == 0 || e.UpstreamID == "" {
 			continue
 		}
-		if _, err := stmt.Exec(e.EpisodeID, sourceURL, seriesID, e.UpstreamID, e.Extension); err != nil {
+		if _, err := stmt.Exec(e.EpisodeID, e.ChannelName, e.Season, e.Episode, sourceURL, seriesID, e.UpstreamID, e.Extension); err != nil {
 			logger.Error("{db/seriesinfo - SetSeriesEpisodes} insert episode=%d: %v", e.EpisodeID, err)
 			return err
 		}
@@ -124,6 +157,46 @@ func DeleteSeriesInfoForSource(sourceURL string) error {
 	if _, err := tx.Exec(`DELETE FROM kp_series_episodes WHERE source_url = ?`, sourceURL); err != nil {
 		logger.Error("{db/seriesinfo - DeleteSeriesInfoForSource} delete episodes source=%s: %v", sourceURL, err)
 		return err
+	}
+
+	return tx.Commit()
+}
+
+// PruneSeriesInfo removes cached series payloads and episode mappings belonging
+// to sources that are no longer configured. Sources are replaced wholesale on
+// every config save, so this reconciles by URL rather than by delete hook.
+func PruneSeriesInfo(keepURLs []string) error {
+	tx, err := Get().Begin()
+	if err != nil {
+		logger.Error("{db/seriesinfo - PruneSeriesInfo} begin: %v", err)
+		return err
+	}
+	defer tx.Rollback()
+
+	if len(keepURLs) == 0 {
+		if _, err := tx.Exec(`DELETE FROM kp_series_info`); err != nil {
+			logger.Error("{db/seriesinfo - PruneSeriesInfo} delete all info: %v", err)
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM kp_series_episodes`); err != nil {
+			logger.Error("{db/seriesinfo - PruneSeriesInfo} delete all episodes: %v", err)
+			return err
+		}
+		return tx.Commit()
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(keepURLs)), ",")
+	args := make([]any, 0, len(keepURLs))
+	for _, url := range keepURLs {
+		args = append(args, url)
+	}
+
+	for _, table := range []string{"kp_series_info", "kp_series_episodes"} {
+		query := fmt.Sprintf(`DELETE FROM %s WHERE source_url NOT IN (%s)`, table, placeholders)
+		if _, err := tx.Exec(query, args...); err != nil {
+			logger.Error("{db/seriesinfo - PruneSeriesInfo} prune %s: %v", table, err)
+			return err
+		}
 	}
 
 	return tx.Commit()

@@ -43,6 +43,12 @@ type InternalConstants struct {
 	StreamTestBufferSize      int           // Byte count read during variant content-inspection test
 
 	// -------------------------------------------------------------------------
+	// work/handlers/remotefile.go — serveSeriesEpisode() / attemptRemoteFile()
+	// -------------------------------------------------------------------------
+	RemoteFileHeaderTimeout time.Duration // Max wait for upstream response headers before a candidate is abandoned
+	RemoteFileRetries       int           // Extra attempts against the same provider before moving to the next
+
+	// -------------------------------------------------------------------------
 	// work/restream/restream.go — streamFallbackVideo() / streamLocalFallback()
 	// -------------------------------------------------------------------------
 	OversizedBufferMultiplier    int           // Multiplier used to detect and discard oversized buffers in the pool
@@ -309,6 +315,12 @@ var Internal = InternalConstants{
 	StreamVariantFetchTimeout: 15 * time.Second,
 	StreamVariantTestTimeout:  10 * time.Second,
 	StreamTestBufferSize:      512, // B
+
+	// -------------------------------------------------------------------------
+	// Remote file passthrough
+	// -------------------------------------------------------------------------
+	RemoteFileHeaderTimeout: 8 * time.Second,
+	RemoteFileRetries:       1,
 
 	// -------------------------------------------------------------------------
 	// Fallback video
