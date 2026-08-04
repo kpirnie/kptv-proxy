@@ -119,6 +119,19 @@ type cachedSeriesEpisode struct {
 	ContainerExtension string      `json:"container_extension"`
 }
 
+// mergedSeriesEpisode pairs a rendered episode entry with its parsed episode
+// number so a season merged from several providers can be ordered without
+// re-parsing the entries.
+type mergedSeriesEpisode struct {
+	num   int
+	entry map[string]any
+}
+
+// mergedSeriesCacheSource is the synthetic source_url the merged get_series_info
+// payload is stored under, since a tree assembled from several providers belongs
+// to none of them.
+const mergedSeriesCacheSource = "kptv://merged"
+
 // getSortedChannels snapshots the channel map and returns it sorted alphabetically
 // by channel name. All XC output functions must use this instead of ranging the
 // map directly to guarantee consistent ordering across every response.
@@ -1008,103 +1021,149 @@ func remoteSeriesOrigins(sp *proxy.StreamProxy, seriesID int) ([]seriesOrigin, b
 }
 
 // buildRemoteSeriesInfo assembles the get_series_info response for a series
-// carried by an upstream Xtreme Codes source. The provider's season and info
-// blocks pass through untouched; the episode tree is rewritten so every ID and
-// source URL points back at this proxy, and the mapping is persisted so
-// playback still resolves after a restart. Payloads are cached for the
-// configured cache duration, and a stale payload is preferred over an error
-// when the provider is unreachable.
+// carried by upstream Xtreme Codes sources. Every provider carrying the series
+// is queried and their episode trees are merged, first provider to carry a
+// season and episode winning, so a provider with a partial listing no longer
+// truncates the tree. Episode IDs and source URLs point back at this proxy, and
+// each provider's mappings are persisted under its own key so playback can fail
+// over between them. The merged payload is cached for the configured cache
+// duration, and a stale payload is preferred over an error when no provider
+// answers.
 func buildRemoteSeriesInfo(sp *proxy.StreamProxy, seriesID int, baseURL, username, password string) (map[string]any, bool) {
 	origins, ok := remoteSeriesOrigins(sp, seriesID)
 	if !ok {
 		return nil, false
 	}
-	origin := origins[0]
-	source, upstreamID, attrs, channelName := origin.Source, origin.UpstreamID, origin.Attributes, origin.ChannelName
+	channelName := origins[0].ChannelName
+	cacheKey := strconv.Itoa(seriesID)
 
 	ttl := sp.Config.CacheDuration
 	if !sp.Config.CacheEnabled {
 		ttl = 0
 	}
 
-	cached, fresh := db.GetSeriesInfo(source.URL, upstreamID, ttl)
+	cached, fresh := db.GetSeriesInfo(mergedSeriesCacheSource, cacheKey, ttl)
 	if fresh && cached != "" {
 		var payload map[string]any
 		if err := json.Unmarshal([]byte(cached), &payload); err == nil {
-			logger.Debug("{handlers/xcoutput - buildRemoteSeriesInfo} Serving cached series info for %s (series %s)", channelName, upstreamID)
+			logger.Debug("{handlers/xcoutput - buildRemoteSeriesInfo} Serving cached series info for %s", channelName)
 			return payload, true
 		}
 	}
 
-	info, err := parser.FetchXCSeriesInfo(sp.HttpClient, sp.Config, source, sp.RateLimiterForSource(source), upstreamID)
-	if err != nil {
+	merged := make(map[string][]mergedSeriesEpisode)
+	seen := make(map[string]bool)
+	var seasonsBlock, infoBlock json.RawMessage
+	bestCount := 0
+	answered := 0
+
+	for _, origin := range origins {
+		info, err := parser.FetchXCSeriesInfo(sp.HttpClient, sp.Config, origin.Source, sp.RateLimiterForSource(origin.Source), origin.UpstreamID)
+		if err != nil {
+			logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Series info fetch failed for %s on %s: %v", channelName, origin.Source.Name, err)
+			continue
+		}
+		answered++
+
+		mappings := make([]db.SeriesEpisode, 0, 64)
+		counts := make(map[string]int)
+
+		for season, seasonEpisodes := range info.Episodes {
+			for _, ep := range seasonEpisodes {
+				if string(ep.ID) == "" {
+					continue
+				}
+
+				seasonNum, convErr := strconv.Atoi(season)
+				if convErr != nil {
+					seasonNum, _ = strconv.Atoi(string(ep.Season))
+				}
+
+				episodeNum, convErr := strconv.Atoi(string(ep.EpisodeNum))
+				if convErr != nil || episodeNum == 0 {
+					episodeNum = counts[season] + 1
+				}
+				counts[season]++
+
+				extension := utils.NormalizeContainerExtension(ep.ContainerExtension)
+				episodeID := episodeIDFromChannel(channelName, seasonNum, episodeNum)
+
+				mappings = append(mappings, db.SeriesEpisode{
+					EpisodeID:   episodeID,
+					ChannelName: channelName,
+					Season:      seasonNum,
+					Episode:     episodeNum,
+					SourceURL:   origin.Source.URL,
+					SeriesID:    origin.UpstreamID,
+					UpstreamID:  string(ep.ID),
+					Extension:   extension,
+				})
+
+				key := fmt.Sprintf("%d|%d", seasonNum, episodeNum)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+
+				seasonKey := strconv.Itoa(seasonNum)
+				entry := map[string]any{
+					"id":                  strconv.Itoa(episodeID),
+					"episode_num":         strconv.Itoa(episodeNum),
+					"title":               ep.Title,
+					"container_extension": extension,
+					"season":              seasonKey,
+					"custom_sid":          ep.CustomSID,
+					"added":               ep.Added,
+					"direct_source":       buildXCStreamURL(baseURL, "series", username, password, episodeID, extension),
+				}
+				if len(ep.Info) > 0 {
+					var epInfo any
+					if err := json.Unmarshal(ep.Info, &epInfo); err == nil {
+						entry["info"] = epInfo
+					}
+				}
+
+				merged[seasonKey] = append(merged[seasonKey], mergedSeriesEpisode{num: episodeNum, entry: entry})
+			}
+		}
+
+		if len(mappings) > 0 {
+			if err := db.SetSeriesEpisodes(origin.Source.URL, origin.UpstreamID, mappings); err != nil {
+				logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Failed to persist episode mappings for %s on %s: %v", channelName, origin.Source.Name, err)
+			}
+		}
+
+		if len(mappings) > bestCount {
+			bestCount = len(mappings)
+			seasonsBlock = info.Seasons
+			infoBlock = info.Info
+		}
+	}
+
+	if len(merged) == 0 {
 		if cached != "" {
 			var payload map[string]any
-			if jsonErr := json.Unmarshal([]byte(cached), &payload); jsonErr == nil {
-				logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Upstream fetch failed for %s, serving stale cache: %v", channelName, err)
+			if err := json.Unmarshal([]byte(cached), &payload); err == nil {
+				logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} No provider returned a tree for %s, serving stale cache", channelName)
 				return payload, true
 			}
 		}
-		logger.Error("{handlers/xcoutput - buildRemoteSeriesInfo} No series info available for %s: %v", channelName, err)
+		logger.Error("{handlers/xcoutput - buildRemoteSeriesInfo} No series info available for %s (%d of %d providers answered)", channelName, answered, len(origins))
 		return nil, false
 	}
 
-	episodes := make(map[string][]map[string]any, len(info.Episodes))
-	mappings := make([]db.SeriesEpisode, 0, 64)
-
-	for season, seasonEpisodes := range info.Episodes {
-		rendered := make([]map[string]any, 0, len(seasonEpisodes))
-		for _, ep := range seasonEpisodes {
-			if string(ep.ID) == "" {
-				continue
-			}
-
-			seasonNum, err := strconv.Atoi(season)
-			if err != nil {
-				seasonNum, _ = strconv.Atoi(string(ep.Season))
-			}
-
-			episodeNum, err := strconv.Atoi(string(ep.EpisodeNum))
-			if err != nil || episodeNum == 0 {
-				episodeNum = len(rendered) + 1
-			}
-
-			extension := utils.NormalizeContainerExtension(ep.ContainerExtension)
-			episodeID := episodeIDFromChannel(channelName, seasonNum, episodeNum)
-
-			entry := map[string]any{
-				"id":                  strconv.Itoa(episodeID),
-				"episode_num":         string(ep.EpisodeNum),
-				"title":               ep.Title,
-				"container_extension": extension,
-				"season":              season,
-				"custom_sid":          ep.CustomSID,
-				"added":               ep.Added,
-				"direct_source":       buildXCStreamURL(baseURL, "series", username, password, episodeID, extension),
-			}
-			if len(ep.Info) > 0 {
-				var epInfo any
-				if err := json.Unmarshal(ep.Info, &epInfo); err == nil {
-					entry["info"] = epInfo
-				}
-			}
-
-			rendered = append(rendered, entry)
-			mappings = append(mappings, db.SeriesEpisode{
-				EpisodeID:   episodeID,
-				ChannelName: channelName,
-				Season:      seasonNum,
-				Episode:     episodeNum,
-				SourceURL:   source.URL,
-				SeriesID:    upstreamID,
-				UpstreamID:  string(ep.ID),
-				Extension:   extension,
-			})
-
+	episodes := make(map[string][]map[string]any, len(merged))
+	total := 0
+	for season, list := range merged {
+		sort.SliceStable(list, func(i, j int) bool {
+			return list[i].num < list[j].num
+		})
+		rendered := make([]map[string]any, 0, len(list))
+		for _, m := range list {
+			rendered = append(rendered, m.entry)
 		}
-		if len(rendered) > 0 {
-			episodes[season] = rendered
-		}
+		episodes[season] = rendered
+		total += len(rendered)
 	}
 
 	payload := map[string]any{
@@ -1112,29 +1171,33 @@ func buildRemoteSeriesInfo(sp *proxy.StreamProxy, seriesID int, baseURL, usernam
 		"info":     json.RawMessage("{}"),
 		"episodes": episodes,
 	}
-	if len(info.Seasons) > 0 {
-		payload["seasons"] = info.Seasons
+	if len(seasonsBlock) > 0 {
+		payload["seasons"] = seasonsBlock
 	}
-	if len(info.Info) > 0 {
-		payload["info"] = info.Info
+	if len(infoBlock) > 0 {
+		payload["info"] = infoBlock
 	}
 
-	if cover := attrs["tvg-logo"]; cover != "" {
-		if infoBlock, isMap := payload["info"].(map[string]any); isMap && infoBlock["cover"] == nil {
-			infoBlock["cover"] = cover
+	if cover := origins[0].Attributes["tvg-logo"]; cover != "" {
+		block := map[string]any{}
+		if raw, isRaw := payload["info"].(json.RawMessage); isRaw && len(raw) > 0 {
+			if err := json.Unmarshal(raw, &block); err != nil {
+				block = map[string]any{}
+			}
+		}
+		if block["cover"] == nil {
+			block["cover"] = cover
+			payload["info"] = block
 		}
 	}
 
-	if err := db.SetSeriesEpisodes(source.URL, upstreamID, mappings); err != nil {
-		logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Failed to persist episode mappings for %s: %v", channelName, err)
-	}
 	if encoded, err := json.Marshal(payload); err == nil {
-		if err := db.SetSeriesInfo(source.URL, upstreamID, string(encoded)); err != nil {
+		if err := db.SetSeriesInfo(mergedSeriesCacheSource, cacheKey, string(encoded)); err != nil {
 			logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Failed to cache series info for %s: %v", channelName, err)
 		}
 	}
 
-	logger.Debug("{handlers/xcoutput - buildRemoteSeriesInfo} Built series info for %s: %d seasons, %d episodes", channelName, len(episodes), len(mappings))
+	logger.Debug("{handlers/xcoutput - buildRemoteSeriesInfo} Built series info for %s from %d/%d providers: %d seasons, %d episodes", channelName, answered, len(origins), len(episodes), total)
 	return payload, true
 }
 
@@ -1306,8 +1369,8 @@ func buildXCEPGListings(sp *proxy.StreamProxy, streamIDStr string, limit int, ma
 // never fetched here — building a playlist must not trigger a provider call per
 // series — so a series no XC client has opened yet contributes nothing.
 func writeSeriesEpisodeEntries(w http.ResponseWriter, sp *proxy.StreamProxy, account *config.XCOutputAccount, channelName string, attrs map[string]string) {
-	origins, ok := remoteSeriesOrigins(sp, streamIDFromName(channelName))
-	if !ok {
+
+	if _, ok := remoteSeriesOrigins(sp, streamIDFromName(channelName)); !ok {
 		return
 	}
 
@@ -1315,22 +1378,14 @@ func writeSeriesEpisodeEntries(w http.ResponseWriter, sp *proxy.StreamProxy, acc
 		Episodes map[string][]cachedSeriesEpisode `json:"episodes"`
 	}
 
-	found := false
-	for _, origin := range origins {
-		cached, _ := db.GetSeriesInfo(origin.Source.URL, origin.UpstreamID, 0)
-		if cached == "" {
-			continue
-		}
+	cached, _ := db.GetSeriesInfo(mergedSeriesCacheSource, strconv.Itoa(streamIDFromName(channelName)), 0)
+	if cached != "" {
 		if err := json.Unmarshal([]byte(cached), &payload); err != nil {
-			continue
-		}
-		if len(payload.Episodes) > 0 {
-			found = true
-			break
+			logger.Debug("{handlers/xcoutput - writeSeriesEpisodeEntries} Unreadable cached tree for %s: %v", channelName, err)
 		}
 	}
 
-	if !found {
+	if len(payload.Episodes) == 0 {
 		logger.Debug("{handlers/xcoutput - writeSeriesEpisodeEntries} No cached episode tree for %s, omitting from playlist", channelName)
 		return
 	}
