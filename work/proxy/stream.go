@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"kptv-proxy/work/buffer"
 	"kptv-proxy/work/cache"
@@ -58,6 +59,7 @@ type StreamProxy struct {
 	Cache                 *cache.Cache                         // shared cache instance for playlists, EPG, and stream data
 	BufferPool            *buffer.BufferPool                   // pooled byte buffers for efficient memory reuse during streaming
 	HttpClient            *client.HeaderSettingClient          // pre-configured HTTP client with custom header injection
+	ImportClient          *client.HeaderSettingClient          // separate client for source imports so a slow import cannot starve streaming or EPG fetches
 	WorkerPool            *ants.Pool                           // bounded goroutine pool for controlled concurrency
 	MasterPlaylistHandler *parser.MasterPlaylistHandler        // HLS master playlist detection and resolution handler
 	importStopChan        chan bool                            // signal channel to gracefully terminate the import refresh loop
@@ -65,6 +67,7 @@ type StreamProxy struct {
 	SourceRateLimiters    map[string]ratelimit.Limiter         // per-source rate limiters keyed by source URL
 	rateLimiterMutex      sync.RWMutex                         // protects concurrent access to the rate limiter map
 	FilterManager         *filter.FilterManager                // handles stream filtering rules from configuration
+	importGeneration      atomic.Uint64                        // bumped on each committed import so cached playlists are not reused across imports
 }
 
 // New creates and initializes a new StreamProxy instance with all required dependencies.
@@ -80,6 +83,7 @@ func New(cfg *config.Config, bufferPool *buffer.BufferPool, httpClient *client.H
 		Cache:                 cacheInstance,
 		BufferPool:            bufferPool,
 		HttpClient:            httpClient,
+		ImportClient:          client.NewHeaderSettingClient(cfg.ResponseHeaderTimeout),
 		WorkerPool:            workerPool,
 		MasterPlaylistHandler: parser.NewMasterPlaylistHandler(cfg),
 		importStopChan:        make(chan bool, 1),
@@ -191,9 +195,10 @@ func channelOriginalOrder(channel *types.Channel) (int, int) {
 // deduplicated by channel name, sorted according to configuration, and optionally
 // reordered based on persisted custom stream order preferences.
 //
-// The import operation enforces a 2-minute global timeout to prevent indefinite blocking
-// from unresponsive sources. Existing channel state (such as preferred stream indices)
-// is preserved across import cycles when no custom ordering overrides are present.
+// Import is bounded by a per-source timeout and a global ceiling, both propagated through
+// context so a slow source is cancelled rather than orphaned. Sources that fail, time out,
+// or return nothing keep their previous catalog instead of being dropped, and a run that
+// produces no channels at all never overwrites existing state.
 func (sp *StreamProxy) ImportStreams() {
 	logger.Debug("{proxy/stream - ImportStreams} Starting stream import for %d configured sources", len(sp.Config.Sources))
 
@@ -202,17 +207,25 @@ func (sp *StreamProxy) ImportStreams() {
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), constants.Internal.ImportGlobalTimeout)
+	defer cancel()
+
 	var wg sync.WaitGroup
-	newChannels := xsync.NewMapOf[string, *types.Channel]()
+	sourceStreams := make([][]*types.Stream, len(sp.Config.Sources))
+	sourceOK := make([]bool, len(sp.Config.Sources))
 
 	importSemaphore := make(chan struct{}, sp.Config.WorkerThreads)
 	for i := range sp.Config.Sources {
 		wg.Add(1)
-		source := &sp.Config.Sources[i]
-
-		importSemaphore <- struct{}{}
-		go func(src *config.SourceConfig) {
+		go func(index int, src *config.SourceConfig) {
 			defer wg.Done()
+
+			select {
+			case importSemaphore <- struct{}{}:
+			case <-ctx.Done():
+				logger.Warn("{proxy/stream - ImportStreams} Import cancelled before start, keeping previous catalog: %s", src.Name)
+				return
+			}
 			defer func() { <-importSemaphore }()
 
 			currentConns := src.ActiveConns.Load()
@@ -232,15 +245,28 @@ func (sp *StreamProxy) ImportStreams() {
 					remainingConns, src.MaxConnections, utils.LogURL(sp.Config, src.URL))
 			}()
 
+			srcCtx, srcCancel := context.WithTimeout(ctx, constants.Internal.ImportSourceTimeout)
+			defer srcCancel()
+
 			rateLimiter := sp.getRateLimiterForSource(src)
 
 			var streams []*types.Stream
 			if src.Username != "" && src.Password != "" {
 				logger.Debug("{proxy/stream - ImportStreams} Parsing Xtreme Codes API source: %s", src.Name)
-				streams = parser.ParseXtremeCodesAPI(sp.HttpClient, sp.Config, src, rateLimiter, sp.Cache)
+				streams = parser.ParseXtremeCodesAPI(srcCtx, sp.ImportClient, sp.Config, src, rateLimiter, sp.Cache)
 			} else {
 				logger.Debug("{proxy/stream - ImportStreams} Parsing M3U8 source: %s", src.Name)
-				streams = parser.ParseM3U8(sp.HttpClient, sp.Config, src, rateLimiter, sp.Cache)
+				streams = parser.ParseM3U8(srcCtx, sp.ImportClient, sp.Config, src, rateLimiter, sp.Cache)
+			}
+
+			if srcCtx.Err() != nil {
+				logger.Warn("{proxy/stream - ImportStreams} Source timed out or was cancelled, keeping previous catalog: %s", src.Name)
+				return
+			}
+
+			if len(streams) == 0 {
+				logger.Warn("{proxy/stream - ImportStreams} Source returned no streams, keeping previous catalog: %s", src.Name)
+				return
 			}
 
 			if sp != nil && sp.FilterManager != nil {
@@ -259,19 +285,11 @@ func (sp *StreamProxy) ImportStreams() {
 
 			for importOrder, stream := range streams {
 				stream.ImportOrder = importOrder
-				channelName := stream.Name
-
-				channel, _ := newChannels.LoadOrStore(channelName, &types.Channel{
-					Name:                 channelName,
-					Streams:              []*types.Stream{},
-					PreferredStreamIndex: 0,
-				})
-
-				channel.Mu.Lock()
-				channel.Streams = append(channel.Streams, stream)
-				channel.Mu.Unlock()
 			}
-		}(source)
+
+			sourceStreams[index] = streams
+			sourceOK[index] = true
+		}(i, &sp.Config.Sources[i])
 	}
 
 	done := make(chan struct{})
@@ -282,9 +300,10 @@ func (sp *StreamProxy) ImportStreams() {
 
 	select {
 	case <-done:
-		logger.Debug("{proxy/stream - ImportStreams} All source imports completed successfully")
-	case <-time.After(constants.Internal.ImportGlobalTimeout):
-		logger.Warn("{proxy/stream - ImportStreams} Global timeout reached (%v), some sources may not have completed", constants.Internal.ImportGlobalTimeout)
+		logger.Debug("{proxy/stream - ImportStreams} All source imports completed")
+	case <-ctx.Done():
+		logger.Warn("{proxy/stream - ImportStreams} Global timeout reached (%v), committing partial import", constants.Internal.ImportGlobalTimeout)
+		<-done
 	}
 
 	// Zero out ActiveConns for all sources — import connections are
@@ -293,17 +312,52 @@ func (sp *StreamProxy) ImportStreams() {
 		sp.Config.Sources[i].ActiveConns.Store(0)
 	}
 
+	failedSources := make(map[string]*config.SourceConfig)
+	for i := range sp.Config.Sources {
+		if !sourceOK[i] {
+			failedSources[sp.Config.Sources[i].URL] = &sp.Config.Sources[i]
+		}
+	}
+
+	newChannels := make(map[string]*types.Channel)
+	addStream := func(stream *types.Stream) {
+		channel, exists := newChannels[stream.Name]
+		if !exists {
+			channel = &types.Channel{
+				Name:                 stream.Name,
+				Streams:              []*types.Stream{},
+				PreferredStreamIndex: 0,
+			}
+			newChannels[stream.Name] = channel
+		}
+		channel.Streams = append(channel.Streams, stream)
+	}
+
+	for _, streams := range sourceStreams {
+		for _, stream := range streams {
+			addStream(stream)
+		}
+	}
+	for _, stream := range sp.carryForwardStreams(failedSources) {
+		addStream(stream)
+	}
+
+	if len(newChannels) == 0 {
+		if existing := sp.ChannelCount(); existing > 0 {
+			logger.Error("{proxy/stream - ImportStreams} Import produced no channels, keeping %d existing channels", existing)
+			return
+		}
+		logger.Warn("{proxy/stream - ImportStreams} Import produced no channels")
+		return
+	}
+
 	allOrders, err := db.GetAllChannelOrders()
 	if err != nil {
 		logger.Warn("{proxy/stream - ImportStreams} Failed to load stream orders: %v", err)
 		allOrders = make(map[string]map[string]int)
 	}
 
-	count := 0
-	newChannels.Range(func(key string, value *types.Channel) bool {
-		channelName := key
-		channel := value
-
+	for channelName, channel := range newChannels {
 		// Hash URLs before sorting so SortStreams can dedupe and rank on them.
 		for _, s := range channel.Streams {
 			s.URLHash = utils.HashURL(s.URL)
@@ -318,11 +372,52 @@ func (sp *StreamProxy) ImportStreams() {
 			atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
 		}
 
-		sp.Channels.Store(key, channel)
-		count++
+		sp.Channels.Store(channelName, channel)
+	}
+
+	// Drop channels that no longer exist in any successful or carried-forward source
+	sp.Channels.Range(func(name string, _ *types.Channel) bool {
+		if _, exists := newChannels[name]; !exists {
+			sp.Channels.Delete(name)
+		}
 		return true
 	})
 
+	// invalidate previously generated playlists so a partial or empty render
+	// from an earlier import window is never served after a good commit
+	sp.importGeneration.Add(1)
+
+	logger.Debug("{proxy/stream - ImportStreams} Import committed %d channels (%d sources carried forward)", len(newChannels), len(failedSources))
+}
+
+// carryForwardStreams collects the streams still held for sources that did not import
+// successfully, re-pointing each at the current source config so a failed or timed-out
+// source keeps its previous catalog rather than disappearing from the channel map.
+func (sp *StreamProxy) carryForwardStreams(failedSources map[string]*config.SourceConfig) []*types.Stream {
+	if len(failedSources) == 0 {
+		return nil
+	}
+
+	var carried []*types.Stream
+	sp.Channels.Range(func(name string, channel *types.Channel) bool {
+		channel.Mu.Lock()
+		for _, stream := range channel.Streams {
+			if stream.Source == nil {
+				continue
+			}
+			src, exists := failedSources[stream.Source.URL]
+			if !exists {
+				continue
+			}
+			stream.Source = src
+			carried = append(carried, stream)
+		}
+		channel.Mu.Unlock()
+		return true
+	})
+
+	logger.Debug("{proxy/stream - carryForwardStreams} Carried %d streams forward from %d unavailable sources", len(carried), len(failedSources))
+	return carried
 }
 
 // streamContentType resolves a stream's content type via the shared resolver.
@@ -374,12 +469,14 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 		groupFilter = ""
 	}
 
-	// construct cache key per account with optional group or content-type suffix
-	cacheKey := fmt.Sprintf("playlist_%s", account.Username)
+	// construct cache key per account and import generation, with optional group
+	// or content-type suffix
+	generation := sp.importGeneration.Load()
+	cacheKey := fmt.Sprintf("playlist_%d_%s", generation, account.Username)
 	if groupFilter != "" {
-		cacheKey = fmt.Sprintf("playlist_%s_%s", account.Username, strings.ToLower(groupFilter))
+		cacheKey = fmt.Sprintf("playlist_%d_%s_%s", generation, account.Username, strings.ToLower(groupFilter))
 	} else if typeFilter != "" {
-		cacheKey = fmt.Sprintf("playlist_%s_type_%s", account.Username, typeFilter)
+		cacheKey = fmt.Sprintf("playlist_%d_%s_type_%s", generation, account.Username, typeFilter)
 	}
 
 	// serve from cache if available

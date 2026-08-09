@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -60,7 +61,7 @@ func classifyStreamContent(streamName, streamURL string, existingGroup string) t
 //
 // Returns:
 //   - []*types.Stream: slice of parsed stream objects, or nil if parsing fails completely
-func ParseM3U8(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
+func ParseM3U8(ctx context.Context, httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
 	logger.Debug("{parser/m3u8 - ParseM3U8} Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
 
 	cacheKey := fmt.Sprintf("m3u8:%s", source.URL)
@@ -73,13 +74,13 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, cfg *config.Config, sourc
 	}
 
 	// ratelimiter
-	if rateLimiter != nil {
-		rateLimiter.Take()
-		logger.Debug("{parser/m3u8 - ParseM3U8} Applied rate limit for source: %s", source.Name)
+	if err := takeRateLimit(ctx, rateLimiter); err != nil {
+		logger.Debug("{parser/m3u8 - ParseM3U8} Import cancelled before fetch: %s", source.Name)
+		return nil
 	}
 
-	// setup a cancellation
-	ctx, cancel := context.WithTimeout(context.Background(), constants.Internal.HLSSegmentFetchTimeout)
+	// bound the fetch, but never outlive the caller's import context
+	ctx, cancel := context.WithTimeout(ctx, constants.Internal.HLSSegmentFetchTimeout)
 	defer cancel()
 
 	req, err := http.NewRequest("GET", source.URL, nil)
@@ -109,42 +110,17 @@ func ParseM3U8(httpClient *client.HeaderSettingClient, cfg *config.Config, sourc
 
 	// hold the streams and the playlist
 	var streams []*types.Stream
-	playlist, listType, err := m3u8.DecodeFrom(bufio.NewReader(resp.Body), true)
+
+	// tee the body so a grafov failure re-parses what was already read plus the
+	// unconsumed remainder, rather than re-fetching the whole source
+	var consumed bytes.Buffer
+	playlist, listType, err := m3u8.DecodeFrom(bufio.NewReader(io.TeeReader(resp.Body, &consumed)), true)
 	if err == nil {
 		logger.Debug("{parser/m3u8 - ParseM3U8} Successfully parsed with grafov parser: %s", utils.LogURL(cfg, source.URL))
 		streams = ParseWithGrafov(playlist, listType, source, cfg)
 	} else {
 		logger.Debug("{parser/m3u8 - ParseM3U8} Grafov parser failed, using fallback parser: %v", err)
-		resp.Body.Close()
-
-		req2, err := http.NewRequest("GET", source.URL, nil)
-		if err != nil {
-			logger.Error("{parser/m3u8 - ParseM3U8} creating fallback request for %s: %v", utils.LogURL(cfg, source.URL), err)
-			return nil
-		}
-		req2 = req2.WithContext(ctx)
-
-		resp2, err := httpClient.DoWithHeaders(req2, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
-		if err != nil {
-			logger.Error("{parser/m3u8 - ParseM3U8} re-fetching for fallback parser: %v", err)
-			return nil
-		}
-
-		// close the fallback connection
-		defer func() {
-			resp2.Body.Close()
-			logger.Debug("{parser/m3u8 - ParseM3U8} Closed fallback connection for: %s", utils.LogURL(cfg, source.URL))
-
-		}()
-
-		if resp2.StatusCode != http.StatusOK {
-			logger.Error("{parser/m3u8 - ParseM3U8} HTTP error %d on fallback fetch from %s", resp2.StatusCode, utils.LogURL(cfg, source.URL))
-			return nil
-		}
-
-		logger.Debug("Using fallback parser for: %s", utils.LogURL(cfg, source.URL))
-
-		streams = ParseM3U8Fallback(resp2.Body, source, cfg)
+		streams = ParseM3U8Fallback(io.MultiReader(bytes.NewReader(consumed.Bytes()), resp.Body), source, cfg)
 	}
 
 	// if there's actually streams

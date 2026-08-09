@@ -7,13 +7,13 @@ import (
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"go.uber.org/ratelimit"
 )
@@ -347,7 +347,7 @@ func processXCBatches[T any](ctx context.Context, items []T, workers int, proces
 //
 // Returns:
 //   - []*types.Stream: aggregated collection of streams from all three API endpoints
-func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
+func ParseXtremeCodesAPI(ctx context.Context, httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, cache *cache.Cache) []*types.Stream {
 	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} from %s with optimized batch processing", utils.LogURL(cfg, source.URL))
 
 	cacheKey := fmt.Sprintf("xc:v2:%s:%s:%s", source.URL, source.Username, source.Password)
@@ -359,7 +359,7 @@ func ParseXtremeCodesAPI(httpClient *client.HeaderSettingClient, cfg *config.Con
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, constants.Internal.ImportSourceTimeout)
 	defer cancel()
 
 	var liveCategories, seriesCategories, vodCategories []XCCategory
@@ -444,9 +444,9 @@ func fetchXCCategories(ctx context.Context, httpClient *client.HeaderSettingClie
 		return nil, false
 	}
 
-	if rateLimiter != nil {
-		rateLimiter.Take()
-		logger.Debug("{parser/xtremecodes - fetchXCCategories} Applied rate limit for XC %s categories request: %s", contentType, source.Name)
+	if err := takeRateLimit(ctx, rateLimiter); err != nil {
+		logger.Debug("{parser/xtremecodes - fetchXCCategories} Cancelled before %s categories request: %s", contentType, source.Name)
+		return nil, false
 	}
 
 	url := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=%s", source.URL, source.Username, source.Password, action)
@@ -468,9 +468,9 @@ func fetchXCCategories(ctx context.Context, httpClient *client.HeaderSettingClie
 func fetchXCVODStreamsWithContext(ctx context.Context, httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) ([]XCVODStream, bool) {
 
 	// Apply rate limiting before making API request to prevent server overload
-	if rateLimiter != nil {
-		rateLimiter.Take()
-		logger.Debug("{parser/xtremecodes - fetchXCVODStreamsWithContext} Applied rate limit for XC VOD streams request: %s", source.Name)
+	if err := takeRateLimit(ctx, rateLimiter); err != nil {
+		logger.Debug("{parser/xtremecodes - fetchXCVODStreamsWithContext} Cancelled before XC VOD streams request: %s", source.Name)
+		return nil, false
 	}
 
 	// Construct API URL for VOD streams endpoint with authentication parameters
@@ -490,9 +490,9 @@ func fetchXCVODStreamsWithContext(ctx context.Context, httpClient *client.Header
 // fetchXCLiveStreamsWithContext retrieves live television stream data with context support
 func fetchXCLiveStreamsWithContext(ctx context.Context, httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) ([]XCLiveStream, bool) {
 	// Apply rate limiting before making API request to prevent server overload
-	if rateLimiter != nil {
-		rateLimiter.Take()
-		logger.Debug("{parser/xtremecodes - fetchXCLiveStreamsWithContext} Applied rate limit for XC live streams request: %s", source.Name)
+	if err := takeRateLimit(ctx, rateLimiter); err != nil {
+		logger.Debug("{parser/xtremecodes - fetchXCLiveStreamsWithContext} Cancelled before XC live streams request: %s", source.Name)
+		return nil, false
 	}
 
 	// Construct API URL for live streams endpoint with authentication parameters
@@ -512,9 +512,9 @@ func fetchXCLiveStreamsWithContext(ctx context.Context, httpClient *client.Heade
 // fetchXCSeriesWithContext retrieves television series data with context support
 func fetchXCSeriesWithContext(ctx context.Context, httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter) ([]XCSeries, bool) {
 	// Apply rate limiting before making API request to prevent server overload
-	if rateLimiter != nil {
-		rateLimiter.Take()
-		logger.Debug("{parser/xtremecodes - fetchXCSeriesWithContext} Applied rate limit for XC series request: %s", source.Name)
+	if err := takeRateLimit(ctx, rateLimiter); err != nil {
+		logger.Debug("{parser/xtremecodes - fetchXCSeriesWithContext} Cancelled before XC series request: %s", source.Name)
+		return nil, false
 	}
 
 	// Construct API URL for series endpoint with authentication parameters
@@ -528,6 +528,30 @@ func fetchXCSeriesWithContext(ctx context.Context, httpClient *client.HeaderSett
 	}
 	logger.Debug("{parser/xtremecodes - fetchXCSeriesWithContext} Successfully fetched %d series from XC API", len(series))
 	return series, true
+}
+
+// takeRateLimit blocks on the rate limiter while honouring context cancellation,
+// so a cancelled import does not sit in the limiter queue after the caller gave up.
+func takeRateLimit(ctx context.Context, rateLimiter ratelimit.Limiter) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if rateLimiter == nil {
+		return nil
+	}
+
+	taken := make(chan struct{})
+	go func() {
+		rateLimiter.Take()
+		close(taken)
+	}()
+
+	select {
+	case <-taken:
+		return ctx.Err()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // fetchXCDataWithContext implements context-aware HTTP request handler for Xtreme Codes API endpoints

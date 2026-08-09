@@ -120,7 +120,8 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	// work/proxy/stream.go — ImportStreams()
 	// -------------------------------------------------------------------------
-	ImportGlobalTimeout time.Duration // Global timeout for the full ImportStreams operation
+	ImportGlobalTimeout time.Duration // Hard ceiling for the full ImportStreams operation
+	ImportSourceTimeout time.Duration // Per-source ceiling; the primary bound on a slow source
 
 	// -------------------------------------------------------------------------
 	// work/proxy/stream.go — New() / initializeRateLimiters()
@@ -150,6 +151,8 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	EPGMaxRetries     int           // Max fetch attempts per EPG source before giving up
 	EPGRetryBaseDelay time.Duration // Base delay multiplied by attempt number between EPG retries
+	EPGSourceTimeout  time.Duration // Per-source ceiling covering all attempts, including the body read
+	EPGGlobalTimeout  time.Duration // Ceiling for a full merge across every EPG source
 
 	// -------------------------------------------------------------------------
 	// work/stream/stream.go — HandleStreamFailure()
@@ -377,7 +380,8 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	// Proxy
 	// -------------------------------------------------------------------------
-	ImportGlobalTimeout:            2 * time.Minute,
+	ImportGlobalTimeout:            5 * time.Minute,
+	ImportSourceTimeout:            2 * time.Minute,
 	SourceDefaultRateLimit:         5,
 	MasterPlaylistSizeThreshold:    100 * 1024, // 100KB
 	ProxyCleanupTickerInterval:     10 * time.Second,
@@ -391,6 +395,8 @@ var Internal = InternalConstants{
 	EPGRefreshInterval: 12 * time.Hour,
 	EPGMaxRetries:      5,
 	EPGRetryBaseDelay:  10 * time.Second,
+	EPGSourceTimeout:   5 * time.Minute,
+	EPGGlobalTimeout:   15 * time.Minute,
 	EPGDiskTTL:         12 * time.Hour,
 
 	// -------------------------------------------------------------------------

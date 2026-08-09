@@ -140,28 +140,6 @@ func SetSeriesEpisodes(sourceURL, seriesID string, episodes []SeriesEpisode) err
 	return tx.Commit()
 }
 
-// DeleteSeriesInfoForSource clears every cached series payload and episode
-// mapping belonging to a source, for use when that source is removed or edited.
-func DeleteSeriesInfoForSource(sourceURL string) error {
-	tx, err := Get().Begin()
-	if err != nil {
-		logger.Error("{db/seriesinfo - DeleteSeriesInfoForSource} begin source=%s: %v", sourceURL, err)
-		return err
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.Exec(`DELETE FROM kp_series_info WHERE source_url = ?`, sourceURL); err != nil {
-		logger.Error("{db/seriesinfo - DeleteSeriesInfoForSource} delete info source=%s: %v", sourceURL, err)
-		return err
-	}
-	if _, err := tx.Exec(`DELETE FROM kp_series_episodes WHERE source_url = ?`, sourceURL); err != nil {
-		logger.Error("{db/seriesinfo - DeleteSeriesInfoForSource} delete episodes source=%s: %v", sourceURL, err)
-		return err
-	}
-
-	return tx.Commit()
-}
-
 // PruneSeriesInfo removes cached series payloads and episode mappings belonging
 // to sources that are no longer configured. Sources are replaced wholesale on
 // every config save, so this reconciles by URL rather than by delete hook.

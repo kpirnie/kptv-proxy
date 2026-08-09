@@ -237,7 +237,7 @@ func (c *Cache) WarmUpEPG(write func(io.Writer) (bool, error)) {
 			return
 		}
 		if committed {
-			logger.Info("EPG warmup complete, cached to disk")
+			logger.Debug("{cache(epg) - WarmUpEPG} EPG warmup complete, cached to disk")
 		}
 	}()
 }

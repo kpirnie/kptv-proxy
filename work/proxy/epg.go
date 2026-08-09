@@ -69,15 +69,11 @@ func (sp *StreamProxy) GetEPGSources() []epgSource {
 	return sources
 }
 
-// FetchEPGData concurrently retrieves XMLTV data from all provided EPG sources,
-// parsing the raw XML to extract channel definitions and programme listings into
-// separate slices. Each source is fetched in its own goroutine with a 30-second
-// timeout to prevent any single slow or unresponsive source from blocking the
-// entire aggregation process.
-//
 // Programme fragments are handed to progSink as they arrive rather than being
-// collected in memory; only the channel elements are returned.
-func (sp *StreamProxy) FetchEPGData(sources []epgSource, progSink func(string)) []string {
+// collected in memory; only the channel elements are returned. Each source is
+// bounded by its own deadline derived from ctx, so a stalled body read is
+// cancelled rather than blocking the merge indefinitely.
+func (sp *StreamProxy) FetchEPGData(ctx context.Context, sources []epgSource, progSink func(string)) []string {
 
 	logger.Debug("{proxy/epg - FetchEPGData} Starting concurrent fetch for %d sources", len(sources))
 
@@ -92,27 +88,50 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource, progSink func(string)) 
 
 			logger.Debug("{proxy/epg - FetchEPGData} Fetching from %s (%s)", source.name, source.sourceType)
 
-			req, err := http.NewRequest("GET", source.url, nil)
+			srcCtx, srcCancel := context.WithTimeout(ctx, constants.Internal.EPGSourceTimeout)
+			defer srcCancel()
+
+			newEPGRequest := func() (*http.Request, error) {
+				req, err := http.NewRequestWithContext(srcCtx, "GET", source.url, nil)
+				if err != nil {
+					return nil, err
+				}
+				req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
+				req.Header.Set("Accept-Encoding", "identity")
+				req.Header.Set("Connection", "close")
+				return req, nil
+			}
+
+			req, err := newEPGRequest()
 			if err != nil {
 				logger.Error("{proxy/epg - FetchEPGData} Failed to create request for %s: %v", source.name, err)
 				return
 			}
 
-			req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
-			req.Header.Set("Accept-Encoding", "identity")
-			req.Header.Set("Connection", "close")
-
 			var resp *http.Response
 			maxRetries := constants.Internal.EPGMaxRetries
 			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if srcCtx.Err() != nil {
+					logger.Warn("{proxy/epg - FetchEPGData} Cancelled or timed out fetching %s", source.name)
+					return
+				}
+
 				resp, err = sp.HttpClient.Do(req)
 				if err != nil {
 					logger.Warn("{proxy/epg - FetchEPGData} Attempt %d/%d failed for %s: %v", attempt, maxRetries, source.name, err)
-					time.Sleep(constants.Internal.EPGRetryBaseDelay)
-					req, _ = http.NewRequest("GET", source.url, nil)
-					req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
-					req.Header.Set("Accept-Encoding", "identity")
-					req.Header.Set("Connection", "close")
+					if attempt < maxRetries {
+						select {
+						case <-time.After(constants.Internal.EPGRetryBaseDelay):
+						case <-srcCtx.Done():
+							logger.Warn("{proxy/epg - FetchEPGData} Cancelled or timed out fetching %s", source.name)
+							return
+						}
+						req, err = newEPGRequest()
+						if err != nil {
+							logger.Error("{proxy/epg - FetchEPGData} Failed to rebuild request for %s: %v", source.name, err)
+							return
+						}
+					}
 					continue
 				}
 				if resp.StatusCode == http.StatusOK {
@@ -121,11 +140,17 @@ func (sp *StreamProxy) FetchEPGData(sources []epgSource, progSink func(string)) 
 				logger.Warn("{proxy/epg - FetchEPGData} Attempt %d/%d HTTP %d from %s", attempt, maxRetries, resp.StatusCode, source.name)
 				resp.Body.Close()
 				if attempt < maxRetries {
-					time.Sleep(constants.Internal.EPGRetryBaseDelay)
-					req, _ = http.NewRequest("GET", source.url, nil)
-					req.Header.Set("User-Agent", "KPTV-Proxy/1.0")
-					req.Header.Set("Accept-Encoding", "identity")
-					req.Header.Set("Connection", "close")
+					select {
+					case <-time.After(constants.Internal.EPGRetryBaseDelay):
+					case <-srcCtx.Done():
+						logger.Warn("{proxy/epg - FetchEPGData} Cancelled or timed out fetching %s", source.name)
+						return
+					}
+					req, err = newEPGRequest()
+					if err != nil {
+						logger.Error("{proxy/epg - FetchEPGData} Failed to rebuild request for %s: %v", source.name, err)
+						return
+					}
 				}
 			}
 
@@ -317,12 +342,16 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 		wg sync.WaitGroup
 	)
 
+	// bound the whole merge so no single stalled source can hold the pipeline open
+	mergeCtx, mergeCancel := context.WithTimeout(context.Background(), constants.Internal.EPGGlobalTimeout)
+	defer mergeCancel()
+
 	// Fetch URL-based sources concurrently
 	if hasURLSources {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			channels := sp.FetchEPGData(sources, progSink)
+			channels := sp.FetchEPGData(mergeCtx, sources, progSink)
 			mu.Lock()
 			allChannels = append(allChannels, channels...)
 			mu.Unlock()
@@ -339,7 +368,7 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 		go func(account config.SDAccount) {
 			defer wg.Done()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			ctx, cancel := context.WithTimeout(mergeCtx, constants.Internal.EPGSourceTimeout)
 			defer cancel()
 
 			data, err := schedulesdirect.FetchAccount(ctx, account)
@@ -435,20 +464,28 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 }
 
 // StartEPGWarmup performs an initial EPG cache warmup on startup and then schedules
-// automatic refreshes every 12 hours to keep the cached EPG data current. The initial
-// warmup runs synchronously to ensure EPG data is available before the proxy begins
-// serving requests, while subsequent refreshes run in a background goroutine to avoid
-// blocking normal proxy operations.
-func (sp *StreamProxy) StartEPGWarmup() {
+// automatic refreshes every 12 hours to keep the cached EPG data current. It returns
+// a channel that yields whether the initial warmup committed to disk, so the caller
+// can report it once after its own startup output. Subsequent scheduled refreshes run
+// in the background and never block.
+func (sp *StreamProxy) StartEPGWarmup() <-chan bool {
 	logger.Debug("{proxy/epg - StartEPGWarmup} Running initial EPG cache warmup")
 
-	// initial warmup
-	sp.Cache.WarmUpEPG(sp.FetchAndMergeEPG)
-	logger.Debug("{proxy/epg - StartEPGWarmup} Initial warmup complete, scheduling 12-hour refresh cycle")
+	ready := make(chan bool, 1)
 
-	// schedule periodic background refreshes every 12 hours
-	ticker := time.NewTicker(constants.Internal.EPGRefreshInterval)
 	go func() {
+		// initial warmup, reported back to the caller exactly once
+		committed, err := sp.Cache.RefreshEPG(sp.FetchAndMergeEPG)
+		if err != nil {
+			logger.Error("{proxy/epg - StartEPGWarmup} Initial EPG warmup failed: %v", err)
+		}
+		ready <- committed && err == nil
+		close(ready)
+
+		logger.Debug("{proxy/epg - StartEPGWarmup} Initial warmup complete, scheduling 12-hour refresh cycle")
+
+		// schedule periodic background refreshes every 12 hours
+		ticker := time.NewTicker(constants.Internal.EPGRefreshInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			logger.Debug("{proxy/epg - StartEPGWarmup} Starting scheduled EPG refresh")
@@ -458,6 +495,8 @@ func (sp *StreamProxy) StartEPGWarmup() {
 			logger.Debug("{proxy/epg - StartEPGWarmup} Scheduled EPG refresh complete")
 		}
 	}()
+
+	return ready
 }
 
 // ChannelEPGMap returns a channel-name -> mapped epg_id map for every proxy

@@ -2,10 +2,10 @@ package app
 
 import (
 	"kptv-proxy/work/admin"
+	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/parser"
-	"kptv-proxy/work/types"
 )
 
 // RunRestartLoop blocks on the admin restart channel and performs a full graceful
@@ -41,13 +41,8 @@ func (a *App) RunRestartLoop() {
 		// otherwise they keep serving the pre-restart configuration
 		logger.SetLogLevel(newConfig.LogLevel)
 		a.Proxy.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(newConfig)
+		a.Proxy.ImportClient = client.NewHeaderSettingClient(newConfig.ResponseHeaderTimeout)
 		a.Proxy.ReinitRateLimiters()
-
-		// Clear all existing channels so the fresh import starts from a clean state
-		a.Proxy.Channels.Range(func(key string, value *types.Channel) bool {
-			a.Proxy.Channels.Delete(key)
-			return true
-		})
 
 		// Re-import all streams from the updated source list
 		a.Proxy.ImportStreams()
