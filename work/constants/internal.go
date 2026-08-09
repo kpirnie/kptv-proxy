@@ -380,8 +380,8 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	// Proxy
 	// -------------------------------------------------------------------------
-	ImportGlobalTimeout:            5 * time.Minute,
-	ImportSourceTimeout:            2 * time.Minute,
+	ImportGlobalTimeout:            30 * time.Minute,
+	ImportSourceTimeout:            5 * time.Minute,
 	SourceDefaultRateLimit:         5,
 	MasterPlaylistSizeThreshold:    100 * 1024, // 100KB
 	ProxyCleanupTickerInterval:     10 * time.Second,
