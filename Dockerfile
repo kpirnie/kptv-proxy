@@ -1,5 +1,5 @@
 # Build stage - pinned to the build platform so Go cross-compiles natively
-FROM --platform=$BUILDPLATFORM docker.io/golang:1.26.5-alpine AS builder
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.27.0-alpine AS builder
 
 ARG TARGETARCH
 

@@ -45,7 +45,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 			}
 
 			group := "Uncategorized"
-			logoURL := "https://cdn.kcp.im/tv/kptv-icon.png"
+			logoURL := "https://cdn.kevp.us/tv/kptv-icon.png"
 			if len(channel.Streams) > 0 {
 				if g, ok := channel.Streams[0].Attributes["group-title"]; ok && g != "" {
 					group = g
@@ -107,7 +107,7 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 				activityTime := time.Since(time.Unix(channel.Restreamer.LastActivity.Load(), 0))
 				estimatedBytes := int64(0)
-				logoURL := "https://cdn.kcp.im/tv/kptv-icon.png"
+				logoURL := "https://cdn.kevp.us/tv/kptv-icon.png"
 
 				if activityTime < 60*time.Second && clients > 0 {
 					baseRate := int64(500 * 1024 * clients)
@@ -141,7 +141,7 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 			if !seen {
 				logoURL := session.LogoURL
 				if logoURL == "" {
-					logoURL = "https://cdn.kcp.im/tv/kptv-icon.png"
+					logoURL = "https://cdn.kevp.us/tv/kptv-icon.png"
 				}
 				sessions[session.ChannelName] = &ChannelResponse{
 					Name:             session.ChannelName,
