@@ -55,12 +55,18 @@ func CreateSession(userID int64, username, name string, rememberMe bool) (string
 }
 
 // GetSession retrieves a session by ID, returning nil if not found or expired.
+// An expired entry is evicted on read rather than waiting for the cleanup tick.
 func GetSession(id string) *Session {
 	store.mu.RLock()
 	s, ok := store.sessions[id]
 	store.mu.RUnlock()
 
-	if !ok || time.Now().After(s.ExpiresAt) {
+	if !ok {
+		return nil
+	}
+
+	if time.Now().After(s.ExpiresAt) {
+		DeleteSession(id)
 		return nil
 	}
 	return s

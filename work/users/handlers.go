@@ -61,6 +61,15 @@ func clearLoginAttempts(ip string) {
 	loginLimiter.mu.Unlock()
 }
 
+// isSecureRequest reports whether the request arrived over TLS, either directly
+// or through a reverse proxy that set X-Forwarded-Proto.
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
 // HandleRegisterPage serves the registration form.
 func HandleRegisterPage(w http.ResponseWriter, r *http.Request) {
 	count, err := UserCount()
@@ -181,6 +190,11 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	clearLoginAttempts(ip)
 
+	// discard any session presented with the login request before issuing a new one
+	if old, err := r.Cookie(sessionCookieName); err == nil {
+		DeleteSession(old.Value)
+	}
+
 	sessionID, err := CreateSession(user.ID, user.Username, user.Name, rememberMe)
 	if err != nil {
 		http.Redirect(w, r, "/login?error=Failed+to+create+session", http.StatusFound)
@@ -199,6 +213,7 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   maxAge,
 	})
@@ -218,6 +233,8 @@ func HandleLogout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 	})
 
