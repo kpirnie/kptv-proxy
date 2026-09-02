@@ -33,6 +33,8 @@ function renderTokens(tokens, permissions) {
                 <div class="flex-1">
                     <h4 class="text-lg font-semibold mb-1">${escapeHtml(token.name)}</h4>
                     <div class="text-gray-400 text-sm">Permissions: ${getPermissionLabels(token.permissions, permissions)}</div>
+                    ${token.legacy ? '<div class="mt-2 bg-orange-900/20 border border-orange-600 text-orange-100 px-3 py-2 rounded text-sm">Legacy token — no longer accepted. Delete it and generate a replacement.</div>' : ''}
+                    
                 </div>
             </div>
             <div class="mt-4 pt-4 border-t border-kptv-border flex gap-2">

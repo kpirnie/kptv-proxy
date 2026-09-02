@@ -2,7 +2,10 @@ package users
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // Permission bitmask constants
@@ -31,6 +34,20 @@ func GenerateToken() (string, error) {
 		bytes[i] = chars[b%byte(len(chars))]
 	}
 	return string(bytes), nil
+}
+
+// HashToken returns the hex-encoded SHA-256 of a raw API token. Tokens are 64
+// characters of crypto/rand output, so a KDF is unnecessary and a fast hash
+// allows an indexed single-row lookup.
+func HashToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// IsLegacyTokenHash reports whether a stored hash is a pre-SHA-256 Argon2id
+// value, which can no longer be verified and must be regenerated.
+func IsLegacyTokenHash(hash string) bool {
+	return strings.HasPrefix(hash, "$argon2id$")
 }
 
 // HasPermission checks if a permission bitmask includes the given permission.

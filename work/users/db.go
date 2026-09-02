@@ -2,6 +2,7 @@ package users
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
@@ -120,7 +121,7 @@ func GetTokenByHash(hash string) (APIToken, error) {
 		SELECT id, name, token_hash, permissions
 		FROM kp_api_tokens WHERE token_hash = ?`, hash).
 		Scan(&t.ID, &t.Name, &t.TokenHash, &t.Permissions)
-	if err != nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		logger.Error("{users/db - GetTokenByHash} %v", err)
 	}
 	return t, err

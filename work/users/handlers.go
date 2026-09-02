@@ -245,11 +245,17 @@ func HandleGetTokens(w http.ResponseWriter, r *http.Request) {
 		ID          int64  `json:"id"`
 		Name        string `json:"name"`
 		Permissions int    `json:"permissions"`
+		Legacy      bool   `json:"legacy"`
 	}
 
 	safe := make([]safeToken, len(tokens))
 	for i, t := range tokens {
-		safe[i] = safeToken{ID: t.ID, Name: t.Name, Permissions: t.Permissions}
+		safe[i] = safeToken{
+			ID:          t.ID,
+			Name:        t.Name,
+			Permissions: t.Permissions,
+			Legacy:      IsLegacyTokenHash(t.TokenHash),
+		}
 	}
 
 	json.NewEncoder(w).Encode(safe)
@@ -281,13 +287,7 @@ func HandleCreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := HashPassword(rawToken)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	id, err := CreateToken(req.Name, hash, req.Permissions)
+	id, err := CreateToken(req.Name, HashToken(rawToken), req.Permissions)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
