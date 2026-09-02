@@ -441,8 +441,8 @@ func (r *Restream) getHLSSegments(playlistURL string) ([]string, string, time.Du
 			r.Channel.Name, utils.LogURL(r.Config, playlistURL), utils.LogURL(r.Config, effectiveURL))
 	}
 
-	// Read complete playlist content for parsing
-	body, err := io.ReadAll(resp.Body)
+	// Read the playlist content for parsing, capped against oversized bodies
+	body, err := io.ReadAll(io.LimitReader(resp.Body, constants.Internal.MaxPlaylistBytes))
 	if err != nil {
 		logger.Error("{restream/hls - getHLSSegments} Failed to read response body for channel %s: %v", r.Channel.Name, err)
 		return nil, "", 0, err

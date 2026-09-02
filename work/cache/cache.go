@@ -248,29 +248,6 @@ func (c *Cache) RefreshEPG(write func(io.Writer) (bool, error)) (bool, error) {
 	return c.epg.setStream("merged", write)
 }
 
-// GetEPG reads the full EPG from disk into a string
-// for streaming to HTTP responses.
-func (c *Cache) GetEPG(key string) (string, bool) {
-	f, _, ok := c.epg.get(key)
-	if !ok {
-		return "", false
-	}
-	defer f.Close()
-
-	// read in the epg
-	data, err := io.ReadAll(f)
-	if err != nil {
-		logger.Error("{cache(epg) - GetEPG} Failed to read EPG from disk: %v", err)
-		return "", false
-	}
-
-	// debug logging
-	logger.Debug("{cache(epg) - GetEPG} Get the epg")
-
-	// return the epg
-	return string(data), true
-}
-
 // --------------------- M3U/XC CACHING ---------------------
 
 // NewCache creates and returns a new Cache instance backed by otter for

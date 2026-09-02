@@ -41,6 +41,7 @@ type InternalConstants struct {
 	StreamVariantFetchTimeout time.Duration // HTTP timeout when probing a URL to determine variant type
 	StreamVariantTestTimeout  time.Duration // HTTP timeout when test-reading the first bytes of a variant
 	StreamTestBufferSize      int           // Byte count read during variant content-inspection test
+	MaxPlaylistBytes          int64         // Max bytes read from an upstream playlist body
 
 	// -------------------------------------------------------------------------
 	// work/handlers/remotefile.go — serveSeriesEpisode() / attemptRemoteFile()
@@ -265,6 +266,11 @@ type InternalConstants struct {
 	TMDBRateLimit    int           // Max TMDB API requests per second, shared across all scan workers
 
 	// -------------------------------------------------------------------------
+	// work/admin/config.go — handleSetConfig()
+	// -------------------------------------------------------------------------
+	MaxConfigBodyBytes int64 // Max accepted request body size for a config POST
+
+	// -------------------------------------------------------------------------
 	// work/admin/logs.go
 	// -------------------------------------------------------------------------
 	AdminMaxLogEntries int // Maximum entries retained in the admin log circular buffer
@@ -326,7 +332,8 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	StreamVariantFetchTimeout: 15 * time.Second,
 	StreamVariantTestTimeout:  10 * time.Second,
-	StreamTestBufferSize:      512, // B
+	StreamTestBufferSize:      512,      // B
+	MaxPlaylistBytes:          16 << 20, // 16 MB
 
 	// -------------------------------------------------------------------------
 	// Remote file passthrough
@@ -478,6 +485,7 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	AdminMaxLogEntries: 1000,
 	AdminRestartDelay:  500 * time.Millisecond,
+	MaxConfigBodyBytes: 4 << 20, // 4 MB
 
 	// -------------------------------------------------------------------------
 	// Server / database

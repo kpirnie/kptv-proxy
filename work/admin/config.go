@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/proxy"
 	"net/http"
 )
@@ -109,6 +110,8 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 		}()
 
 		w.Header().Set("Content-Type", "application/json")
+
+		r.Body = http.MaxBytesReader(w, r.Body, constants.Internal.MaxConfigBodyBytes)
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {

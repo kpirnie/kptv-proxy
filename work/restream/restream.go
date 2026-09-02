@@ -783,8 +783,8 @@ func (r *Restream) getStreamVariants(url string, source *config.SourceConfig) ([
 
 	logger.Debug("{restream/restream - getStreamVariants} Processing as master playlist for channel %s", r.Channel.Name)
 
-	// Read the entire body for playlist parsing
-	body, err := io.ReadAll(resp.Body)
+	// Read the body for playlist parsing, capped so a hostile upstream can't OOM us
+	body, err := io.ReadAll(io.LimitReader(resp.Body, constants.Internal.MaxPlaylistBytes))
 	validationTimer.Stop()
 	resp.Body.Close()
 	if err != nil {
@@ -919,7 +919,7 @@ func (r *Restream) sniffAndStreamResponse(resp *http.Response, url string, sourc
 		strings.Contains(contentType, "audio/mpegurl") {
 		logger.Debug("{restream/restream - sniffAndStreamResponse} HLS playlist detected via Content-Type for channel %s: %s", r.Channel.Name, contentType)
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, constants.Internal.MaxPlaylistBytes))
 		effectiveURL := resp.Request.URL.String()
 		resp.Body.Close()
 		if err != nil {
@@ -950,7 +950,7 @@ func (r *Restream) sniffAndStreamResponse(resp *http.Response, url string, sourc
 	if strings.Contains(content, "#EXTINF") || strings.Contains(content, "#EXTM3U") {
 		logger.Debug("{restream/restream - sniffAndStreamResponse} HLS playlist detected via content inspection for channel %s", r.Channel.Name)
 
-		rest, err := io.ReadAll(resp.Body)
+		rest, err := io.ReadAll(io.LimitReader(resp.Body, constants.Internal.MaxPlaylistBytes))
 		effectiveURL := resp.Request.URL.String()
 		resp.Body.Close()
 		if err != nil {
