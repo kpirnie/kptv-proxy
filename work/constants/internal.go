@@ -277,7 +277,10 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	// main.go
 	// -------------------------------------------------------------------------
-	ServerPort int // TCP port the HTTP server listens on
+	ServerPort         int           // TCP port the HTTP server listens on
+	ServerReadHeaderTO time.Duration // Max time to read request headers
+	ServerReadTO       time.Duration // Max time to read the full request
+	ServerIdleTO       time.Duration // Max keep-alive idle time between requests
 
 	// -------------------------------------------------------------------------
 	// work/db/db.go — Get()
@@ -479,6 +482,9 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	// Server / database
 	// -------------------------------------------------------------------------
-	ServerPort:   8080,
-	DatabasePath: "/settings/kptv.db",
+	ServerPort:         8080,
+	ServerReadHeaderTO: 10 * time.Second,
+	ServerReadTO:       60 * time.Second,
+	ServerIdleTO:       120 * time.Second,
+	DatabasePath:       "/settings/kptv.db",
 }

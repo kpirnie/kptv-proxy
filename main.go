@@ -107,9 +107,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// WriteTimeout stays zero — streaming responses are open-ended and already
+	// use per-write deadlines via http.NewResponseController in drainClient
+	srv := &http.Server{
+		Handler:           router,
+		ReadHeaderTimeout: constants.Internal.ServerReadHeaderTO,
+		ReadTimeout:       constants.Internal.ServerReadTO,
+		IdleTimeout:       constants.Internal.ServerIdleTO,
+	}
+
 	// Serve in a goroutine so main can block on the shutdown signal below
 	go func() {
-		if err := http.Serve(listener, router); err != nil {
+		if err := srv.Serve(listener); err != nil {
 			logger.Error("{main} Server failed to start: %v", err)
 			os.Exit(1)
 		}
