@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -235,15 +236,20 @@ func buildXCStreamURL(baseURL, contentType, username, password string, streamID 
 	return fmt.Sprintf("%s/%s/%s/%s/%d.%s", baseURL, pathType, username, password, streamID, suffix)
 }
 
-// findXCAccount locates an XC output account by username and password.
+// findXCAccount locates an XC output account by username and password. Both
+// fields compare in constant time and every account is checked, so neither the
+// comparison nor the match position leaks timing information.
 func findXCAccount(cfg *config.Config, username, password string) *config.XCOutputAccount {
+	var found *config.XCOutputAccount
 	for i := range cfg.XCOutputAccounts {
 		acc := &cfg.XCOutputAccounts[i]
-		if acc.Username == username && acc.Password == password {
-			return acc
+		u := subtle.ConstantTimeCompare([]byte(acc.Username), []byte(username))
+		p := subtle.ConstantTimeCompare([]byte(acc.Password), []byte(password))
+		if u&p == 1 {
+			found = acc
 		}
 	}
-	return nil
+	return found
 }
 
 // findChannelByStreamID locates a channel name by its hashed stream ID.
