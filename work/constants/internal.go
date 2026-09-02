@@ -226,6 +226,12 @@ type InternalConstants struct {
 	PasswordMinLength       int           // Minimum acceptable password length enforced at registration and change
 
 	// -------------------------------------------------------------------------
+	// work/users/handlers.go — HandleLogin()
+	// -------------------------------------------------------------------------
+	LoginMaxAttempts int           // Max failed login attempts per client IP within the window
+	LoginWindow      time.Duration // Rolling window duration for login attempt rate limiting
+
+	// -------------------------------------------------------------------------
 	// work/users/argon2.go — HashPassword()
 	// -------------------------------------------------------------------------
 	Argon2Memory      uint32 // Argon2id memory parameter (KB)
@@ -436,6 +442,8 @@ var Internal = InternalConstants{
 	RegistrationMaxAttempts: 5,
 	RegistrationWindow:      1 * time.Hour,
 	PasswordMinLength:       12,
+	LoginMaxAttempts:        10,
+	LoginWindow:             15 * time.Minute,
 	Argon2Memory:            64 * 1024, // 64KB
 	Argon2Iterations:        3,
 	Argon2Parallelism:       2,

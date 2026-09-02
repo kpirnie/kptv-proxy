@@ -17,6 +17,50 @@ var registerLimiter = struct {
 	resetAt  time.Time
 }{resetAt: time.Now().Add(constants.Internal.RegistrationWindow)}
 
+// loginAttempt tracks failed logins for a single client IP.
+type loginAttempt struct {
+	count   int
+	resetAt time.Time
+}
+
+// limits login attempts per client IP to slow password guessing
+var loginLimiter = struct {
+	mu       sync.Mutex
+	attempts map[string]*loginAttempt
+}{attempts: make(map[string]*loginAttempt)}
+
+// allowLoginAttempt records an attempt for the given IP and reports whether it
+// remains within the configured window allowance. Expired entries are dropped
+// on the way through, which keeps the map bounded without a separate ticker.
+func allowLoginAttempt(ip string) bool {
+	now := time.Now()
+
+	loginLimiter.mu.Lock()
+	defer loginLimiter.mu.Unlock()
+
+	for key, a := range loginLimiter.attempts {
+		if now.After(a.resetAt) {
+			delete(loginLimiter.attempts, key)
+		}
+	}
+
+	a, ok := loginLimiter.attempts[ip]
+	if !ok {
+		a = &loginAttempt{resetAt: now.Add(constants.Internal.LoginWindow)}
+		loginLimiter.attempts[ip] = a
+	}
+	a.count++
+
+	return a.count <= constants.Internal.LoginMaxAttempts
+}
+
+// clearLoginAttempts drops the failure counter for an IP after a successful login.
+func clearLoginAttempts(ip string) {
+	loginLimiter.mu.Lock()
+	delete(loginLimiter.attempts, ip)
+	loginLimiter.mu.Unlock()
+}
+
 // HandleRegisterPage serves the registration form.
 func HandleRegisterPage(w http.ResponseWriter, r *http.Request) {
 	count, err := UserCount()
@@ -104,6 +148,12 @@ func HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 
 // HandleLogin processes the login form submission.
 func HandleLogin(w http.ResponseWriter, r *http.Request) {
+	ip := realIP(r)
+	if !allowLoginAttempt(ip) {
+		http.Error(w, "Too many login attempts", http.StatusTooManyRequests)
+		return
+	}
+
 	identifier := strings.TrimSpace(r.FormValue("identifier"))
 	password := r.FormValue("password")
 	rememberMe := r.FormValue("remember_me") == "on"
@@ -128,6 +178,8 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error=Invalid+credentials", http.StatusFound)
 		return
 	}
+
+	clearLoginAttempts(ip)
 
 	sessionID, err := CreateSession(user.ID, user.Username, user.Name, rememberMe)
 	if err != nil {
