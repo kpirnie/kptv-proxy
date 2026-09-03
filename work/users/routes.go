@@ -11,7 +11,7 @@ func SetupUserRoutes(router *mux.Router) {
 	router.HandleFunc("/login", HandleLogin).Methods("POST")
 	router.HandleFunc("/register", HandleRegisterPage).Methods("GET")
 	router.HandleFunc("/register", HandleRegister).Methods("POST")
-	router.HandleFunc("/logout", HandleLogout).Methods("GET", "POST")
+	router.HandleFunc("/logout", HandleLogout).Methods("POST")
 
 	// Auth check endpoint
 	router.HandleFunc("/api/auth/me", RequireAuth(HandleMe)).Methods("GET")
