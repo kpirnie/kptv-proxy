@@ -2,12 +2,17 @@
 package tmdb
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"kptv-proxy/work/constants"
 	"net/http"
 	"os"
 )
+
+// imageClient bounds image downloads; the package-level default client used
+// previously had no timeout at any phase.
+var imageClient = &http.Client{Timeout: constants.Internal.TMDBImageTimeout}
 
 // ImageURL builds a fully-qualified TMDB image URL for a poster or backdrop
 // path, using the configured size for the given kind. kind is "poster" or
@@ -36,7 +41,16 @@ func DownloadImage(tmdbPath, kind, destFile string) error {
 	}
 
 	url := ImageURL(tmdbPath, kind)
-	resp, err := http.Get(url)
+
+	ctx, cancel := context.WithTimeout(context.Background(), constants.Internal.TMDBImageTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("build request for %s: %w", url, err)
+	}
+
+	resp, err := imageClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET %s failed: %w", url, err)
 	}

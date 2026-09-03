@@ -261,6 +261,7 @@ type InternalConstants struct {
 	TMDBBaseUrl      string        // Base URL for TMDB API requests
 	TMDBImageBaseUrl string        // Base URL for TMDB image downloads
 	TMDBTimeout      time.Duration // HTTP timeout for TMDB API requests
+	TMDBImageTimeout time.Duration // HTTP timeout for TMDB image downloads
 	TMDBPosterSize   string        // Image size segment used for poster downloads
 	TMDBBackdropSize string        // Image size segment used for fanart/backdrop downloads
 	TMDBRateLimit    int           // Max TMDB API requests per second, shared across all scan workers
@@ -476,6 +477,7 @@ var Internal = InternalConstants{
 	TMDBBaseUrl:      "https://api.themoviedb.org/3",
 	TMDBImageBaseUrl: "https://image.tmdb.org/t/p",
 	TMDBTimeout:      15 * time.Second,
+	TMDBImageTimeout: 30 * time.Second,
 	TMDBPosterSize:   "w780",
 	TMDBBackdropSize: "w1280",
 	TMDBRateLimit:    4,
