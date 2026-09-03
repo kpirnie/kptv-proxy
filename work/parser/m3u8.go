@@ -320,6 +320,9 @@ func ParseM3U8Fallback(reader io.Reader, source *config.SourceConfig, cfg *confi
 			currentAttrs = nil
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		logger.Error("{parser/m3u8 - ParseM3U8Fallback} scanner error while parsing %s: %v", utils.LogURL(cfg, source.URL), err)
+	}
 	logger.Debug("{parser/m3u8 - ParseM3U8Fallback} Fallback parser found %d streams from %s", len(streams), utils.LogURL(cfg, source.URL))
 
 	// returrn the streams
