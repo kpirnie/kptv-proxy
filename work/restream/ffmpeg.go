@@ -16,6 +16,18 @@ import (
 	"time"
 )
 
+// sanitizeHeaderValue strips CR, LF and other control characters from a
+// configured header value so it cannot inject additional request headers
+// through the ffmpeg -headers / -user_agent arguments.
+func sanitizeHeaderValue(v string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, v)
+}
+
 /**
  * streamWithFFmpeg uses ffmpeg to proxy the stream instead of Go-based restreaming
  *
@@ -50,14 +62,16 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 
 	// Add custom User-Agent if configured for this source
 	if source != nil && source.UserAgent != "" {
-		logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Using custom User-Agent for channel %s: %s", r.Channel.Name, source.UserAgent)
-		args = append(args, "-user_agent", source.UserAgent)
+		ua := sanitizeHeaderValue(source.UserAgent)
+		logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Using custom User-Agent for channel %s: %s", r.Channel.Name, ua)
+		args = append(args, "-user_agent", ua)
 	}
 
 	// Add Referer header if configured for this source
 	if source != nil && source.ReqReferrer != "" {
-		logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Using custom Referer for channel %s: %s", r.Channel.Name, source.ReqReferrer)
-		args = append(args, "-headers", fmt.Sprintf("Referer: %s\r\n", source.ReqReferrer))
+		ref := sanitizeHeaderValue(source.ReqReferrer)
+		logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Using custom Referer for channel %s: %s", r.Channel.Name, ref)
+		args = append(args, "-headers", fmt.Sprintf("Referer: %s\r\n", ref))
 	}
 
 	// Add input URL and output format args
