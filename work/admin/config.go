@@ -11,6 +11,18 @@ import (
 	"net/http"
 )
 
+// maskedSecret stands in for stored credentials on config reads. A value posted
+// back unchanged means "keep what is stored".
+const maskedSecret = "********"
+
+// maskSecret replaces a non-empty stored credential with the mask sentinel.
+func maskSecret(v string) string {
+	if v == "" {
+		return ""
+	}
+	return maskedSecret
+}
+
 // handleGetConfig serialises the current runtime configuration to JSON for
 // the admin interface. Reads directly from the live config on the proxy
 // instance rather than from disk.
@@ -55,7 +67,7 @@ func handleGetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 				MaxFailuresBeforeBlock: s.MaxFailuresBeforeBlock,
 				MinDataSize:            s.MinDataSize, UserAgent: s.UserAgent,
 				ReqOrigin: s.ReqOrigin, ReqReferrer: s.ReqReferrer,
-				Username: s.Username, Password: s.Password,
+				Username: s.Username, Password: maskSecret(s.Password),
 				LiveIncludeRegex: s.LiveIncludeRegex, LiveExcludeRegex: s.LiveExcludeRegex,
 				SeriesIncludeRegex: s.SeriesIncludeRegex, SeriesExcludeRegex: s.SeriesExcludeRegex,
 				VODIncludeRegex: s.VODIncludeRegex, VODExcludeRegex: s.VODExcludeRegex,
@@ -83,7 +95,7 @@ func handleGetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			"responseHeaderTimeout":  cfg.ResponseHeaderTimeout.String(),
 			"slowClientBufferChunks": cfg.SlowClientBufferChunks,
 			"tmdbEnabled":            cfg.TMDBEnabled,
-			"tmdbApiKey":             cfg.TMDBAPIKey,
+			"tmdbApiKey":             maskSecret(cfg.TMDBAPIKey),
 			"sources":                sources,
 		}
 
@@ -133,6 +145,24 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 			addLogEntry("error", "Base URL is required but empty")
 			http.Error(w, "Base URL is required", http.StatusBadRequest)
 			return
+		}
+
+		// Credentials are masked on read; a value posted back unchanged means
+		// keep the stored secret rather than persisting the mask itself
+		if incoming.TMDBAPIKey == maskedSecret {
+			incoming.TMDBAPIKey = sp.Config.TMDBAPIKey
+		}
+		for i := range incoming.Sources {
+			if incoming.Sources[i].Password != maskedSecret {
+				continue
+			}
+			incoming.Sources[i].Password = ""
+			for j := range sp.Config.Sources {
+				if sp.Config.Sources[j].Name == incoming.Sources[i].Name && sp.Config.Sources[j].URL == incoming.Sources[i].URL {
+					incoming.Sources[i].Password = sp.Config.Sources[j].Password
+					break
+				}
+			}
 		}
 
 		// Ensure FFmpeg slices are never nil in the persisted config.
