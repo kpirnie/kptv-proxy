@@ -29,6 +29,20 @@ var loginLimiter = struct {
 	attempts map[string]*loginAttempt
 }{attempts: make(map[string]*loginAttempt)}
 
+// dummyPasswordHash is verified against on the user-miss path so an unknown
+// identifier costs the same Argon2id work as a known one.
+var dummyPasswordHash = func() string {
+	pw, err := randomAlnum(32)
+	if err != nil {
+		pw = "kptv-proxy-dummy-password"
+	}
+	h, err := HashPassword(pw)
+	if err != nil {
+		return ""
+	}
+	return h
+}()
+
 // allowLoginAttempt records an attempt for the given IP and reports whether it
 // remains within the configured window allowance. Expired entries are dropped
 // on the way through, which keeps the map bounded without a separate ticker.
@@ -177,6 +191,8 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		user, err = GetUserByEmail(identifier)
 		if err != nil {
+			// burn an equivalent verification so a miss is not measurably faster
+			_, _ = VerifyPassword(password, dummyPasswordHash)
 			http.Redirect(w, r, "/login?error=Invalid+credentials", http.StatusFound)
 			return
 		}
