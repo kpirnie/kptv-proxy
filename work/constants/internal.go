@@ -112,6 +112,11 @@ type InternalConstants struct {
 	FFprobeSemaphoreLimit int           // Max concurrent FFprobe processes across all channels
 
 	// -------------------------------------------------------------------------
+	// work/localscan/ffprobe.go — DurationViaFFProbe()
+	// -------------------------------------------------------------------------
+	ScanFFprobeTimeout time.Duration // Context timeout for each scan-time FFprobe invocation
+
+	// -------------------------------------------------------------------------
 	// work/restream/stats.go — collectStreamStats()
 	// -------------------------------------------------------------------------
 	StatsCollectionInterval time.Duration // Ticker interval for periodic stats collection in production
@@ -390,6 +395,7 @@ var Internal = InternalConstants{
 	StatsFFprobeMaxData:     2 * 1024 * 1024, // 2MB
 	StatsFFprobeTimeout:     15 * time.Second,
 	FFprobeSemaphoreLimit:   4,
+	ScanFFprobeTimeout:      30 * time.Second,
 	StatsCollectionInterval: 5 * time.Minute,
 	StatsDebugInterval:      1 * time.Minute,
 	StatsJitterMaxSeconds:   30 * time.Second,

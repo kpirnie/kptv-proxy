@@ -2,8 +2,10 @@
 package localscan
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"os/exec"
 	"strconv"
@@ -45,7 +47,11 @@ func DurationViaFFProbe(filePath string) (int, error) {
 		return -1, fmt.Errorf("ffprobe not available")
 	}
 
-	out, err := exec.Command(
+	ctx, cancel := context.WithTimeout(context.Background(), constants.Internal.ScanFFprobeTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(
+		ctx,
 		ffprobePath,
 		"-v", "quiet",
 		"-print_format", "json",
