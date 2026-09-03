@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"database/sql"
+	"kptv-proxy/work/config"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/localscan"
 	"kptv-proxy/work/logger"
@@ -22,7 +23,8 @@ func HandleLocalStream(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 
-		if findXCAccount(sp.Config, vars["username"], vars["password"]) == nil {
+		account := findXCAccount(sp.Config, vars["username"], vars["password"])
+		if account == nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -38,6 +40,11 @@ func HandleLocalStream(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
+		if !localEntryAllowed(account, entry) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
 		logger.Debug("{handlers/local - HandleLocalStream} serving %s", entry.Path)
 		serveLocalFile(w, r, entry.Path)
 	}
@@ -49,7 +56,8 @@ func HandleLocalArtwork(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 
-		if findXCAccount(sp.Config, vars["username"], vars["password"]) == nil {
+		account := findXCAccount(sp.Config, vars["username"], vars["password"])
+		if account == nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -57,6 +65,11 @@ func HandleLocalArtwork(sp *proxy.StreamProxy) http.HandlerFunc {
 		entry, ok := resolveLocalEntry(vars["hash"])
 		if !ok {
 			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+
+		if !localEntryAllowed(account, entry) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
@@ -91,6 +104,16 @@ func HandleLocalArtwork(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		serveLocalFile(w, r, art)
 	}
+}
+
+// localEntryAllowed reports whether an XC account's content toggles permit the
+// given local entry. Mirrors localscan.ContentTypeOf, which maps every
+// non-"shows" media type onto VOD.
+func localEntryAllowed(account *config.XCOutputAccount, entry *localscan.MediaEntry) bool {
+	if localscan.ContentTypeOf(entry.MediaType) == "series" {
+		return account.EnableSeries
+	}
+	return account.EnableVOD
 }
 
 // resolveLocalEntry loads a local media entry by hash and verifies that its
