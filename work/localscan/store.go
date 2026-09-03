@@ -197,6 +197,10 @@ func DeleteMissing(localSourceID int64, active map[string]struct{}) error {
 			stale = append(stale, p)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
 	rows.Close()
 
 	if len(stale) == 0 {
