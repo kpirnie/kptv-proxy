@@ -3,7 +3,6 @@ package schedulesdirect
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"kptv-proxy/work/constants"
@@ -80,13 +79,11 @@ func GetToken(username, password string) (string, error) {
 	return doLogin(cache, username, password, now)
 }
 
-// doLogin performs the actual SD authentication call and updates the cache.
+// password is the stored sha1 hex digest, which is what SD expects on the wire.
 func doLogin(cache *tokenCacheFile, username, password string, now time.Time) (string, error) {
-	hashed := fmt.Sprintf("%x", sha1.Sum([]byte(password)))
-
 	payload := map[string]string{
 		"username": username,
-		"password": hashed,
+		"password": password,
 	}
 
 	body, err := json.Marshal(payload)

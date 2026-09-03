@@ -1,16 +1,28 @@
 package admin
 
 import (
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/proxy"
 	"net/http"
+	"regexp"
 	"strconv"
 
 	"github.com/gorilla/mux"
 )
+
+// sdSHA1Pattern matches a stored Schedules Direct password that is already in
+// the sha1-hex form the SD API expects.
+var sdSHA1Pattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// hashSDPassword reduces a Schedules Direct password to the sha1 hex digest the
+// SD token endpoint expects, which is the only form the account ever needs.
+func hashSDPassword(password string) string {
+	return fmt.Sprintf("%x", sha1.Sum([]byte(password)))
+}
 
 // handleGetSDAccounts returns all configured Schedules Direct accounts.
 func handleGetSDAccounts(_ *proxy.StreamProxy) http.HandlerFunc {
@@ -28,10 +40,10 @@ func handleGetSDAccounts(_ *proxy.StreamProxy) http.HandlerFunc {
 			ID              int64    `json:"id"`
 			Name            string   `json:"name"`
 			Username        string   `json:"username"`
-			Password        string   `json:"password"`
 			Enabled         bool     `json:"enabled"`
 			DaysToFetch     int      `json:"daysToFetch"`
 			SelectedLineups []string `json:"selectedLineups"`
+			Legacy          bool     `json:"legacy"`
 		}
 
 		out := make([]sdAccountOut, len(accounts))
@@ -40,10 +52,10 @@ func handleGetSDAccounts(_ *proxy.StreamProxy) http.HandlerFunc {
 				ID:              a.ID,
 				Name:            a.Name,
 				Username:        a.Username,
-				Password:        a.Password,
 				Enabled:         a.Enabled,
 				DaysToFetch:     a.DaysToFetch,
 				SelectedLineups: a.Lineups,
+				Legacy:          !sdSHA1Pattern.MatchString(a.Password),
 			}
 		}
 
@@ -74,7 +86,7 @@ func handleCreateSDAccount(sp *proxy.StreamProxy) http.HandlerFunc {
 		id, err := db.InsertSDAccount(db.SDAccount{
 			Name:        incoming.Name,
 			Username:    incoming.Username,
-			Password:    incoming.Password,
+			Password:    hashSDPassword(incoming.Password),
 			Enabled:     incoming.Enabled,
 			DaysToFetch: incoming.DaysToFetch,
 			Lineups:     incoming.SelectedLineups,
@@ -111,9 +123,22 @@ func handleUpdateSDAccount(sp *proxy.StreamProxy) http.HandlerFunc {
 			return
 		}
 
-		if incoming.Name == "" || incoming.Username == "" || incoming.Password == "" {
-			http.Error(w, "Name, username, and password are required", http.StatusBadRequest)
+		if incoming.Name == "" || incoming.Username == "" {
+			http.Error(w, "Name and username are required", http.StatusBadRequest)
 			return
+		}
+
+		// A blank password on update keeps the stored digest
+		stored := incoming.Password
+		if stored == "" {
+			existing, err := db.GetSDAccountWithLineups(id)
+			if err != nil {
+				http.Error(w, "Password is required", http.StatusBadRequest)
+				return
+			}
+			stored = existing.Password
+		} else {
+			stored = hashSDPassword(stored)
 		}
 
 		if incoming.DaysToFetch <= 0 {
@@ -124,7 +149,7 @@ func handleUpdateSDAccount(sp *proxy.StreamProxy) http.HandlerFunc {
 			ID:          id,
 			Name:        incoming.Name,
 			Username:    incoming.Username,
-			Password:    incoming.Password,
+			Password:    stored,
 			Enabled:     incoming.Enabled,
 			DaysToFetch: incoming.DaysToFetch,
 			Lineups:     incoming.SelectedLineups,

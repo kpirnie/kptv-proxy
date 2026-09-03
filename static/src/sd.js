@@ -193,7 +193,9 @@ function showSDAccountModal(accountIndex = null) {
         document.getElementById('sd-account-index').value = accountIndex;
         document.getElementById('sd-account-name').value = account.name || '';
         document.getElementById('sd-account-username').value = account.username || '';
-        document.getElementById('sd-account-password').value = account.password || '';
+        document.getElementById('sd-account-password').value = '';
+        document.getElementById('sd-account-password').placeholder =
+            account.legacy ? 'Re-enter password — stored credential is no longer usable' : 'Leave blank to keep current password';
         document.getElementById('sd-account-enabled').checked = account.enabled !== false;
         document.getElementById('sd-days-to-fetch').value = account.daysToFetch || 7;
 
@@ -224,8 +226,8 @@ async function saveSDAccount() {
     const enabled = document.getElementById('sd-account-enabled').checked;
     const daysToFetch = parseInt(document.getElementById('sd-days-to-fetch').value) || 7;
 
-    if (!name || !username || !password) {
-        showNotification('Name, username, and password are required', 'danger');
+    if (!name || !username) {
+        showNotification('Name and username are required', 'danger');
         return;
     }
 
