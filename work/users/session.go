@@ -1,7 +1,6 @@
 package users
 
 import (
-	"crypto/rand"
 	"fmt"
 	"kptv-proxy/work/constants"
 	"sync"
@@ -97,13 +96,9 @@ func (s *sessionStore) cleanup() {
 
 // generateSessionID creates a cryptographically secure 64-character session ID.
 func generateSessionID() (string, error) {
-	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	bytes := make([]byte, 64)
-	if _, err := rand.Read(bytes); err != nil {
+	s, err := randomAlnum(64)
+	if err != nil {
 		return "", fmt.Errorf("generating session ID: %w", err)
 	}
-	for i, b := range bytes {
-		bytes[i] = chars[b%byte(len(chars))]
-	}
-	return string(bytes), nil
+	return s, nil
 }

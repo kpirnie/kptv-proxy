@@ -23,17 +23,40 @@ const (
 // PermAll grants all permissions
 const PermAll = PermRead | PermConfigWrite | PermRestart | PermStreams | PermLogs | PermXCAccounts | PermEPGs | PermSD
 
+// randomAlnum returns n characters drawn uniformly from a 62-character
+// alphanumeric alphabet. Bytes at or above the largest multiple of 62 are
+// rejected and redrawn so the modulo cannot bias toward the first eight
+// characters of the alphabet.
+func randomAlnum(n int) (string, error) {
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const limit = 256 - (256 % len(chars))
+
+	out := make([]byte, 0, n)
+	buf := make([]byte, n)
+	for len(out) < n {
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		for _, b := range buf {
+			if int(b) >= limit {
+				continue
+			}
+			out = append(out, chars[int(b)%len(chars)])
+			if len(out) == n {
+				break
+			}
+		}
+	}
+	return string(out), nil
+}
+
 // GenerateToken creates a cryptographically secure 64-character alphanumeric token.
 func GenerateToken() (string, error) {
-	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	bytes := make([]byte, 64)
-	if _, err := rand.Read(bytes); err != nil {
+	s, err := randomAlnum(64)
+	if err != nil {
 		return "", fmt.Errorf("generating token: %w", err)
 	}
-	for i, b := range bytes {
-		bytes[i] = chars[b%byte(len(chars))]
-	}
-	return string(bytes), nil
+	return s, nil
 }
 
 // HashToken returns the hex-encoded SHA-256 of a raw API token. Tokens are 64
