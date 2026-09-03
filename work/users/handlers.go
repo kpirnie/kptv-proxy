@@ -313,6 +313,32 @@ func HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Revoke every outstanding session for this user and rotate the caller's,
+	// preserving whichever lifetime the current session was issued with
+	remember := time.Until(session.ExpiresAt) > constants.Internal.SessionTTL
+	DeleteSessionsForUser(user.ID)
+
+	newID, err := CreateSession(user.ID, user.Username, user.Name, remember)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	maxAge := 0
+	if remember {
+		maxAge = int(constants.Internal.SessionTTLExtended.Seconds())
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    newID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   maxAge,
+	})
+
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 

@@ -78,6 +78,17 @@ func DeleteSession(id string) {
 	store.mu.Unlock()
 }
 
+// DeleteSessionsForUser revokes every outstanding session belonging to a user.
+func DeleteSessionsForUser(userID int64) {
+	store.mu.Lock()
+	for id, s := range store.sessions {
+		if s.UserID == userID {
+			delete(store.sessions, id)
+		}
+	}
+	store.mu.Unlock()
+}
+
 // cleanup periodically removes expired sessions.
 func (s *sessionStore) cleanup() {
 	ticker := time.NewTicker(constants.Internal.SessionCleanupTick)
