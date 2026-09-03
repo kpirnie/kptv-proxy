@@ -513,6 +513,18 @@ func (r *Restream) parseHLSPlaylistBody(body []byte, effectiveURL string) ([]str
 				segmentURL = resolvedURL
 			}
 
+			// A segment that leaves the playlist's own host is an upstream-chosen
+			// destination; only allow it if it resolves somewhere globally routable.
+			// Same-host segments inherit the trust of the configured source.
+			if baseErr == nil {
+				su, suErr := url.Parse(segmentURL)
+				if suErr != nil || (!strings.EqualFold(su.Hostname(), baseRef.Hostname()) && !utils.IsSafeUpstreamURL(segmentURL)) {
+					logger.Warn("{restream/hls - parseHLSPlaylistBody} Rejected off-host segment URL for channel %s: %s",
+						r.Channel.Name, utils.LogURL(r.Config, segmentURL))
+					continue
+				}
+			}
+
 			segments = append(segments, segmentURL)
 		}
 	}
@@ -550,6 +562,10 @@ func (r *Restream) resolveRedirectURL(segmentURL string) string {
 		if parsedURL, err := url.Parse(segmentURL); err == nil {
 			if redirectURL := parsedURL.Query().Get("redirect_url"); redirectURL != "" {
 				if decodedURL, err := url.QueryUnescape(redirectURL); err == nil {
+					if !utils.IsSafeUpstreamURL(decodedURL) {
+						logger.Warn("{restream/hls - resolveRedirectURL} Rejected non-routable redirect_url for channel %s: %s", r.Channel.Name, utils.LogURL(r.Config, decodedURL))
+						return ""
+					}
 					logger.Debug("{restream/hls - resolveRedirectURL} Successfully decoded redirect_url: %s", utils.LogURL(r.Config, decodedURL))
 					return decodedURL
 				} else {
@@ -567,6 +583,10 @@ func (r *Restream) resolveRedirectURL(segmentURL string) string {
 		if parsedURL, err := url.Parse(segmentURL); err == nil {
 			if redirectURL := parsedURL.Query().Get("redirect_url"); redirectURL != "" {
 				if decodedURL, err := url.QueryUnescape(redirectURL); err == nil {
+					if !utils.IsSafeUpstreamURL(decodedURL) {
+						logger.Warn("{restream/hls - resolveRedirectURL} Rejected non-routable beacon redirect for channel %s: %s", r.Channel.Name, utils.LogURL(r.Config, decodedURL))
+						return ""
+					}
 					logger.Debug("{restream/hls - resolveRedirectURL} Successfully decoded beacon redirect: %s", utils.LogURL(r.Config, decodedURL))
 					return decodedURL
 				} else {

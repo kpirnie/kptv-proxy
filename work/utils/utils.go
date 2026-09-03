@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/types"
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -315,4 +316,48 @@ func HashURL(url string) string {
 	h := fnv.New64a()
 	h.Write([]byte(url))
 	return fmt.Sprintf("%x", h.Sum64())
+}
+
+// isGlobalIP reports whether ip is globally routable, excluding loopback,
+// private, unique-local, link-local, multicast and unspecified ranges.
+func isGlobalIP(ip net.IP) bool {
+	if !ip.IsGlobalUnicast() {
+		return false
+	}
+	return !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
+}
+
+// IsSafeUpstreamURL reports whether raw is an http(s) URL resolving only to
+// globally routable addresses. Upstream-supplied playlist and redirect targets
+// are otherwise free to point at loopback, link-local metadata endpoints, or
+// private ranges reachable from inside the container.
+func IsSafeUpstreamURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+
+	host := u.Hostname()
+	if host == "" {
+		return false
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		return isGlobalIP(ip)
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	for _, ip := range ips {
+		if !isGlobalIP(ip) {
+			return false
+		}
+	}
+	return true
 }
