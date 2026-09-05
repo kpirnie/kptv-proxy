@@ -30,7 +30,7 @@ func EntryHash(localSourceID int64, path string) string {
 // LoadAllForSource returns every stored entry for a local source keyed by
 // file path, used by the scanner to detect unchanged files.
 func LoadAllForSource(localSourceID int64) (map[string]*MediaEntry, error) {
-	rows, err := db.Get().Query(`SELECT `+localMediaColumns+`
+	rows, err := db.GetReader().Query(`SELECT `+localMediaColumns+`
 		FROM kp_local_media WHERE local_source_id = ?`, localSourceID)
 	if err != nil {
 		logger.Error("{localscan/store - LoadAllForSource} id=%d: %v", localSourceID, err)
@@ -51,7 +51,7 @@ func LoadAllForSource(localSourceID int64) (map[string]*MediaEntry, error) {
 
 // ListBySource returns every stored entry for a local source ordered by sort key.
 func ListBySource(localSourceID int64) ([]*MediaEntry, error) {
-	rows, err := db.Get().Query(`SELECT `+localMediaColumns+`
+	rows, err := db.GetReader().Query(`SELECT `+localMediaColumns+`
 		FROM kp_local_media WHERE local_source_id = ? ORDER BY sort_key ASC`, localSourceID)
 	if err != nil {
 		logger.Error("{localscan/store - ListBySource} id=%d: %v", localSourceID, err)
@@ -64,7 +64,7 @@ func ListBySource(localSourceID int64) ([]*MediaEntry, error) {
 // ListAll returns every stored local media entry across all sources,
 // ordered by source sort order then entry sort key.
 func ListAll() ([]*MediaEntry, error) {
-	rows, err := db.Get().Query(`SELECT m.id, m.local_source_id, m.s_hash, m.path,
+	rows, err := db.GetReader().Query(`SELECT m.id, m.local_source_id, m.s_hash, m.path,
 		m.media_type, m.group_title, m.tvg_name, m.display, m.duration, m.year,
 		m.artist, m.album, m.disc, m.track, m.series, m.season, m.episode,
 		m.episode_title, m.title, m.sort_title, m.plot, m.tagline, m.poster,
@@ -87,7 +87,7 @@ func ListAll() ([]*MediaEntry, error) {
 // GetByHash returns a single entry by its stream identity hash.
 // Returns sql.ErrNoRows if the hash is unknown.
 func GetByHash(hash string) (*MediaEntry, error) {
-	rows, err := db.Get().Query(`SELECT `+localMediaColumns+`
+	rows, err := db.GetReader().Query(`SELECT `+localMediaColumns+`
 		FROM kp_local_media WHERE s_hash = ? LIMIT 1`, hash)
 	if err != nil {
 		logger.Error("{localscan/store - GetByHash} hash=%s: %v", hash, err)
@@ -180,7 +180,7 @@ func UpdateEntry(e *MediaEntry) error {
 // DeleteMissing removes stored entries for a local source whose paths were
 // not seen during the scan that produced active.
 func DeleteMissing(localSourceID int64, active map[string]struct{}) error {
-	rows, err := db.Get().Query(`SELECT path FROM kp_local_media WHERE local_source_id = ?`, localSourceID)
+	rows, err := db.GetReader().Query(`SELECT path FROM kp_local_media WHERE local_source_id = ?`, localSourceID)
 	if err != nil {
 		logger.Error("{localscan/store - DeleteMissing} query id=%d: %v", localSourceID, err)
 		return err

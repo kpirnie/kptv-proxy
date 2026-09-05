@@ -18,7 +18,7 @@ type StreamOverride struct {
 // GetStreamOverride returns the persisted override for a channel/hash pair.
 // Returns false if no row exists.
 func GetStreamOverride(channelName, hash string) (StreamOverride, bool) {
-	row := Get().QueryRow(`
+	row := GetReader().QueryRow(`
 		SELECT s_status, s_order, dead_reason
 		FROM kp_stream_overrides
 		WHERE channel = ? AND s_hash = ?`, channelName, hash)

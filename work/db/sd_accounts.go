@@ -20,7 +20,7 @@ type SDAccount struct {
 
 // GetAllSDAccounts returns every SD account row without lineup data.
 func GetAllSDAccounts() ([]SDAccount, error) {
-	rows, err := Get().Query(`
+	rows, err := GetReader().Query(`
 		SELECT id, name, uname, pword, enabled, days_to_fetch
 		FROM kp_sd_accounts
 		ORDER BY id ASC`)
@@ -35,7 +35,7 @@ func GetAllSDAccounts() ([]SDAccount, error) {
 // GetSDAccountWithLineups returns a single SD account including its
 // selected lineup IDs. Returns sql.ErrNoRows if the ID does not exist.
 func GetSDAccountWithLineups(id int64) (SDAccount, error) {
-	row := Get().QueryRow(`
+	row := GetReader().QueryRow(`
 		SELECT id, name, uname, pword, enabled, days_to_fetch
 		FROM kp_sd_accounts WHERE id = ?`, id)
 
@@ -121,7 +121,7 @@ func DeleteSDAccount(id int64) error {
 
 // GetSDLineups returns the lineup_id strings associated with an SD account.
 func GetSDLineups(accountID int64) ([]string, error) {
-	rows, err := Get().Query(
+	rows, err := GetReader().Query(
 		`SELECT lineup_id FROM kp_sd_lineups WHERE sd_account_id = ? ORDER BY id ASC`,
 		accountID,
 	)
@@ -188,7 +188,7 @@ func scanSDAccounts(rows *sql.Rows) ([]SDAccount, error) {
 // SDAccountExists returns true if any row with the given username already exists.
 func SDAccountExists(username string) (bool, error) {
 	var count int
-	err := Get().QueryRow(
+	err := GetReader().QueryRow(
 		`SELECT COUNT(*) FROM kp_sd_accounts WHERE uname = ?`, username,
 	).Scan(&count)
 	if err != nil {

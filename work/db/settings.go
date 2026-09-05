@@ -7,7 +7,7 @@ import "kptv-proxy/work/logger"
 // Returns an empty string and false if the key does not exist.
 func GetSetting(key string) (string, bool) {
 	var value string
-	err := Get().QueryRow(
+	err := GetReader().QueryRow(
 		`SELECT the_value FROM kp_settings WHERE the_key = ?`, key,
 	).Scan(&value)
 	if err != nil {
@@ -41,7 +41,7 @@ func DeleteSetting(key string) error {
 
 // AllSettings returns every key/value pair in kp_settings as a map.
 func AllSettings() (map[string]string, error) {
-	rows, err := Get().Query(`SELECT the_key, the_value FROM kp_settings`)
+	rows, err := GetReader().Query(`SELECT the_key, the_value FROM kp_settings`)
 	if err != nil {
 		logger.Error("{db/settings - AllSettings} query failed: %v", err)
 		return nil, err

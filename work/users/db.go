@@ -31,7 +31,7 @@ type APIToken struct {
 // UserCount returns the number of users in the database.
 func UserCount() (int, error) {
 	var count int
-	err := db.Get().QueryRow(`SELECT COUNT(*) FROM kp_users`).Scan(&count)
+	err := db.GetReader().QueryRow(`SELECT COUNT(*) FROM kp_users`).Scan(&count)
 	if err != nil {
 		logger.Error("{users/db - UserCount} %v", err)
 		return 0, err
@@ -55,14 +55,14 @@ func CreateUser(name, email, username, passwordHash string) (int64, error) {
 
 // GetUserByUsername retrieves a user by username.
 func GetUserByUsername(username string) (User, error) {
-	return scanUser(db.Get().QueryRow(`
+	return scanUser(db.GetReader().QueryRow(`
 		SELECT id, name, email, username, password_hash, created_at, last_login
 		FROM kp_users WHERE username = ?`, username))
 }
 
 // GetUserByEmail retrieves a user by email.
 func GetUserByEmail(email string) (User, error) {
-	return scanUser(db.Get().QueryRow(`
+	return scanUser(db.GetReader().QueryRow(`
 		SELECT id, name, email, username, password_hash, created_at, last_login
 		FROM kp_users WHERE email = ?`, email))
 }
@@ -103,7 +103,7 @@ func CreateToken(name, tokenHash string, permissions int) (int64, error) {
 
 // GetAllTokens returns all API tokens.
 func GetAllTokens() ([]APIToken, error) {
-	rows, err := db.Get().Query(`
+	rows, err := db.GetReader().Query(`
 		SELECT id, name, token_hash, permissions
 		FROM kp_api_tokens ORDER BY id ASC`)
 	if err != nil {
@@ -117,7 +117,7 @@ func GetAllTokens() ([]APIToken, error) {
 // GetTokenByHash retrieves an API token by its hash.
 func GetTokenByHash(hash string) (APIToken, error) {
 	var t APIToken
-	err := db.Get().QueryRow(`
+	err := db.GetReader().QueryRow(`
 		SELECT id, name, token_hash, permissions
 		FROM kp_api_tokens WHERE token_hash = ?`, hash).
 		Scan(&t.ID, &t.Name, &t.TokenHash, &t.Permissions)

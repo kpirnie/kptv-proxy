@@ -16,7 +16,7 @@ type EPG struct {
 
 // GetAllEPGs returns every EPG row ordered by sort_order ascending.
 func GetAllEPGs() ([]EPG, error) {
-	rows, err := Get().Query(`
+	rows, err := GetReader().Query(`
 		SELECT id, name, url, sort_order
 		FROM kp_epgs
 		ORDER BY sort_order ASC`)
@@ -31,7 +31,7 @@ func GetAllEPGs() ([]EPG, error) {
 // GetEPG returns a single EPG row by primary key.
 // Returns sql.ErrNoRows if the ID does not exist.
 func GetEPG(id int64) (EPG, error) {
-	row := Get().QueryRow(`
+	row := GetReader().QueryRow(`
 		SELECT id, name, url, sort_order
 		FROM kp_epgs WHERE id = ?`, id)
 
@@ -97,7 +97,7 @@ func scanEPGs(rows *sql.Rows) ([]EPG, error) {
 // Useful for deduplication during import.
 func EPGExists(url string) (bool, error) {
 	var count int
-	err := Get().QueryRow(
+	err := GetReader().QueryRow(
 		`SELECT COUNT(*) FROM kp_epgs WHERE url = ?`, url,
 	).Scan(&count)
 	if err != nil {

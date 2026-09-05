@@ -25,7 +25,7 @@ type LocalSource struct {
 
 // GetAllLocalSources returns every local source row ordered by sort_order ascending.
 func GetAllLocalSources() ([]LocalSource, error) {
-	rows, err := Get().Query(`
+	rows, err := GetReader().Query(`
 		SELECT id, name, path, media_type, group_prefix, sort_order,
 		       enabled, inc_regex, exc_regex, last_scan, entry_count
 		FROM kp_local_sources
@@ -41,7 +41,7 @@ func GetAllLocalSources() ([]LocalSource, error) {
 // GetEnabledLocalSources returns only the enabled local source rows ordered by
 // sort_order ascending. Used by the parser when building the stream set.
 func GetEnabledLocalSources() ([]LocalSource, error) {
-	rows, err := Get().Query(`
+	rows, err := GetReader().Query(`
 		SELECT id, name, path, media_type, group_prefix, sort_order,
 		       enabled, inc_regex, exc_regex, last_scan, entry_count
 		FROM kp_local_sources
@@ -58,7 +58,7 @@ func GetEnabledLocalSources() ([]LocalSource, error) {
 // GetLocalSource returns a single local source by its primary key.
 // Returns sql.ErrNoRows if the ID does not exist.
 func GetLocalSource(id int64) (LocalSource, error) {
-	row := Get().QueryRow(`
+	row := GetReader().QueryRow(`
 		SELECT id, name, path, media_type, group_prefix, sort_order,
 		       enabled, inc_regex, exc_regex, last_scan, entry_count
 		FROM kp_local_sources WHERE id = ?`, id)

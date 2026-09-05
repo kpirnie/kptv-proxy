@@ -114,7 +114,7 @@ func handleGetAllChannelEPGs(_ *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		rows, err := db.Get().Query(`SELECT channel, epg_id FROM kp_channel_epg WHERE epg_id != ''`)
+		rows, err := db.GetReader().Query(`SELECT channel, epg_id FROM kp_channel_epg WHERE epg_id != ''`)
 		if err != nil {
 			http.Error(w, "Failed to query EPG mappings", http.StatusInternalServerError)
 			return

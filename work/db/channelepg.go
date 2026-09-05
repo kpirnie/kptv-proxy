@@ -13,7 +13,7 @@ type ChannelEPG struct {
 // GetChannelEPG returns the EPG mapping for a given channel name, or a
 // zero-value struct with ok=false if no mapping exists.
 func GetChannelEPG(channel string) (ChannelEPG, bool) {
-	row := Get().QueryRow(
+	row := GetReader().QueryRow(
 		`SELECT id, channel, epg_id, epg_name FROM kp_channel_epg WHERE channel = ?`,
 		channel,
 	)
@@ -28,7 +28,7 @@ func GetChannelEPG(channel string) (ChannelEPG, bool) {
 // GetAllChannelEPGMap returns a map of channel name -> epg_id for every channel
 // that has a non-empty manual EPG mapping.
 func GetAllChannelEPGMap() (map[string]string, error) {
-	rows, err := Get().Query(`SELECT channel, epg_id FROM kp_channel_epg WHERE epg_id != ''`)
+	rows, err := GetReader().Query(`SELECT channel, epg_id FROM kp_channel_epg WHERE epg_id != ''`)
 	if err != nil {
 		logger.Error("{db/channelepg - GetAllChannelEPGMap} Failed to query channel EPG map: %v", err)
 		return nil, err

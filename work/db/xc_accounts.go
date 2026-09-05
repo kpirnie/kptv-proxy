@@ -20,7 +20,7 @@ type XCAccount struct {
 
 // GetAllXCAccounts returns every XC output account row.
 func GetAllXCAccounts() ([]XCAccount, error) {
-	rows, err := Get().Query(`
+	rows, err := GetReader().Query(`
 		SELECT id, name, uname, pword, max_cnx,
 		       enable_live, enable_series, enable_vod
 		FROM kp_xc_accounts
@@ -36,7 +36,7 @@ func GetAllXCAccounts() ([]XCAccount, error) {
 // GetXCAccount returns a single XC account by primary key.
 // Returns sql.ErrNoRows if the ID does not exist.
 func GetXCAccount(id int64) (XCAccount, error) {
-	row := Get().QueryRow(`
+	row := GetReader().QueryRow(`
 		SELECT id, name, uname, pword, max_cnx,
 		       enable_live, enable_series, enable_vod
 		FROM kp_xc_accounts WHERE id = ?`, id)
@@ -52,7 +52,7 @@ func GetXCAccount(id int64) (XCAccount, error) {
 // GetXCAccountByCredentials returns the XC account matching the given
 // username and password pair. Returns sql.ErrNoRows if not found.
 func GetXCAccountByCredentials(username, password string) (XCAccount, error) {
-	row := Get().QueryRow(`
+	row := GetReader().QueryRow(`
 		SELECT id, name, uname, pword, max_cnx,
 		       enable_live, enable_series, enable_vod
 		FROM kp_xc_accounts

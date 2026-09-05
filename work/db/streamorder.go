@@ -8,7 +8,7 @@ import (
 // GetChannelOrder returns the custom stream ordering for a channel as a map of
 // URL hash to position. An empty map means the channel has no custom order.
 func GetChannelOrder(channelName string) (map[string]int, error) {
-	rows, err := Get().Query(`
+	rows, err := GetReader().Query(`
 		SELECT s_hash, s_order
 		FROM kp_stream_order
 		WHERE channel = ?
@@ -35,7 +35,7 @@ func GetChannelOrder(channelName string) (map[string]int, error) {
 // GetAllChannelOrders returns every custom stream ordering grouped by channel
 // name, each inner map keyed by URL hash with the stored position as the value.
 func GetAllChannelOrders() (map[string]map[string]int, error) {
-	rows, err := Get().Query(`SELECT channel, s_hash, s_order FROM kp_stream_order`)
+	rows, err := GetReader().Query(`SELECT channel, s_hash, s_order FROM kp_stream_order`)
 	if err != nil {
 		logger.Error("{db/streamorder - GetAllChannelOrders} %v", err)
 		return nil, err

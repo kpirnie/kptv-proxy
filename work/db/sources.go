@@ -35,7 +35,7 @@ type Source struct {
 
 // GetAllSources returns every source row ordered by sort_order ascending.
 func GetAllSources() ([]Source, error) {
-	rows, err := Get().Query(`
+	rows, err := GetReader().Query(`
 		SELECT id, name, uri, uname, pword, sort_order, max_cnx,
 		       max_stream_to, retry_delay, max_retries, max_failures,
 		       min_data_size, user_agent, req_origin, req_referer,
@@ -54,7 +54,7 @@ func GetAllSources() ([]Source, error) {
 // GetSource returns a single source by its primary key.
 // Returns sql.ErrNoRows if the ID does not exist.
 func GetSource(id int64) (Source, error) {
-	row := Get().QueryRow(`
+	row := GetReader().QueryRow(`
 		SELECT id, name, uri, uname, pword, sort_order, max_cnx,
 		       max_stream_to, retry_delay, max_retries, max_failures,
 		       min_data_size, user_agent, req_origin, req_referer,

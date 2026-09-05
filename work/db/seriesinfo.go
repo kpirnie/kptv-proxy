@@ -26,7 +26,7 @@ type SeriesEpisode struct {
 // GetSeriesInfo returns the cached get_series_info payload for a source's series,
 // along with whether it is still within the supplied TTL.
 func GetSeriesInfo(sourceURL, seriesID string, ttl time.Duration) (string, bool) {
-	row := Get().QueryRow(
+	row := GetReader().QueryRow(
 		`SELECT payload, fetched_at FROM kp_series_info WHERE source_url = ? AND series_id = ?`,
 		sourceURL, seriesID,
 	)
@@ -63,7 +63,7 @@ func SetSeriesInfo(sourceURL, seriesID, payload string) error {
 // GetSeriesEpisode resolves a proxy episode ID to a single upstream origin,
 // preferring the earliest recorded mapping.
 func GetSeriesEpisode(episodeID int) (SeriesEpisode, bool) {
-	row := Get().QueryRow(
+	row := GetReader().QueryRow(
 		`SELECT episode_id, channel_name, season, episode, source_url, series_id, upstream_id, extension
 		 FROM kp_series_episodes WHERE episode_id = ? ORDER BY id LIMIT 1`,
 		episodeID,
@@ -79,7 +79,7 @@ func GetSeriesEpisode(episodeID int) (SeriesEpisode, bool) {
 // GetSeriesEpisodeSources returns every provider mapping recorded for a proxy
 // episode ID, so playback can walk them in the channel's own stream order.
 func GetSeriesEpisodeSources(episodeID int) []SeriesEpisode {
-	rows, err := Get().Query(
+	rows, err := GetReader().Query(
 		`SELECT episode_id, channel_name, season, episode, source_url, series_id, upstream_id, extension
 		 FROM kp_series_episodes WHERE episode_id = ? ORDER BY id`,
 		episodeID,
