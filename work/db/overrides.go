@@ -15,6 +15,37 @@ type StreamOverride struct {
 	DeadReason string
 }
 
+// OverrideKey builds the composite map key used by the in-memory override
+// snapshot. The NUL separator cannot appear in a channel name or a hash.
+func OverrideKey(channelName, hash string) string {
+	return channelName + "\x00" + hash
+}
+
+// GetAllStreamOverrides returns every persisted override keyed by OverrideKey,
+// for callers that check many streams in a single pass.
+func GetAllStreamOverrides() (map[string]StreamOverride, error) {
+	rows, err := GetReader().Query(`
+		SELECT channel, s_hash, s_status, s_order, dead_reason
+		FROM kp_stream_overrides`)
+	if err != nil {
+		logger.Error("{db/overrides - GetAllStreamOverrides} query: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]StreamOverride)
+	for rows.Next() {
+		var channel string
+		var o StreamOverride
+		if err := rows.Scan(&channel, &o.Hash, &o.SStatus, &o.SOrder, &o.DeadReason); err != nil {
+			logger.Error("{db/overrides - GetAllStreamOverrides} scan: %v", err)
+			return nil, err
+		}
+		out[OverrideKey(channel, o.Hash)] = o
+	}
+	return out, rows.Err()
+}
+
 // GetStreamOverride returns the persisted override for a channel/hash pair.
 // Returns false if no row exists.
 func GetStreamOverride(channelName, hash string) (StreamOverride, bool) {
