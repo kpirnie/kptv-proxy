@@ -168,7 +168,12 @@ func UpsertBatch(localSourceID int64, entries []*MediaEntry) error {
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	InvalidateExport()
+	return nil
 }
 
 // UpdateEntry rewrites a single stored entry, matched on its primary key.
@@ -221,7 +226,12 @@ func DeleteMissing(localSourceID int64, active map[string]struct{}) error {
 	}
 
 	logger.Debug("{localscan/store - DeleteMissing} removed %d stale entries for source %d", len(stale), localSourceID)
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	InvalidateExport()
+	return nil
 }
 
 // DeleteAllForSource removes every stored entry belonging to a local source.
@@ -229,8 +239,11 @@ func DeleteAllForSource(localSourceID int64) error {
 	_, err := db.Get().Exec(`DELETE FROM kp_local_media WHERE local_source_id = ?`, localSourceID)
 	if err != nil {
 		logger.Error("{localscan/store - DeleteAllForSource} id=%d: %v", localSourceID, err)
+		return err
 	}
-	return err
+
+	InvalidateExport()
+	return nil
 }
 
 // PathWithinSource reports whether path resolves inside the configured root of

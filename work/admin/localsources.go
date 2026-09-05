@@ -80,7 +80,7 @@ func handleCreateLocalSource(_ *proxy.StreamProxy) http.HandlerFunc {
 			http.Error(w, "Failed to create local source", http.StatusInternalServerError)
 			return
 		}
-
+		localscan.InvalidateExport()
 		addLogEntry("info", fmt.Sprintf("Local source created: %s", incoming.Name))
 
 		w.WriteHeader(http.StatusOK)
@@ -125,7 +125,7 @@ func handleUpdateLocalSource(_ *proxy.StreamProxy) http.HandlerFunc {
 				addLogEntry("error", fmt.Sprintf("Failed to clear local media for source %d: %v", id, err))
 			}
 		}
-
+		localscan.InvalidateExport()
 		addLogEntry("info", fmt.Sprintf("Local source updated: %s", incoming.Name))
 
 		w.WriteHeader(http.StatusOK)
@@ -149,7 +149,7 @@ func handleDeleteLocalSource(_ *proxy.StreamProxy) http.HandlerFunc {
 			http.Error(w, "Failed to delete local source", http.StatusInternalServerError)
 			return
 		}
-
+		localscan.InvalidateExport()
 		addLogEntry("info", fmt.Sprintf("Local source deleted: %d", id))
 
 		w.WriteHeader(http.StatusOK)

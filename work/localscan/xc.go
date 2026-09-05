@@ -9,7 +9,57 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
+
+var (
+	exportCache atomic.Pointer[[]*MediaEntry]
+	exportIndex atomic.Pointer[map[int]*MediaEntry]
+	exportMu    sync.Mutex
+)
+
+// InvalidateExport drops the cached export snapshot. Called after every write
+// to kp_local_media and after any change to the local sources that supply
+// group prefixes or enabled state.
+func InvalidateExport() {
+	exportCache.Store(nil)
+	exportIndex.Store(nil)
+}
+
+// exportSnapshot returns the shared export snapshot, loading the library from
+// the database on first use. Entries are shared and prefixes are already
+// applied — callers must treat them as read-only.
+func exportSnapshot() []*MediaEntry {
+	if p := exportCache.Load(); p != nil {
+		return *p
+	}
+
+	exportMu.Lock()
+	defer exportMu.Unlock()
+
+	if p := exportCache.Load(); p != nil {
+		return *p
+	}
+
+	entries, err := ListAll()
+	if err != nil {
+		logger.Error("{localscan/xc - exportSnapshot} failed to load local media: %v", err)
+		return nil
+	}
+
+	prefixes := groupPrefixes()
+	index := make(map[int]*MediaEntry, len(entries))
+	for _, e := range entries {
+		e.GroupTitle = applyGroupPrefix(prefixes[e.LocalSourceID], e.GroupTitle)
+		index[XCStreamID(e.Hash)] = e
+	}
+
+	exportCache.Store(&entries)
+	exportIndex.Store(&index)
+	logger.Debug("{localscan/xc - exportSnapshot} snapshot built with %d entries", len(entries))
+	return entries
+}
 
 // XCStreamID generates a stable positive integer stream ID from an entry hash,
 // matching the FNV32a scheme the XC output uses for channel names.
@@ -24,19 +74,10 @@ func XCStreamID(hash string) int {
 }
 
 // ExportEntries returns every stored entry belonging to an enabled local
-// source, with its source's group prefix already applied to GroupTitle.
+// source, with its source's group prefix already applied to GroupTitle. The
+// returned entries are shared and must not be modified.
 func ExportEntries() []*MediaEntry {
-	entries, err := ListAll()
-	if err != nil {
-		logger.Error("{localscan/xc - ExportEntries} failed to load local media: %v", err)
-		return nil
-	}
-
-	prefixes := groupPrefixes()
-	for _, e := range entries {
-		e.GroupTitle = applyGroupPrefix(prefixes[e.LocalSourceID], e.GroupTitle)
-	}
-	return entries
+	return exportSnapshot()
 }
 
 // EntriesForContentType returns export entries whose content classification
@@ -56,18 +97,13 @@ func EntriesForContentType(contentType string) []*MediaEntry {
 // FindByXCStreamID resolves an XC stream ID back to its local media entry,
 // returning nil when no entry matches.
 func FindByXCStreamID(id int) *MediaEntry {
-	entries, err := ListAll()
-	if err != nil {
-		logger.Error("{localscan/xc - FindByXCStreamID} failed to load local media: %v", err)
+	exportSnapshot()
+
+	m := exportIndex.Load()
+	if m == nil {
 		return nil
 	}
-
-	for _, e := range entries {
-		if XCStreamID(e.Hash) == id {
-			return e
-		}
-	}
-	return nil
+	return (*m)[id]
 }
 
 // ContainerExtension returns the entry's file extension without its leading
