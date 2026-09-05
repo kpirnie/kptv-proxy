@@ -68,6 +68,7 @@ type StreamProxy struct {
 	rateLimiterMutex      sync.RWMutex                         // protects concurrent access to the rate limiter map
 	FilterManager         *filter.FilterManager                // handles stream filtering rules from configuration
 	importGeneration      atomic.Uint64                        // bumped on each committed import so cached playlists are not reused across imports
+	groupIndex            atomic.Pointer[map[string]struct{}]  // lowercased set of known group titles, rebuilt on each committed import
 }
 
 // New creates and initializes a new StreamProxy instance with all required dependencies.
@@ -386,6 +387,7 @@ func (sp *StreamProxy) ImportStreams() {
 	// invalidate previously generated playlists so a partial or empty render
 	// from an earlier import window is never served after a good commit
 	sp.importGeneration.Add(1)
+	sp.rebuildGroupIndex()
 
 	logger.Debug("{proxy/stream - ImportStreams} Import committed %d channels (%d sources carried forward)", len(newChannels), len(failedSources))
 }
@@ -467,6 +469,13 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	if t := strings.ToLower(groupFilter); t == "live" || t == "vod" || t == "series" {
 		typeFilter = t
 		groupFilter = ""
+	}
+
+	// reject unknown group names before they reach the cache key
+	if groupFilter != "" && !sp.IsKnownGroup(groupFilter) {
+		logger.Debug("{proxy/stream - GeneratePlaylist} Unknown group requested: %s", groupFilter)
+		http.Error(w, "Group not found", http.StatusNotFound)
+		return
 	}
 
 	// construct cache key per account and import generation, with optional group
@@ -625,6 +634,37 @@ func (sp *StreamProxy) GetChannelGroup(attrs map[string]string) string {
 		return group
 	}
 	return "All"
+}
+
+// rebuildGroupIndex snapshots the group titles present in the current channel
+// catalog. Built once per import so playlist requests can reject unknown groups
+// without walking the channel map.
+func (sp *StreamProxy) rebuildGroupIndex() {
+	groups := make(map[string]struct{})
+
+	sp.Channels.Range(func(_ string, channel *types.Channel) bool {
+		channel.Mu.RLock()
+		if len(channel.Streams) > 0 {
+			groups[strings.ToLower(sp.GetChannelGroup(channel.Streams[0].Attributes))] = struct{}{}
+		}
+		channel.Mu.RUnlock()
+		return true
+	})
+
+	sp.groupIndex.Store(&groups)
+	logger.Debug("{proxy/stream - rebuildGroupIndex} Indexed %d groups", len(groups))
+}
+
+// IsKnownGroup reports whether the supplied group title exists in the current
+// catalog. The {group} path segment is client-controlled and forms part of the
+// playlist cache key, so an unknown value must never reach a render or a Set.
+func (sp *StreamProxy) IsKnownGroup(group string) bool {
+	m := sp.groupIndex.Load()
+	if m == nil {
+		return false
+	}
+	_, ok := (*m)[strings.ToLower(group)]
+	return ok
 }
 
 // StartImportRefresh initiates periodic background import refresh at the interval
