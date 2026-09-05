@@ -33,6 +33,7 @@ func handleGetChannelEPG(_ *proxy.StreamProxy) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]string{
 			"epg_id":   mapping.EPGID,
 			"epg_name": mapping.EPGName,
+			"now":      epgindex.NowTitle(mapping.EPGID),
 		})
 	}
 }

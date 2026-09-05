@@ -49,6 +49,7 @@ function renderActiveChannels(channels) {
                             <span class="connection-dot status-active"></span>
                             ${channel.clients || 0} client(s) connected
                         </div>
+                        ${channel.now ? `<div class="text-xs text-gray-400 mt-1">Now: ${escapeHtml(channel.now)}</div>` : ""}
                         <div class="mt-2 flex flex-wrap gap-1" id="stats-${safeId}">
                             <span class="text-xs text-gray-400">Loading stats...</span>
                         </div>

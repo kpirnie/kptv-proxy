@@ -3,7 +3,9 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/db"
 	"kptv-proxy/work/deadstreams"
+	"kptv-proxy/work/epgindex"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
@@ -160,6 +162,14 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		for _, session := range sessions {
 			channels = append(channels, *session)
+		}
+
+		if epgMap, err := db.GetAllChannelEPGMap(); err == nil {
+			for i := range channels {
+				if id, ok := epgMap[channels[i].Name]; ok && id != "" {
+					channels[i].Now = epgindex.NowTitle(id)
+				}
+			}
 		}
 
 		if err := json.NewEncoder(w).Encode(channels); err != nil {

@@ -62,9 +62,13 @@ async function showEPGChannelModal(channelName) {
 function renderCurrentEPGMapping(mapping) {
     const el = document.getElementById('epg-channel-current');
     if (mapping.epg_id) {
-        el.innerHTML = `Current mapping: <span class="text-white font-semibold"></span> <span class="text-gray-500"></span>`;
+        el.innerHTML = `Current mapping: <span class="text-white font-semibold"></span> <span class="text-gray-500"></span><div class="text-xs text-gray-400 mt-1 epg-now hidden">Now: <span class="epg-now-title"></span></div>`;
         el.querySelector('.text-white').textContent = mapping.epg_name;
         el.querySelector('.text-gray-500').textContent = `(${mapping.epg_id})`;
+        if (mapping.now) {
+            el.querySelector('.epg-now-title').textContent = mapping.now;
+            el.querySelector('.epg-now').classList.remove('hidden');
+        }
     } else {
         el.textContent = 'No mapping set';
     }
@@ -158,7 +162,11 @@ async function selectEPGChannel(epgID, epgName) {
             body: JSON.stringify({ epg_id: epgID, epg_name: epgName })
         });
         showNotification(`EPG mapped to ${epgName} for ${currentEPGChannelName}`, 'success');
-        renderCurrentEPGMapping({ epg_id: epgID, epg_name: epgName });
+        try {
+            renderCurrentEPGMapping(await apiCall(`/api/channels/${encodeURIComponent(currentEPGChannelName)}/epg`));
+        } catch (error) {
+            renderCurrentEPGMapping({ epg_id: epgID, epg_name: epgName });
+        }
         document.getElementById('epg-channel-search').value = '';
         document.getElementById('epg-channel-results').innerHTML = '';
     } catch (error) {

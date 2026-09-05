@@ -35,6 +35,7 @@ type ChannelResponse struct {
 	Sources          int    `json:"sources"`
 	URL              string `json:"url"`
 	LogoURL          string `json:"logoURL"`
+	Now              string `json:"now"`
 }
 
 // StreamInfo provides detailed information about individual streams within a channel,

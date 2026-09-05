@@ -253,6 +253,18 @@ func Programmes(channelID string, after time.Time, limit int) []EPGProgramme {
 	return out
 }
 
+// NowTitle returns the title of the programme airing right now on the given
+// channel id, or an empty string when nothing is currently scheduled.
+func NowTitle(channelID string) string {
+	now := time.Now()
+	for _, p := range Programmes(channelID, now, 1) {
+		if !p.Start.After(now) {
+			return p.Title
+		}
+	}
+	return ""
+}
+
 // parseXMLTVTime handles the standard XMLTV timestamp with or without a zone.
 func parseXMLTVTime(s string) (time.Time, bool) {
 	s = strings.TrimSpace(s)

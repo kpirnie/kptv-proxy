@@ -22,27 +22,6 @@ import (
 // as either a JSON string or a JSON number.
 type XCID string
 
-// UnmarshalJSON decodes an XC identifier from either a string or a numeric JSON value.
-func (id *XCID) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
-		*id = ""
-		return nil
-	}
-
-	var value string
-	if err := json.Unmarshal(data, &value); err == nil {
-		*id = XCID(value)
-		return nil
-	}
-
-	var number json.Number
-	if err := json.Unmarshal(data, &number); err != nil {
-		return err
-	}
-	*id = XCID(number.String())
-	return nil
-}
-
 // XCCategory holds the flat category metadata used to resolve display group names.
 type XCCategory struct {
 	CategoryID   XCID   `json:"category_id"`
@@ -82,6 +61,27 @@ type XCVODStream struct {
 	CategoryID         XCID   `json:"category_id"`         // Category identifier for grouping related video content
 	StreamIcon         string `json:"stream_icon"`         // URL to video thumbnail/poster image for display purposes
 	ContainerExtension string `json:"container_extension"` // File format extension (mp4, mkv, etc.) for container type identification
+}
+
+// UnmarshalJSON decodes an XC identifier from either a string or a numeric JSON value.
+func (id *XCID) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*id = ""
+		return nil
+	}
+
+	var value string
+	if err := json.Unmarshal(data, &value); err == nil {
+		*id = XCID(value)
+		return nil
+	}
+
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err != nil {
+		return err
+	}
+	*id = XCID(number.String())
+	return nil
 }
 
 // processLiveBatchWorker processes a batch of XC live streams into internal Stream
