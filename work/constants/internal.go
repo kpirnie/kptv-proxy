@@ -206,12 +206,13 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	// work/cache/cache.go — NewCache()
 	// -------------------------------------------------------------------------
-	CacheMaxSize int // Maximum number of entries in the otter in-memory cache
+	CacheMaxWeight uint64 // Maximum total weight (bytes of key+value) in the otter in-memory cache
 
 	// -------------------------------------------------------------------------
 	// work/cache/cache.go — newEPGStore()
 	// -------------------------------------------------------------------------
-	EPGDiskTTL time.Duration // TTL for EPG data written to the disk cache
+	EPGDiskTTL   time.Duration // TTL for EPG data written to the disk cache
+	EPGCachePath string        // Filesystem path for the disk-backed EPG cache
 
 	// -------------------------------------------------------------------------
 	// work/users/session.go — CreateSession()
@@ -421,6 +422,7 @@ var Internal = InternalConstants{
 	EPGSourceTimeout:   5 * time.Minute,
 	EPGGlobalTimeout:   15 * time.Minute,
 	EPGDiskTTL:         12 * time.Hour,
+	EPGCachePath:       "/settings/kptv-epg",
 
 	// -------------------------------------------------------------------------
 	// Stream failure
@@ -448,7 +450,7 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	// Cache
 	// -------------------------------------------------------------------------
-	CacheMaxSize: 5_000, // Maximum entries in the otter in-memory cache
+	CacheMaxWeight: 256 << 20, // 256MB of cached playlist/XC payloads
 
 	// -------------------------------------------------------------------------
 	// Users / auth

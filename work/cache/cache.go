@@ -2,11 +2,13 @@ package cache
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -45,7 +47,7 @@ func newEPGStore(dir string, ttl time.Duration) (*epgStore, error) {
 
 // create the full hashed file path for a given EPG key
 func (e *epgStore) path(key string) string {
-	return filepath.Join(e.dir, fmt.Sprintf("%d.xml", hashKey(key)))
+	return filepath.Join(e.dir, fmt.Sprintf("%s.xml", hashKey(key)))
 }
 
 // set writes raw EPG XML to disk using atomic temp+rename
@@ -254,14 +256,22 @@ func (c *Cache) RefreshEPG(write func(io.Writer) (bool, error)) (bool, error) {
 // small entries (M3U8/XC) and disk for EPG data.
 func NewCache(duration time.Duration) (*Cache, error) {
 
-	// create the otter cache with write-based expiry
+	// create the otter cache bounded by payload weight — entries are rendered
+	// playlists and marshaled stream slices, so an entry count is no bound at all
 	c := otter.Must(&otter.Options[string, string]{
-		MaximumSize:      constants.Internal.CacheMaxSize,
+		MaximumWeight: constants.Internal.CacheMaxWeight,
+		Weigher: func(key string, value string) uint32 {
+			w := len(key) + len(value)
+			if w > math.MaxUint32 {
+				return math.MaxUint32
+			}
+			return uint32(w)
+		},
 		ExpiryCalculator: otter.ExpiryWriting[string, string](duration),
 	})
 
 	// create the disk-backed EPG store
-	epg, err := newEPGStore("/tmp/kptv-epg", constants.Internal.EPGDiskTTL)
+	epg, err := newEPGStore(constants.Internal.EPGCachePath, constants.Internal.EPGDiskTTL)
 	if err != nil {
 		logger.Error("{cache - NewCache} failed to create EPG store: %v", err)
 		return nil, err
@@ -279,27 +289,27 @@ func NewCache(duration time.Duration) (*Cache, error) {
 // GetM3U8 retrieves an M3U8 playlist from the in-memory cache.
 func (c *Cache) GetM3U8(key string) (string, bool) {
 	logger.Debug("{cache - GetM3U8} get the cached m3u8")
-	value, ok := c.cache.GetIfPresent(fmt.Sprintf("%d", hashKey(key)))
+	value, ok := c.cache.GetIfPresent(hashKey(key))
 	return value, ok
 }
 
 // SetM3U8 stores an M3U8 playlist in the in-memory cache.
 func (c *Cache) SetM3U8(key, value string) {
 	logger.Debug("{cache - SetM3U8} set m3u8 to cache")
-	c.cache.Set(fmt.Sprintf("%d", hashKey(key)), value)
+	c.cache.Set(hashKey(key), value)
 }
 
 // GetXCData retrieves XC API response data from the in-memory cache.
 func (c *Cache) GetXCData(key string) (string, bool) {
 	logger.Debug("{cache - GetXCData} get the cached xtream code data")
-	value, ok := c.cache.GetIfPresent(fmt.Sprintf("%d", hashKey(key)))
+	value, ok := c.cache.GetIfPresent(hashKey(key))
 	return value, ok
 }
 
 // SetXCData stores XC API response data in the in-memory cache.
 func (c *Cache) SetXCData(key, value string) {
 	logger.Debug("{cache - SetXCData} set the xtream code data to cache")
-	c.cache.Set(fmt.Sprintf("%d", hashKey(key)), value)
+	c.cache.Set(hashKey(key), value)
 }
 
 // ClearIfNeeded is kept for API compatibility. Otter handles eviction automatically.
@@ -319,9 +329,10 @@ func (c *Cache) Close() {
 	c.cache.StopAllGoroutines()
 }
 
-// hashKey converts string keys to uint64 hashes for more efficient cache lookups
-func hashKey(key string) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(key))
-	return h.Sum64()
+// hashKey converts string keys to hex digests for cache lookups. SHA-256 rather
+// than FNV because part of the key is client-supplied and a collision would
+// serve one account's cached payload to another.
+func hashKey(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
 }
