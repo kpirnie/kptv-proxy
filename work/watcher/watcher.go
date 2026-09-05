@@ -145,12 +145,17 @@ func (wm *WatcherManager) Stop() {
 	// Signal background processes to terminate gracefully
 	close(wm.stopChan)
 
-	// Terminate all active stream watchers with proper cleanup
+	// Terminate all active stream watchers with proper cleanup. LoadAndDelete
+	// clears the registry and releases each semaphore slot, so a later Start()
+	// begins with an empty registry and a fully available semaphore.
 	watcherCount := 0
-	wm.watchers.Range(func(key string, watcher *StreamWatcher) bool {
-		logger.Debug("{watcher - Stop} Stopping watcher for channel: %s", key)
-		watcher.Stop()
-		watcherCount++
+	wm.watchers.Range(func(key string, _ *StreamWatcher) bool {
+		if watcher, exists := wm.watchers.LoadAndDelete(key); exists {
+			logger.Debug("{watcher - Stop} Stopping watcher for channel: %s", key)
+			watcher.Stop()
+			<-watcherSemaphore
+			watcherCount++
+		}
 		return true
 	})
 
@@ -270,12 +275,15 @@ func (wm *WatcherManager) cleanupRoutine() {
 			cleanedCount := 0
 			wm.watchers.Range(func(key string, watcher *StreamWatcher) bool {
 				if !watcher.restreamer.Running.Load() {
-					logger.Debug("{watcher - cleanupRoutine} Removing watcher for stopped channel: %s", key)
-					watcher.Stop()
-					wm.watchers.Delete(key)
-					// release the slot so new watchers can be created
-					<-watcherSemaphore
-					cleanedCount++
+					// LoadAndDelete so a concurrent StopWatching or Stop on the same
+					// key cannot also release the slot; a double release drains the
+					// semaphore and the next receive here blocks this routine forever
+					if w, exists := wm.watchers.LoadAndDelete(key); exists {
+						logger.Debug("{watcher - cleanupRoutine} Removing watcher for stopped channel: %s", key)
+						w.Stop()
+						<-watcherSemaphore
+						cleanedCount++
+					}
 				}
 				return true
 			})
