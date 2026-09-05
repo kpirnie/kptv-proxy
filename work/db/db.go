@@ -3,17 +3,33 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
+	"runtime"
 	"sync"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
+// dbPragmas is applied through the DSN rather than with Exec so that every
+// pooled connection comes up configured; an Exec only configures whichever
+// connection happens to serve it.
+const dbPragmas = "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)"
+
+// maxReaderConns caps the read pool regardless of core count.
+const maxReaderConns = 8
+
 var (
 	instance *sql.DB
+	reader   *sql.DB
 	once     sync.Once
 )
+
+// dsn builds the sqlite connection string for the configured database file.
+func dsn() string {
+	return fmt.Sprintf("file:%s?%s", constants.Internal.DatabasePath, dbPragmas)
+}
 
 // Get returns the singleton database connection, initializing it on first call.
 // The database file is created at /settings/kptv.db if it does not exist.
@@ -21,13 +37,13 @@ var (
 func Get() *sql.DB {
 	once.Do(func() {
 		var err error
-		instance, err = sql.Open("sqlite3", constants.Internal.DatabasePath)
+		instance, err = sql.Open("sqlite3", dsn())
 		if err != nil {
 			logger.Error("{db - Get} Failed to open database: %v", err)
 			panic(err)
 		}
 
-		// SQLite performs best with a single writer; cap the pool accordingly.
+		// SQLite permits one writer at a time; the write pool stays capped at one.
 		instance.SetMaxOpenConns(1)
 
 		if err = initSchema(instance); err != nil {
@@ -35,13 +51,43 @@ func Get() *sql.DB {
 			panic(err)
 		}
 
+		reader, err = sql.Open("sqlite3", dsn())
+		if err != nil {
+			logger.Error("{db - Get} Failed to open reader pool: %v", err)
+			panic(err)
+		}
+
+		// WAL allows concurrent readers alongside the single writer.
+		readerConns := runtime.NumCPU()
+		if readerConns > maxReaderConns {
+			readerConns = maxReaderConns
+		}
+		if readerConns < 2 {
+			readerConns = 2
+		}
+		reader.SetMaxOpenConns(readerConns)
+		reader.SetMaxIdleConns(readerConns)
+
 	})
 	return instance
+}
+
+// GetReader returns the read-only connection pool, initializing the database on
+// first call if necessary. Use it for every SELECT path; writes must go through
+// Get so they stay serialized on the single write connection.
+func GetReader() *sql.DB {
+	Get()
+	return reader
 }
 
 // Close shuts down the database connection. Should be called during application
 // shutdown after all other components have stopped accessing the database.
 func Close() {
+	if reader != nil {
+		if err := reader.Close(); err != nil {
+			logger.Error("{db - Close} Error closing reader pool: %v", err)
+		}
+	}
 	if instance != nil {
 		if err := instance.Close(); err != nil {
 			logger.Error("{db - Close} Error closing database: %v", err)
@@ -52,16 +98,6 @@ func Close() {
 // initSchema applies PRAGMA settings and creates all tables and indexes
 // if they do not already exist. Safe to call on every startup.
 func initSchema(db *sql.DB) error {
-	for _, pragma := range []string{
-		`PRAGMA journal_mode = WAL;`,
-		`PRAGMA busy_timeout = 5000;`,
-		`PRAGMA synchronous = NORMAL;`,
-		`PRAGMA foreign_keys = ON;`,
-	} {
-		if _, err := db.Exec(pragma); err != nil {
-			return err
-		}
-	}
 
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS kp_settings (
