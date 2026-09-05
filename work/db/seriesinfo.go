@@ -99,6 +99,9 @@ func GetSeriesEpisodeSources(episodeID int) []SeriesEpisode {
 		}
 		mappings = append(mappings, e)
 	}
+	if err := rows.Err(); err != nil {
+		logger.Error("{db/seriesinfo - GetSeriesEpisodeSources} rows episode=%d: %v", episodeID, err)
+	}
 	return mappings
 }
 

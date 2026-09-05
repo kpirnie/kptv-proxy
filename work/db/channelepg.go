@@ -43,6 +43,10 @@ func GetAllChannelEPGMap() (map[string]string, error) {
 		}
 		m[channel] = epgID
 	}
+	if err := rows.Err(); err != nil {
+		logger.Error("{db/channelepg - GetAllChannelEPGMap} Failed to iterate channel EPG map: %v", err)
+		return nil, err
+	}
 	return m, nil
 }
 

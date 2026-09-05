@@ -333,6 +333,9 @@ func rebuildSeriesEpisodes(db *sql.DB) error {
 			current = true
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
 	if current {
 		return nil
 	}
