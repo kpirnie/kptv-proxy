@@ -114,6 +114,7 @@ func SetupHDHRRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/lineup_status.json", users.RequireLocalNetwork(handleHDHRLineupStatus())).Methods("GET")
 	router.HandleFunc("/lineup.json", users.RequireLocalNetwork(handleHDHRLineup(sp))).Methods("GET")
 	router.HandleFunc("/lineup.post", users.RequireLocalNetwork(handleHDHRLineupPost())).Methods("POST", "GET")
+	router.HandleFunc("/hdhr/{channel}", users.RequireLocalNetwork(handleHDHRStream(sp))).Methods("GET", "HEAD")
 
 }
 
@@ -215,7 +216,7 @@ func handleHDHRLineup(sp *proxy.StreamProxy) http.HandlerFunc {
 			lineup = append(lineup, hdhrLineupEntry{
 				GuideNumber: hdhrGuideNumber(item.name),
 				GuideName:   item.name,
-				URL:         fmt.Sprintf("%s/s/%s", sp.Config.BaseURL, utils.SanitizeChannelName(item.name)),
+				URL:         fmt.Sprintf("%s/hdhr/%s", sp.Config.BaseURL, utils.SanitizeChannelName(item.name)),
 				HD:          1,
 				Favorite:    0,
 			})
@@ -233,5 +234,26 @@ func handleHDHRLineupPost() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		logger.Debug("{handlers/hdhr - handleHDHRLineupPost} scan request acknowledged from %s", r.RemoteAddr)
+	}
+}
+
+// handleHDHRStream serves a channel to an HDHomeRun client. HDHomeRun has no
+// credential concept, so this route carries no username/password and is
+// restricted to the local network by RequireLocalNetwork at registration —
+// the same trust boundary as the rest of the HDHR endpoints.
+func handleHDHRStream(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		safeName := mux.Vars(r)["channel"]
+
+		channelName := sp.FindChannelBySafeName(safeName)
+		channel, exists := sp.Channels.Load(channelName)
+		if !exists {
+			logger.Error("{handlers/hdhr - handleHDHRStream} Channel not found: %s", channelName)
+			http.Error(w, "Channel not found", http.StatusNotFound)
+			return
+		}
+
+		logger.Debug("{handlers/hdhr - handleHDHRStream} handling stream for channel: %s", channelName)
+		sp.HandleRestreamingClient(w, r, channel)
 	}
 }
