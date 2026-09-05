@@ -252,6 +252,20 @@ func findXCAccount(cfg *config.Config, username, password string) *config.XCOutp
 	return found
 }
 
+// acquireXCConnection reserves a connection slot on an XC output account for
+// the life of a playback request and returns the release func. The reservation
+// is made with a single atomic add and rolled back when it exceeds the limit,
+// so concurrent starts cannot both pass a check-then-increment.
+func acquireXCConnection(w http.ResponseWriter, account *config.XCOutputAccount) (func(), bool) {
+	if account.ActiveConns.Add(1) > int32(account.MaxConnections) {
+		account.ActiveConns.Add(-1)
+		logger.Warn("{handlers/xcoutput - acquireXCConnection} Account %s at connection limit (%d)", account.Name, account.MaxConnections)
+		http.Error(w, "Connection limit reached", http.StatusTooManyRequests)
+		return nil, false
+	}
+	return func() { account.ActiveConns.Add(-1) }, true
+}
+
 // findChannelByStreamID locates a channel name by its hashed stream ID.
 func findChannelByStreamID(sp *proxy.StreamProxy, id int) string {
 	var found string
@@ -517,13 +531,11 @@ func HandleXCPlayerAPI(sp *proxy.StreamProxy) http.HandlerFunc {
 		}
 
 		if action != "" {
-			if account.ActiveConns.Load() >= int32(account.MaxConnections) {
-				logger.Warn("{handlers/xcoutput - HandleXCPlayerAPI} Account %s at connection limit (%d)", account.Name, account.MaxConnections)
-				http.Error(w, "Connection limit reached", http.StatusTooManyRequests)
+			release, ok := acquireXCConnection(w, account)
+			if !ok {
 				return
 			}
-			account.ActiveConns.Add(1)
-			defer account.ActiveConns.Add(-1)
+			defer release()
 		}
 
 		serverInfo := buildXCServerInfo(sp.Config.BaseURL)
@@ -678,11 +690,19 @@ func handleXCStream(sp *proxy.StreamProxy, redirectM3U8 bool) http.HandlerFunc {
 		password := vars["password"]
 		rawID := vars["id"]
 
+		// find the account
 		account := findXCAccount(sp.Config, username, password)
 		if account == nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		// get the connection
+		release, ok := acquireXCConnection(w, account)
+		if !ok {
+			return
+		}
+		defer release()
 
 		id := rawID
 		if dotIdx := strings.LastIndex(rawID, "."); dotIdx != -1 {
