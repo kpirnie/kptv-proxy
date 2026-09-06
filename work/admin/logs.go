@@ -5,7 +5,6 @@ import (
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"net/http"
-	"time"
 )
 
 // Global log buffer vars
@@ -24,20 +23,18 @@ type LogEntry struct {
 	Message   string `json:"message"`   // Complete log message content for analysis
 }
 
-// addLogEntry adds a new entry to the admin log buffer with automatic size management.
-// Maintains a circular buffer capped at 1000 entries to prevent unbounded memory growth.
+// addLogEntry records an admin-interface event in the shared logger buffer,
+// which handleGetLogs reads and which serializes its own writes.
 func addLogEntry(level, message string) {
-	entry := LogEntry{
-		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
-		Level:     level,
-		Message:   message,
-	}
-
-	logEntries = append(logEntries, entry)
-
-	// Maintain circular buffer with 1000 entry limit
-	if len(logEntries) > constants.Internal.AdminMaxLogEntries {
-		logEntries = logEntries[len(logEntries)-constants.Internal.AdminMaxLogEntries:]
+	switch level {
+	case "error":
+		logger.Error("%s", message)
+	case "warn":
+		logger.Warn("%s", message)
+	case "debug":
+		logger.Debug("%s", message)
+	default:
+		logger.Info("%s", message)
 	}
 }
 
