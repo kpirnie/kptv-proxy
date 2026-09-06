@@ -3,6 +3,7 @@ package epgindex
 import (
 	"encoding/xml"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -38,75 +39,74 @@ var (
 	reDesc           = regexp.MustCompile(`(?s)<desc[^>]*>(.*?)</desc>`)
 )
 
-// Rebuild parses the merged XMLTV string and replaces the in-memory index.
-// Called after each EPG cache refresh.
-func Rebuild(xmltv string) {
-	matches := reChannelBlock.FindAllStringSubmatch(xmltv, -1)
+// ProgrammeBuilder parses <programme> fragments as they arrive and holds only
+// the decoded result, so a refresh never retains the raw XML for the whole
+// guide. Commit publishes the accumulated set as the programme index.
+type ProgrammeBuilder struct {
+	mu    sync.Mutex
+	progs map[string][]EPGProgramme
+}
 
-	fresh := make([]EPGChannel, 0, len(matches))
-	for _, m := range matches {
-		// skip channels with no usable id; they cannot be mapped and render
-		// as titleless rows in the mapping picker
-		if strings.TrimSpace(m[1]) == "" {
-			continue
-		}
-		ch := EPGChannel{ID: m[1]}
-		for _, dn := range reDisplayName.FindAllStringSubmatch(m[2], -1) {
-			name := strings.TrimSpace(dn[1])
-			if name != "" {
-				ch.DisplayNames = append(ch.DisplayNames, name)
-			}
-		}
-		fresh = append(fresh, ch)
+// NewProgrammeBuilder returns an empty builder ready to accept fragments.
+func NewProgrammeBuilder() *ProgrammeBuilder {
+	return &ProgrammeBuilder{progs: make(map[string][]EPGProgramme)}
+}
+
+// Add parses a single raw XMLTV <programme> element and retains its decoded
+// form. Fragments without a channel, start, or stop are dropped.
+func (b *ProgrammeBuilder) Add(element string) {
+	pm := reProgrammeBlock.FindStringSubmatch(element)
+	if pm == nil {
+		return
+	}
+	attrs, body := pm[1], pm[2]
+
+	chm := reAttrChannel.FindStringSubmatch(attrs)
+	if chm == nil || strings.TrimSpace(chm[1]) == "" {
+		return
+	}
+	sm := reAttrStart.FindStringSubmatch(attrs)
+	em := reAttrStop.FindStringSubmatch(attrs)
+	if sm == nil || em == nil {
+		return
+	}
+	start, ok1 := parseXMLTVTime(sm[1])
+	stop, ok2 := parseXMLTVTime(em[1])
+	if !ok1 || !ok2 {
+		return
 	}
 
-	// index programmes by channel id for XC guide lookups — the merged doc
-	// only contains mapped channels' programmes, so this stays bounded
-	freshProgs := make(map[string][]EPGProgramme)
-	for _, pm := range reProgrammeBlock.FindAllStringSubmatch(xmltv, -1) {
-		attrs, body := pm[1], pm[2]
-
-		chm := reAttrChannel.FindStringSubmatch(attrs)
-		if chm == nil || strings.TrimSpace(chm[1]) == "" {
-			continue
-		}
-		sm := reAttrStart.FindStringSubmatch(attrs)
-		em := reAttrStop.FindStringSubmatch(attrs)
-		if sm == nil || em == nil {
-			continue
-		}
-		start, ok1 := parseXMLTVTime(sm[1])
-		stop, ok2 := parseXMLTVTime(em[1])
-		if !ok1 || !ok2 {
-			continue
-		}
-
-		p := EPGProgramme{Start: start, Stop: stop}
-		if tm := reTitle.FindStringSubmatch(body); tm != nil {
-			p.Title = decodeXMLText(strings.TrimSpace(tm[1]))
-		}
-		if dm := reDesc.FindStringSubmatch(body); dm != nil {
-			p.Desc = decodeXMLText(strings.TrimSpace(dm[1]))
-		}
-		freshProgs[chm[1]] = append(freshProgs[chm[1]], p)
+	p := EPGProgramme{Start: start, Stop: stop}
+	if tm := reTitle.FindStringSubmatch(body); tm != nil {
+		p.Title = decodeXMLText(strings.TrimSpace(tm[1]))
 	}
-	for id := range freshProgs {
-		ps := freshProgs[id]
-		for i := 0; i < len(ps)-1; i++ {
-			for j := i + 1; j < len(ps); j++ {
-				if ps[i].Start.After(ps[j].Start) {
-					ps[i], ps[j] = ps[j], ps[i]
-				}
-			}
-		}
+	if dm := reDesc.FindStringSubmatch(body); dm != nil {
+		p.Desc = decodeXMLText(strings.TrimSpace(dm[1]))
+	}
+
+	b.mu.Lock()
+	b.progs[chm[1]] = append(b.progs[chm[1]], p)
+	b.mu.Unlock()
+}
+
+// Commit replaces the in-memory programme index with everything accumulated so
+// far, keeping each channel's programmes in start order for windowed lookups.
+func (b *ProgrammeBuilder) Commit() {
+	b.mu.Lock()
+	fresh := b.progs
+	b.progs = make(map[string][]EPGProgramme)
+	b.mu.Unlock()
+
+	for id := range fresh {
+		ps := fresh[id]
+		sort.Slice(ps, func(i, j int) bool { return ps[i].Start.Before(ps[j].Start) })
 	}
 
 	mu.Lock()
-	progIndex = freshProgs
-	index = fresh
+	progIndex = fresh
 	mu.Unlock()
 
-	logger.Debug("{epgindex - Rebuild} Index rebuilt with %d channels", len(fresh))
+	logger.Debug("{epgindex - Commit} Programme index rebuilt with %d channels", len(fresh))
 }
 
 // Search returns EPGChannel entries whose ID or any display-name contains
@@ -175,63 +175,6 @@ func RebuildFromSlices(channelElements []string) {
 	logger.Debug("{epgindex - RebuildFromSlices} Index rebuilt with %d channels", len(fresh))
 }
 
-// RebuildProgrammesFromSlices parses raw XMLTV <programme> element strings and
-// replaces the in-memory programme index. Used by the warmup/refresh pipeline
-// to index only the mapped export copies (plus the dummy entry) without
-// materializing the full merged document.
-func RebuildProgrammesFromSlices(programmeElements []string) {
-	fresh := make(map[string][]EPGProgramme)
-	for _, el := range programmeElements {
-		pm := reProgrammeBlock.FindStringSubmatch(el)
-		if pm == nil {
-			continue
-		}
-		attrs, body := pm[1], pm[2]
-
-		chm := reAttrChannel.FindStringSubmatch(attrs)
-		if chm == nil || strings.TrimSpace(chm[1]) == "" {
-			continue
-		}
-		sm := reAttrStart.FindStringSubmatch(attrs)
-		em := reAttrStop.FindStringSubmatch(attrs)
-		if sm == nil || em == nil {
-			continue
-		}
-		start, ok1 := parseXMLTVTime(sm[1])
-		stop, ok2 := parseXMLTVTime(em[1])
-		if !ok1 || !ok2 {
-			continue
-		}
-
-		p := EPGProgramme{Start: start, Stop: stop}
-		if tm := reTitle.FindStringSubmatch(body); tm != nil {
-			p.Title = decodeXMLText(strings.TrimSpace(tm[1]))
-		}
-		if dm := reDesc.FindStringSubmatch(body); dm != nil {
-			p.Desc = decodeXMLText(strings.TrimSpace(dm[1]))
-		}
-		fresh[chm[1]] = append(fresh[chm[1]], p)
-	}
-
-	// keep each channel's programmes in start order for windowed lookups
-	for id := range fresh {
-		ps := fresh[id]
-		for i := 0; i < len(ps)-1; i++ {
-			for j := i + 1; j < len(ps); j++ {
-				if ps[i].Start.After(ps[j].Start) {
-					ps[i], ps[j] = ps[j], ps[i]
-				}
-			}
-		}
-	}
-
-	mu.Lock()
-	progIndex = fresh
-	mu.Unlock()
-
-	logger.Debug("{epgindex - RebuildProgrammesFromSlices} Programme index rebuilt with %d channels", len(fresh))
-}
-
 // Programmes returns up to limit programmes for the given channel id that end
 // after the given time, in start order. limit <= 0 returns everything current
 // and future.
@@ -251,18 +194,6 @@ func Programmes(channelID string, after time.Time, limit int) []EPGProgramme {
 		}
 	}
 	return out
-}
-
-// NowTitle returns the title of the programme airing right now on the given
-// channel id, or an empty string when nothing is currently scheduled.
-func NowTitle(channelID string) string {
-	now := time.Now()
-	for _, p := range Programmes(channelID, now, 1) {
-		if !p.Start.After(now) {
-			return p.Title
-		}
-	}
-	return ""
 }
 
 // parseXMLTVTime handles the standard XMLTV timestamp with or without a zone.

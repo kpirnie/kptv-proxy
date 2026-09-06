@@ -287,12 +287,14 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 	spillW := bufio.NewWriterSize(spill, 256*1024)
 
 	var (
-		progMu     sync.Mutex
-		progCount  int
-		spillErr   error
-		indexProgs []string // dummy + export copies, fed to the programme index
-
+		progMu    sync.Mutex
+		progCount int
+		spillErr  error
 	)
+
+	// parse programme fragments into the index as they stream through rather
+	// than retaining every mapped copy for a later bulk rebuild
+	progBuilder := epgindex.NewProgrammeBuilder()
 
 	// progSink writes one programme fragment plus one rewritten copy per
 	// proxy channel mapped to its epg id. Fragments without a channel
@@ -317,7 +319,7 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 		// index the dummy entry and the originals of mapped ids so raw-id
 		// guide lookups resolve
 		if m[1] == DummyChannelID || len(rev[m[1]]) > 0 {
-			indexProgs = append(indexProgs, prog)
+			progBuilder.Add(prog)
 		}
 
 		// additionally emit one copy per proxy channel mapped to this epg id
@@ -327,7 +329,7 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 				spillErr = err
 				return
 			}
-			indexProgs = append(indexProgs, rewritten)
+			progBuilder.Add(rewritten)
 			progCount++
 		}
 	}
@@ -406,7 +408,7 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 	// index the export-copy programmes so XC get_short_epg /
 	// get_simple_data_table lookups work after warmup and scheduled
 	// refreshes, not only after an HTTP cache-miss rebuild
-	epgindex.RebuildProgrammesFromSlices(indexProgs)
+	progBuilder.Commit()
 
 	// restrict the exported guide to channels that are actually mapped in the app
 	allChannels = expandMappedChannels(allChannels, rev)
