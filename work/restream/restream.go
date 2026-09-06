@@ -135,11 +135,8 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 	// socket, keeping the distribution loop fully decoupled from TCP drain speed.
 	go r.drainClient(client)
 
-	clientCount := 0
-	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-		clientCount++
-		return true
-	})
+	// setup the client counter
+	clientCount := int(r.ClientCount.Add(1))
 
 	metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(clientCount))
 
@@ -182,12 +179,8 @@ func (r *Restream) RemoveClient(id string) {
 			close(client.Done)
 		}
 
-		// Count remaining clients
-		clientCount := 0
-		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-			clientCount++
-			return true
-		})
+		// setup the client counter
+		clientCount := int(r.ClientCount.Add(-1))
 
 		// Update Prometheus metrics for clients
 		metrics.ClientsConnected.WithLabelValues(r.Channel.Name).Set(float64(clientCount))
@@ -221,11 +214,8 @@ func (r *Restream) stopStream() {
 	r.Lifecycle.Lock()
 	defer r.Lifecycle.Unlock()
 
-	clientCount := 0
-	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-		clientCount++
-		return true
-	})
+	// setup the client counter
+	clientCount := int(r.ClientCount.Load())
 	if clientCount > 0 {
 		logger.Debug("{restream/restream - stopStream} Channel %s: Client connected during stop, aborting", r.Channel.Name)
 		return
@@ -332,11 +322,7 @@ func (r *Restream) Stream() {
 				r.Channel.Name, isManualSwitch, totalAttempts, maxTotalAttempts)
 
 			// Count clients still connected
-			clientCount := 0
-			r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-				clientCount++
-				return true
-			})
+			clientCount := int(r.ClientCount.Load())
 
 			// non-manual cancellation is always deliberate (stopStream or app
 			// shutdown) — exit rather than self-heal with a fresh context,
@@ -349,11 +335,7 @@ func (r *Restream) Stream() {
 		}
 
 		// Count active clients
-		clientCount := 0
-		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-			clientCount++
-			return true
-		})
+		clientCount := int(r.ClientCount.Load())
 
 		// Bail if no clients
 		if clientCount == 0 {
@@ -436,11 +418,7 @@ func (r *Restream) Stream() {
 				}
 
 				// check if clients are still connected before deciding to loop or exit
-				clientCount := 0
-				r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-					clientCount++
-					return true
-				})
+				clientCount := int(r.ClientCount.Load())
 
 				if clientCount == 0 {
 					// no clients, legitimate stop
@@ -537,11 +515,7 @@ func (r *Restream) Stream() {
 			}
 
 			// Count clients
-			clientCount := 0
-			r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-				clientCount++
-				return true
-			})
+			clientCount := int(r.ClientCount.Load())
 
 			// manual switch: the switcher (ForceStreamSwitch) already installed
 			// a fresh context before cancelling the old one — just resume the
@@ -572,11 +546,7 @@ func (r *Restream) Stream() {
 	}
 
 	// Start fallback video if we still have clients
-	clientCount := 0
-	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-		clientCount++
-		return true
-	})
+	clientCount := int(r.ClientCount.Load())
 
 	if clientCount > 0 {
 		r.streamFallbackVideo()
@@ -584,11 +554,7 @@ func (r *Restream) Stream() {
 		// fallback returned with clients still connected — reset the attempt
 		// counters and re-enter the source retry loop so a transient provider
 		// outage does not strand clients on the loading video permanently
-		clientCount = 0
-		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-			clientCount++
-			return true
-		})
+		clientCount = int(r.ClientCount.Load())
 
 		if clientCount > 0 && r.Context().Err() == nil {
 			logger.Debug("{restream/restream - Stream} Channel %s: Retrying real sources after fallback period", r.Channel.Name)

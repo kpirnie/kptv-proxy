@@ -9,7 +9,6 @@ import (
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/metrics"
-	"kptv-proxy/work/types"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -174,11 +173,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 		}
 
 		// Count active clients - if none, stop streaming
-		clientCount := 0
-		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-			clientCount++
-			return true
-		})
+		clientCount := int(r.ClientCount.Load())
 
 		if clientCount == 0 {
 			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} No clients remaining for channel %s, stopping (total bytes: %d)",

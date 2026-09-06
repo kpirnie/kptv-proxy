@@ -86,6 +86,7 @@ type Channel struct {
 type Restreamer struct {
 	Channel                 *Channel                                   // Reference to parent channel for stream access and metadata
 	Clients                 *xsync.MapOf[string, *RestreamClient]      // Thread-safe map of client ID -> *RestreamClient for concurrent access
+	ClientCount             atomic.Int32                               // Live count of entries in Clients, maintained by AddClient/RemoveClient so hot loops need no map walk
 	SourceCache             *xsync.MapOf[string, *config.SourceConfig] // Cached URL -> source lookups to reduce per-segment source resolution overhead
 	Running                 atomic.Bool                                // Atomic flag indicating active streaming state (true=streaming, false=stopped)
 	ctx                     atomic.Pointer[CtxBundle]                  // Current streaming context+cancel pair, swapped atomically to avoid torn reads
