@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -127,6 +128,12 @@ type mergedSeriesEpisode struct {
 	num   int
 	entry map[string]any
 }
+
+var (
+	streamIDIndex    atomic.Pointer[map[int]string]
+	streamIDIndexGen atomic.Uint64
+	streamIDIndexMu  sync.Mutex
+)
 
 // mergedSeriesCacheSource is the synthetic source_url the merged get_series_info
 // payload is stored under, since a tree assembled from several providers belongs
@@ -266,17 +273,38 @@ func acquireXCConnection(w http.ResponseWriter, account *config.XCOutputAccount)
 	return func() { account.ActiveConns.Add(-1) }, true
 }
 
-// findChannelByStreamID locates a channel name by its hashed stream ID.
+// findChannelByStreamID resolves an XC stream ID to a channel name through an
+// index rebuilt whenever the import generation moves, rather than walking the
+// full channel map on every stream request.
 func findChannelByStreamID(sp *proxy.StreamProxy, id int) string {
-	var found string
+	gen := sp.ImportGeneration()
+
+	m := streamIDIndex.Load()
+	if m == nil || streamIDIndexGen.Load() != gen {
+		m = rebuildStreamIDIndex(sp, gen)
+	}
+	return (*m)[id]
+}
+
+// rebuildStreamIDIndex snapshots stream ID to channel name for the supplied
+// import generation.
+func rebuildStreamIDIndex(sp *proxy.StreamProxy, gen uint64) *map[int]string {
+	streamIDIndexMu.Lock()
+	defer streamIDIndexMu.Unlock()
+
+	if m := streamIDIndex.Load(); m != nil && streamIDIndexGen.Load() == gen {
+		return m
+	}
+
+	index := make(map[int]string)
 	sp.Channels.Range(func(name string, _ *types.Channel) bool {
-		if streamIDFromName(name) == id {
-			found = name
-			return false
-		}
+		index[streamIDFromName(name)] = name
 		return true
 	})
-	return found
+
+	streamIDIndex.Store(&index)
+	streamIDIndexGen.Store(gen)
+	return &index
 }
 
 // getChannelContentType returns the content type for a channel.

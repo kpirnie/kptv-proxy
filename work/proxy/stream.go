@@ -69,6 +69,7 @@ type StreamProxy struct {
 	FilterManager         *filter.FilterManager                // handles stream filtering rules from configuration
 	importGeneration      atomic.Uint64                        // bumped on each committed import so cached playlists are not reused across imports
 	groupIndex            atomic.Pointer[map[string]struct{}]  // lowercased set of known group titles, rebuilt on each committed import
+	nameIndex             atomic.Pointer[map[string]string]   // sanitized channel name -> real channel name, rebuilt on each committed import
 }
 
 // New creates and initializes a new StreamProxy instance with all required dependencies.
@@ -402,6 +403,7 @@ func (sp *StreamProxy) ImportStreams() {
 	// from an earlier import window is never served after a good commit
 	sp.importGeneration.Add(1)
 	sp.rebuildGroupIndex()
+	sp.rebuildNameIndex()
 
 	logger.Debug("{proxy/stream - ImportStreams} Import committed %d channels (%d sources carried forward)", len(newChannels), len(failedSources))
 }
@@ -669,6 +671,26 @@ func (sp *StreamProxy) rebuildGroupIndex() {
 	logger.Debug("{proxy/stream - rebuildGroupIndex} Indexed %d groups", len(groups))
 }
 
+// rebuildNameIndex maps every sanitized channel name back to its real name so
+// stream requests resolve with a map lookup instead of a full catalog walk.
+func (sp *StreamProxy) rebuildNameIndex() {
+	names := make(map[string]string)
+
+	sp.Channels.Range(func(name string, _ *types.Channel) bool {
+		names[utils.SanitizeChannelName(name)] = name
+		return true
+	})
+
+	sp.nameIndex.Store(&names)
+	logger.Debug("{proxy/stream - rebuildNameIndex} Indexed %d channel names", len(names))
+}
+
+// ImportGeneration returns the current import generation, bumped on every
+// committed import. Callers use it to invalidate their own derived indexes.
+func (sp *StreamProxy) ImportGeneration() uint64 {
+	return sp.importGeneration.Load()
+}
+
 // IsKnownGroup reports whether the supplied group title exists in the current
 // catalog. The {group} path segment is client-controlled and forms part of the
 // playlist cache key, so an unknown value must never reach a render or a Set.
@@ -771,16 +793,13 @@ func (sp *StreamProxy) FindChannelBySafeName(safeName string) string {
 		return simpleName
 	}
 
-	// fall back to scanning the full channel map for a sanitized match
+	// fall back to the sanitized-name index built at import
 	var foundName string
-	sp.Channels.Range(func(name string, _ *types.Channel) bool {
-		if utils.SanitizeChannelName(name) == safeName {
-			foundName = name
-			return false
-		}
-		return true
-	})
+	if m := sp.nameIndex.Load(); m != nil {
+		foundName = (*m)[safeName]
+	}
 
+	// make sure it's not empty
 	if foundName != "" {
 		logger.Debug("{proxy/stream - FindChannelBySafeName} Resolved channel by sanitized name scan: %s -> %s", safeName, foundName)
 		return foundName
