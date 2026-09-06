@@ -208,6 +208,13 @@ func (sp *StreamProxy) ImportStreams() {
 		return
 	}
 
+	// possible recover
+	defer func() {
+		if rec := recover(); rec != nil {
+			logger.Error("{proxy/stream - ImportStreams} Recovered from panic: %v", rec)
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), constants.Internal.ImportGlobalTimeout)
 	defer cancel()
 
@@ -220,6 +227,13 @@ func (sp *StreamProxy) ImportStreams() {
 		wg.Add(1)
 		go func(index int, src *config.SourceConfig) {
 			defer wg.Done()
+
+			// possibly recover
+			defer func() {
+				if rec := recover(); rec != nil {
+					logger.Error("{proxy/stream - ImportStreams} Source %s: Recovered from panic: %v", src.Name, rec)
+				}
+			}()
 
 			select {
 			case importSemaphore <- struct{}{}:
