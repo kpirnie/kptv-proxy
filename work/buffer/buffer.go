@@ -229,13 +229,21 @@ func (rb *RingBuffer) Write(data []byte) {
 	}
 
 	dataLen := int64(len(data))
-	writePos := rb.writePos.Load() % rb.size
+
+	// A write larger than the buffer can only leave its tail resident; trim to
+	// the last rb.size bytes and start it where writePos will land, so the
+	// resident window stays aligned with the position readers use
+	if dataLen > rb.size {
+		data = data[dataLen-rb.size:]
+	}
+
+	writePos := (rb.writePos.Load() + dataLen - int64(len(data))) % rb.size
 
 	// First chunk: from current write position to end of buffer (or end of data)
 	n := copy(rb.data[writePos:], data)
 
 	// Second chunk: wrap around to beginning if data extends past buffer boundary
-	if int64(n) < dataLen {
+	if n < len(data) {
 		copy(rb.data[:], data[n:])
 	}
 
