@@ -251,6 +251,12 @@ func handleGetLocalMedia(_ *proxy.StreamProxy) http.HandlerFunc {
 			size = 100
 		}
 
+		// upper-bound the page as well, or (page-1)*size overflows negative and
+		// the slice expression below panics
+		if maxPage := (total + size - 1) / size; maxPage > 0 && page > maxPage {
+			page = maxPage
+		}
+
 		start := (page - 1) * size
 		if start > total {
 			start = total
