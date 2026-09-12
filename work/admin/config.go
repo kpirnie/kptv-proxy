@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
+	"kptv-proxy/work/logger"
+	"kptv-proxy/work/parser"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/utils"
 	"net/http"
@@ -196,5 +199,141 @@ func handleSetConfig(sp *proxy.StreamProxy) http.HandlerFunc {
 
 		w.WriteHeader(http.StatusOK)
 		utils.WriteJSON(w, map[string]string{"status": "success"})
+	}
+}
+
+// handleGetSettings serialises the global settings only. Sources, EPGs, XC
+// accounts and SD accounts each have their own endpoints.
+func handleGetSettings(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		cfg := sp.Config
+
+		out := map[string]any{
+			"baseURL":                cfg.BaseURL,
+			"bufferSizePerStream":    cfg.BufferSizePerStream,
+			"cacheEnabled":           cfg.CacheEnabled,
+			"cacheDuration":          cfg.CacheDuration.String(),
+			"importRefreshInterval":  cfg.ImportRefreshInterval.String(),
+			"workerThreads":          cfg.WorkerThreads,
+			"debug":                  cfg.Debug,
+			"logLevel":               cfg.LogLevel,
+			"obfuscateUrls":          cfg.ObfuscateUrls,
+			"sortField":              cfg.SortField,
+			"sortDirection":          cfg.SortDirection,
+			"streamTimeout":          cfg.StreamTimeout.String(),
+			"maxConnectionsToApp":    cfg.MaxConnectionsToApp,
+			"watcherEnabled":         cfg.WatcherEnabled,
+			"ffmpegMode":             cfg.FFmpegMode,
+			"ffmpegPreInput":         cfg.FFmpegPreInput,
+			"ffmpegPreOutput":        cfg.FFmpegPreOutput,
+			"responseHeaderTimeout":  cfg.ResponseHeaderTimeout.String(),
+			"slowClientBufferChunks": cfg.SlowClientBufferChunks,
+			"tmdbEnabled":            cfg.TMDBEnabled,
+			"tmdbApiKey":             maskSecret(cfg.TMDBAPIKey),
+		}
+
+		if err := json.NewEncoder(w).Encode(out); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to encode settings: %v", err))
+			http.Error(w, "Failed to encode settings", http.StatusInternalServerError)
+		}
+	}
+}
+
+// handleSetSettings persists the global settings and applies them to the running
+// components, so changing a setting no longer requires a restart and no longer
+// round-trips the source list through the browser.
+func handleSetSettings(sp *proxy.StreamProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		r.Body = http.MaxBytesReader(w, r.Body, constants.Internal.MaxConfigBodyBytes)
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to read request body: %v", err))
+			http.Error(w, "Failed to read body", http.StatusBadRequest)
+			return
+		}
+
+		var incoming config.Config
+		if err := json.Unmarshal(body, &incoming); err != nil {
+			addLogEntry("error", fmt.Sprintf("JSON decode error: %v", err))
+			http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if incoming.BaseURL == "" {
+			http.Error(w, "Base URL is required", http.StatusBadRequest)
+			return
+		}
+
+		// a key posted back unchanged means keep the stored secret
+		if incoming.TMDBAPIKey == maskedSecret {
+			incoming.TMDBAPIKey = sp.Config.TMDBAPIKey
+		}
+
+		if incoming.FFmpegPreInput == nil {
+			incoming.FFmpegPreInput = []string{}
+		}
+		if incoming.FFmpegPreOutput == nil {
+			incoming.FFmpegPreOutput = []string{}
+		}
+
+		if err := config.PersistSettings(&incoming); err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to persist settings: %v", err))
+			http.Error(w, "Failed to save settings: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		config.ClearConfigCache()
+
+		fresh := config.LoadConfig()
+		carryConnCounters(sp.Config, fresh)
+		sp.Config = fresh
+
+		// reapply settings held by components built from the previous config
+		if sp.FilterManager != nil {
+			sp.FilterManager.ClearFilters()
+		}
+		logger.SetLogLevel(fresh.LogLevel)
+		sp.MasterPlaylistHandler = parser.NewMasterPlaylistHandler(fresh)
+		sp.ImportClient = client.NewHeaderSettingClient(fresh.ResponseHeaderTimeout)
+		sp.ReinitRateLimiters()
+
+		addLogEntry("info", "Global settings updated via admin interface")
+
+		w.WriteHeader(http.StatusOK)
+		utils.WriteJSON(w, map[string]string{"status": "success"})
+	}
+}
+
+// carryConnCounters copies live connection counters from the previous config onto
+// a freshly loaded one, so swapping the config does not reset accounting for
+// entities that survived the change.
+func carryConnCounters(old, fresh *config.Config) {
+	if old == nil || fresh == nil {
+		return
+	}
+
+	sources := make(map[string]*config.SourceConfig, len(old.Sources))
+	for i := range old.Sources {
+		sources[old.Sources[i].Name+"|"+old.Sources[i].URL] = &old.Sources[i]
+	}
+	for i := range fresh.Sources {
+		if prior, ok := sources[fresh.Sources[i].Name+"|"+fresh.Sources[i].URL]; ok {
+			fresh.Sources[i].ActiveConns.Store(prior.ActiveConns.Load())
+		}
+	}
+
+	accounts := make(map[string]*config.XCOutputAccount, len(old.XCOutputAccounts))
+	for i := range old.XCOutputAccounts {
+		accounts[old.XCOutputAccounts[i].Username] = &old.XCOutputAccounts[i]
+	}
+	for i := range fresh.XCOutputAccounts {
+		if prior, ok := accounts[fresh.XCOutputAccounts[i].Username]; ok {
+			fresh.XCOutputAccounts[i].ActiveConns.Store(prior.ActiveConns.Load())
+		}
 	}
 }

@@ -494,6 +494,15 @@ func loadSDAccountsFromDB() ([]SDAccount, error) {
 
 // PersistConfig writes every field of cfg into kp_settings and syncs sources.
 func PersistConfig(cfg *Config) error {
+	if err := PersistSettings(cfg); err != nil {
+		return err
+	}
+	return syncSourcesToDB(cfg.Sources)
+}
+
+// PersistSettings writes only the global settings rows, leaving kp_sources and
+// the other per-entity tables untouched.
+func PersistSettings(cfg *Config) error {
 	settings := map[string]string{
 		"baseURL":                cfg.BaseURL,
 		"bufferSizePerStream":    strconv.FormatInt(cfg.BufferSizePerStream, 10),
@@ -524,7 +533,7 @@ func PersistConfig(cfg *Config) error {
 		}
 	}
 
-	return syncSourcesToDB(cfg.Sources)
+	return nil
 }
 
 // syncSourcesToDB replaces all kp_sources rows to match cfg.

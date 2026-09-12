@@ -130,7 +130,7 @@ function initScrollToTop() {
  */
 async function loadGlobalSettings() {
     try {
-        const config = await apiCall('/api/config');
+        const config = await apiCall('/api/settings');
         adminConfig = config;
         populateGlobalSettingsForm(config);
     } catch (error) {
@@ -210,9 +210,9 @@ function populateGlobalSettingsForm(config) {
 }
 
 /**
- * Reads the global settings form, merges changes with the current
- * server config (preserving sources and other arrays), saves via the API,
- * and triggers a graceful restart to apply the new configuration.
+ * Reads the global settings form and saves it through the settings API.
+ * Settings are applied to the running components server-side, so no
+ * restart and no read-modify-write of the whole config is involved.
  * @returns {Promise<void>}
  */
 async function saveGlobalSettings() {
@@ -261,27 +261,16 @@ async function saveGlobalSettings() {
         : [];
 
     try {
-        const currentConfig = await apiCall('/api/config');
-        const mergedConfig = { ...currentConfig, ...newConfig };
-
-        // Always preserve sources from the server copy
-        if (currentConfig.sources) mergedConfig.sources = currentConfig.sources;
-
-        delete mergedConfig.xcOutputAccounts;
-        delete mergedConfig.epgs;
-        delete mergedConfig.sdAccounts;
-        await apiCall('/api/config', {
-            method: 'POST',
-            body: JSON.stringify(mergedConfig)
+        await apiCall('/api/settings', {
+            method: 'PUT',
+            body: JSON.stringify(newConfig)
         });
 
         showNotification('Global settings saved successfully!', 'success');
-        setTimeout(() => restartService(), 1000);
     } catch (error) {
         showNotification('Failed to save global settings: ' + error.message, 'danger');
     }
 }
-
 /**
  * Sends a graceful restart request to the server after user confirmation.
  * @returns {Promise<void>}
