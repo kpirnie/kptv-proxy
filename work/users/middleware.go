@@ -83,11 +83,21 @@ func isAuthenticated(r *http.Request) bool {
 }
 
 // checkTokenPermission verifies a raw token string has the given permission.
+// Successful lookups are cached briefly; the cache is flushed whenever the token
+// table changes.
 func checkTokenPermission(rawToken string, perm int) bool {
-	t, err := GetTokenByHash(HashToken(rawToken))
+	hash := HashToken(rawToken)
+
+	if permissions, ok := lookupTokenCache(hash); ok {
+		return HasPermission(permissions, perm)
+	}
+
+	t, err := GetTokenByHash(hash)
 	if err != nil {
 		return false
 	}
+
+	storeTokenCache(hash, t.Permissions)
 	return HasPermission(t.Permissions, perm)
 }
 
@@ -141,14 +151,10 @@ func realIP(r *http.Request) string {
 	return host
 }
 
-// isPrivateIP returns true if the IP is RFC1918 or localhost.
-func isPrivateIP(ipStr string) bool {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return false
-	}
-
-	privateRanges := []string{
+// privateNetworks is the RFC1918 and loopback set, parsed once at startup rather
+// than on every request.
+var privateNetworks = func() []*net.IPNet {
+	cidrs := []string{
 		"10.0.0.0/8",
 		"172.16.0.0/12",
 		"192.168.0.0/16",
@@ -156,11 +162,23 @@ func isPrivateIP(ipStr string) bool {
 		"::1/128",
 	}
 
-	for _, cidr := range privateRanges {
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
-			continue
+	networks := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		if _, network, err := net.ParseCIDR(cidr); err == nil {
+			networks = append(networks, network)
 		}
+	}
+	return networks
+}()
+
+// isPrivateIP returns true if the IP is RFC1918 or localhost.
+func isPrivateIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+
+	for _, network := range privateNetworks {
 		if network.Contains(ip) {
 			return true
 		}

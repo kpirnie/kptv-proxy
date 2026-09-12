@@ -59,7 +59,19 @@ func CreateSession(userID int64, username, name string, rememberMe bool) (string
 
 // GetSession retrieves a session by ID, returning nil if not found or expired.
 // An expired row is deleted on read rather than waiting for the cleanup tick.
+// Successful lookups are cached briefly so a burst of authenticated requests
+// costs one database read.
 func GetSession(id string) *Session {
+	idHash := hashSessionID(id)
+
+	if cached, ok := lookupSessionCache(idHash); ok {
+		if time.Now().After(cached.ExpiresAt) {
+			dropSessionCache(idHash)
+		} else {
+			return cached
+		}
+	}
+
 	var (
 		s         Session
 		expiresAt int64
@@ -67,7 +79,7 @@ func GetSession(id string) *Session {
 
 	err := db.GetReader().QueryRow(`
 		SELECT user_id, username, name, expires_at
-		FROM kp_sessions WHERE id_hash = ?`, hashSessionID(id),
+		FROM kp_sessions WHERE id_hash = ?`, idHash,
 	).Scan(&s.UserID, &s.Username, &s.Name, &expiresAt)
 	if err != nil {
 		if err != sql.ErrNoRows {
@@ -81,18 +93,25 @@ func GetSession(id string) *Session {
 		DeleteSession(id)
 		return nil
 	}
+
+	storeSessionCache(idHash, &s)
 	return &s
 }
 
 // DeleteSession removes a session by ID.
 func DeleteSession(id string) {
-	if _, err := db.Get().Exec(`DELETE FROM kp_sessions WHERE id_hash = ?`, hashSessionID(id)); err != nil {
+	idHash := hashSessionID(id)
+	dropSessionCache(idHash)
+
+	if _, err := db.Get().Exec(`DELETE FROM kp_sessions WHERE id_hash = ?`, idHash); err != nil {
 		logger.Error("{users/session - DeleteSession} %v", err)
 	}
 }
 
 // DeleteSessionsForUser revokes every outstanding session belonging to a user.
 func DeleteSessionsForUser(userID int64) {
+	dropUserSessionCache(userID)
+
 	if _, err := db.Get().Exec(`DELETE FROM kp_sessions WHERE user_id = ?`, userID); err != nil {
 		logger.Error("{users/session - DeleteSessionsForUser} id=%d: %v", userID, err)
 	}
@@ -103,6 +122,7 @@ func sessionCleanup() {
 	ticker := time.NewTicker(constants.Internal.SessionCleanupTick)
 	defer ticker.Stop()
 	for range ticker.C {
+		pruneAuthCaches()
 		if _, err := db.Get().Exec(`DELETE FROM kp_sessions WHERE expires_at <= ?`, time.Now().Unix()); err != nil {
 			logger.Error("{users/session - sessionCleanup} %v", err)
 		}

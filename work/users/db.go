@@ -98,6 +98,7 @@ func CreateToken(name, tokenHash string, permissions int) (int64, error) {
 		logger.Error("{users/db - CreateToken} %v", err)
 		return 0, err
 	}
+	FlushTokenCache()
 	return res.LastInsertId()
 }
 
@@ -133,6 +134,8 @@ func DeleteToken(id int64) error {
 	if err != nil {
 		logger.Error("{users/db - DeleteToken} %v", err)
 	}
+
+	FlushTokenCache()
 	return err
 }
 

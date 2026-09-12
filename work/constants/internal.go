@@ -68,6 +68,11 @@ type InternalConstants struct {
 	AdminSocketSendBuffer   int           // Queued frames per client before a slow consumer starts skipping
 
 	// -------------------------------------------------------------------------
+	// work/users/cache.go — authentication lookup caches
+	// -------------------------------------------------------------------------
+	AuthCacheTTL time.Duration // How long a successful session or token lookup is reused before re-reading the database
+
+	// -------------------------------------------------------------------------
 	// work/restream/restream.go — streamFallbackVideo() / streamLocalFallback()
 	// -------------------------------------------------------------------------
 	OversizedBufferMultiplier    int           // Multiplier used to detect and discard oversized buffers in the pool
@@ -383,6 +388,11 @@ var Internal = InternalConstants{
 	AdminSocketInterval:     5 * time.Second,
 	AdminSocketWriteTimeout: 10 * time.Second,
 	AdminSocketSendBuffer:   4,
+
+	// -------------------------------------------------------------------------
+	// Authentication caches
+	// -------------------------------------------------------------------------
+	AuthCacheTTL: 30 * time.Second,
 
 	// -------------------------------------------------------------------------
 	// Fallback video
