@@ -61,6 +61,13 @@ type InternalConstants struct {
 	ChannelPageSizeMax     int // Upper bound on the client-supplied page size
 
 	// -------------------------------------------------------------------------
+	// work/admin/websocket.go — admin live-state broadcaster
+	// -------------------------------------------------------------------------
+	AdminSocketInterval     time.Duration // Interval between live-state pushes to connected admin sockets
+	AdminSocketWriteTimeout time.Duration // Max time a single frame write may block before the client is dropped
+	AdminSocketSendBuffer   int           // Queued frames per client before a slow consumer starts skipping
+
+	// -------------------------------------------------------------------------
 	// work/restream/restream.go — streamFallbackVideo() / streamLocalFallback()
 	// -------------------------------------------------------------------------
 	OversizedBufferMultiplier    int           // Multiplier used to detect and discard oversized buffers in the pool
@@ -369,6 +376,13 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	ChannelPageSizeDefault: 50,
 	ChannelPageSizeMax:     500,
+
+	// -------------------------------------------------------------------------
+	// Admin live-state websocket
+	// -------------------------------------------------------------------------
+	AdminSocketInterval:     5 * time.Second,
+	AdminSocketWriteTimeout: 10 * time.Second,
+	AdminSocketSendBuffer:   4,
 
 	// -------------------------------------------------------------------------
 	// Fallback video

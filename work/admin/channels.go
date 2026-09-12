@@ -158,97 +158,103 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		var channels []ChannelResponse
-
-		sp.Channels.Range(func(key string, value *types.Channel) bool {
-			channel := value
-			channel.Mu.RLock()
-
-			if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
-				clients := 0
-				channel.Restreamer.Clients.Range(func(_ string, _ *types.RestreamClient) bool {
-					clients++
-					return true
-				})
-
-				currentSource := "Unknown"
-				if len(channel.Streams) > 0 {
-					currentIdx := channel.Restreamer.CurrentIndex
-					if int(currentIdx) < len(channel.Streams) {
-						currentSource = channel.Streams[currentIdx].Source.Name
-					}
-				}
-
-				activityTime := time.Since(time.Unix(channel.Restreamer.LastActivity.Load(), 0))
-				estimatedBytes := int64(0)
-				logoURL := "https://cdn.kevp.us/tv/kptv-icon.png"
-
-				if activityTime < 60*time.Second && clients > 0 {
-					baseRate := int64(500 * 1024 * clients)
-					variance := int64(len(channel.Name) * 100 * 1024)
-					estimatedBytes = baseRate + variance
-				}
-
-				if len(channel.Streams) > 0 {
-					if logo, ok := channel.Streams[0].Attributes["tvg-logo"]; ok && logo != "" {
-						logoURL = logo
-					}
-				}
-
-				channels = append(channels, ChannelResponse{
-					Name:             channel.Name,
-					Active:           true,
-					Clients:          clients,
-					CurrentSource:    currentSource,
-					BytesTransferred: estimatedBytes,
-					LogoURL:          logoURL,
-				})
-			}
-
-			channel.Mu.RUnlock()
-			return true
-		})
-
-		sessions := make(map[string]*ChannelResponse)
-		proxy.RangeFileSessions(func(session *proxy.FileSession) bool {
-			existing, seen := sessions[session.ChannelName]
-			if !seen {
-				logoURL := session.LogoURL
-				if logoURL == "" {
-					logoURL = "https://cdn.kevp.us/tv/kptv-icon.png"
-				}
-				sessions[session.ChannelName] = &ChannelResponse{
-					Name:             session.ChannelName,
-					Active:           true,
-					Clients:          1,
-					CurrentSource:    session.SourceName,
-					BytesTransferred: session.Bytes.Load(),
-					LogoURL:          logoURL,
-				}
-				return true
-			}
-			existing.Clients++
-			existing.BytesTransferred += session.Bytes.Load()
-			return true
-		})
-
-		for _, session := range sessions {
-			channels = append(channels, *session)
-		}
-
-		if epgMap, err := db.GetAllChannelEPGMap(); err == nil {
-			for i := range channels {
-				if id, ok := epgMap[channels[i].Name]; ok && id != "" {
-					channels[i].Now = epgindex.NowTitle(id)
-				}
-			}
-		}
-
-		if err := json.NewEncoder(w).Encode(channels); err != nil {
+		if err := json.NewEncoder(w).Encode(buildActiveChannels(sp)); err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to encode active channels: %v", err))
 			http.Error(w, "Failed to encode active channels", http.StatusInternalServerError)
 		}
 	}
+}
+
+// buildActiveChannels collects the currently streaming channels and file sessions,
+// shared by the active-channels endpoint and the admin websocket broadcaster.
+func buildActiveChannels(sp *proxy.StreamProxy) []ChannelResponse {
+	channels := make([]ChannelResponse, 0)
+
+	sp.Channels.Range(func(key string, value *types.Channel) bool {
+		channel := value
+		channel.Mu.RLock()
+
+		if channel.Restreamer != nil && channel.Restreamer.Running.Load() {
+			clients := 0
+			channel.Restreamer.Clients.Range(func(_ string, _ *types.RestreamClient) bool {
+				clients++
+				return true
+			})
+
+			currentSource := "Unknown"
+			if len(channel.Streams) > 0 {
+				currentIdx := channel.Restreamer.CurrentIndex
+				if int(currentIdx) < len(channel.Streams) {
+					currentSource = channel.Streams[currentIdx].Source.Name
+				}
+			}
+
+			activityTime := time.Since(time.Unix(channel.Restreamer.LastActivity.Load(), 0))
+			estimatedBytes := int64(0)
+			logoURL := "https://cdn.kevp.us/tv/kptv-icon.png"
+
+			if activityTime < 60*time.Second && clients > 0 {
+				baseRate := int64(500 * 1024 * clients)
+				variance := int64(len(channel.Name) * 100 * 1024)
+				estimatedBytes = baseRate + variance
+			}
+
+			if len(channel.Streams) > 0 {
+				if logo, ok := channel.Streams[0].Attributes["tvg-logo"]; ok && logo != "" {
+					logoURL = logo
+				}
+			}
+
+			channels = append(channels, ChannelResponse{
+				Name:             channel.Name,
+				Active:           true,
+				Clients:          clients,
+				CurrentSource:    currentSource,
+				BytesTransferred: estimatedBytes,
+				LogoURL:          logoURL,
+			})
+		}
+
+		channel.Mu.RUnlock()
+		return true
+	})
+
+	sessions := make(map[string]*ChannelResponse)
+	proxy.RangeFileSessions(func(session *proxy.FileSession) bool {
+		existing, seen := sessions[session.ChannelName]
+		if !seen {
+			logoURL := session.LogoURL
+			if logoURL == "" {
+				logoURL = "https://cdn.kevp.us/tv/kptv-icon.png"
+			}
+			sessions[session.ChannelName] = &ChannelResponse{
+				Name:             session.ChannelName,
+				Active:           true,
+				Clients:          1,
+				CurrentSource:    session.SourceName,
+				BytesTransferred: session.Bytes.Load(),
+				LogoURL:          logoURL,
+			}
+			return true
+		}
+		existing.Clients++
+		existing.BytesTransferred += session.Bytes.Load()
+		return true
+	})
+
+	for _, session := range sessions {
+		channels = append(channels, *session)
+	}
+
+	if epgMap, err := db.GetAllChannelEPGMap(); err == nil {
+		for i := range channels {
+			if id, ok := epgMap[channels[i].Name]; ok && id != "" {
+				channels[i].Now = epgindex.NowTitle(id)
+			}
+		}
+	}
+
+	return channels
 }
 
 // handleGetChannelStreams retrieves detailed stream information for a specific channel,

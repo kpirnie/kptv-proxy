@@ -28,6 +28,7 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	// Channel endpoints
 	router.HandleFunc("/api/channels", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetAllChannels(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/active", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetActiveChannels(sp)))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/ws", authCORS(users.PermRead, handleAdminSocket(sp))).Methods("GET")
 	router.HandleFunc("/api/channels/{channel}/streams", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetChannelStreams(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/stats", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetChannelStats(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/stream", authCORS(users.PermStreams, handleSetChannelStream(sp))).Methods("POST", "OPTIONS")
@@ -35,7 +36,7 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api/channels/{channel}/revive-stream", authCORS(users.PermStreams, handleReviveStream(sp))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/order", authCORS(users.PermStreams, handleSetChannelOrder(sp))).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/order", authCORS(users.PermStreams, handleResetChannelOrder(sp))).Methods("DELETE", "OPTIONS")
-	
+
 	// Log endpoints
 	router.HandleFunc("/api/logs", authCORS(users.PermLogs, middleware.GzipMiddleware(handleGetLogs))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/logs", authCORS(users.PermLogs, handleClearLogs)).Methods("DELETE", "OPTIONS")
@@ -89,6 +90,9 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api-docs", users.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "/static/api-docs.html")
 	})).Methods("GET")
+
+	// fire up the admin websocket broadcaster
+	startAdminSocketBroadcaster(sp)
 
 	addLogEntry("info", "Admin interface initialized")
 }
