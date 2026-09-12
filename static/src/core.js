@@ -271,6 +271,7 @@ async function saveGlobalSettings() {
         showNotification('Failed to save global settings: ' + error.message, 'danger');
     }
 }
+
 /**
  * Sends a graceful restart request to the server after user confirmation.
  * @returns {Promise<void>}
