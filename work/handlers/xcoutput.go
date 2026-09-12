@@ -82,8 +82,10 @@ type xcCategory struct {
 
 // xcChannelBatch is a lightweight name+channel pair for sorted iteration.
 type xcChannelBatch struct {
-	name    string
-	channel *types.Channel
+	name        string
+	channel     *types.Channel
+	sourceOrder int
+	importOrder int
 }
 
 // xcEPGListing is one programme entry in XC EPG API responses. Title and
@@ -147,10 +149,11 @@ const mergedSeriesCacheSource = "kptv://merged"
 func getSortedChannels(sp *proxy.StreamProxy) []xcChannelBatch {
 	batch := make([]xcChannelBatch, 0, 1000)
 	sp.Channels.Range(func(name string, ch *types.Channel) bool {
-		batch = append(batch, xcChannelBatch{name, ch})
+		batch = append(batch, xcChannelBatch{name: name, channel: ch})
 		return true
 	})
 	if sp.Config.SortField == "preserve-order" {
+		snapshotXCOriginalOrder(batch)
 		sort.Slice(batch, func(i, j int) bool {
 			return xcChannelOriginalOrderLess(batch[i], batch[j])
 		})
@@ -162,14 +165,20 @@ func getSortedChannels(sp *proxy.StreamProxy) []xcChannelBatch {
 	return batch
 }
 
-func xcChannelOriginalOrderLess(a, b xcChannelBatch) bool {
-	aSourceOrder, aImportOrder := xcChannelOriginalOrder(a.channel)
-	bSourceOrder, bImportOrder := xcChannelOriginalOrder(b.channel)
-	if aSourceOrder != bSourceOrder {
-		return aSourceOrder < bSourceOrder
+// snapshotXCOriginalOrder fills each entry's original-order keys under a single
+// read lock per channel, so the sort comparator never takes a lock.
+func snapshotXCOriginalOrder(batch []xcChannelBatch) {
+	for i := range batch {
+		batch[i].sourceOrder, batch[i].importOrder = xcChannelOriginalOrder(batch[i].channel)
 	}
-	if aImportOrder != bImportOrder {
-		return aImportOrder < bImportOrder
+}
+
+func xcChannelOriginalOrderLess(a, b xcChannelBatch) bool {
+	if a.sourceOrder != b.sourceOrder {
+		return a.sourceOrder < b.sourceOrder
+	}
+	if a.importOrder != b.importOrder {
+		return a.importOrder < b.importOrder
 	}
 	return strings.ToLower(a.name) < strings.ToLower(b.name)
 }

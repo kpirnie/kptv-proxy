@@ -144,8 +144,10 @@ func (sp *StreamProxy) ReinitRateLimiters() {
 // used for efficient batch operations like sorting and playlist generation without
 // needing to re-query the concurrent map during iteration.
 type channelBatch struct {
-	name    string         // channel name as stored in the map key
-	channel *types.Channel // pointer to the channel data
+	name        string         // channel name as stored in the map key
+	channel     *types.Channel // pointer to the channel data
+	sourceOrder int            // lowest source order across the channel's streams
+	importOrder int            // lowest import order within that source
 }
 
 // getChannelBatch snapshots the current channel map into an ordered slice for batch
@@ -154,20 +156,26 @@ type channelBatch struct {
 func (sp *StreamProxy) getChannelBatch() []channelBatch {
 	batch := make([]channelBatch, 0, 1000)
 	sp.Channels.Range(func(name string, ch *types.Channel) bool {
-		batch = append(batch, channelBatch{name, ch})
+		batch = append(batch, channelBatch{name: name, channel: ch})
 		return true
 	})
 	return batch
 }
 
-func channelOriginalOrderLess(a, b channelBatch) bool {
-	aSourceOrder, aImportOrder := channelOriginalOrder(a.channel)
-	bSourceOrder, bImportOrder := channelOriginalOrder(b.channel)
-	if aSourceOrder != bSourceOrder {
-		return aSourceOrder < bSourceOrder
+// snapshotOriginalOrder fills each entry's original-order keys under a single
+// read lock per channel, so the sort comparator never takes a lock.
+func snapshotOriginalOrder(batch []channelBatch) {
+	for i := range batch {
+		batch[i].sourceOrder, batch[i].importOrder = channelOriginalOrder(batch[i].channel)
 	}
-	if aImportOrder != bImportOrder {
-		return aImportOrder < bImportOrder
+}
+
+func channelOriginalOrderLess(a, b channelBatch) bool {
+	if a.sourceOrder != b.sourceOrder {
+		return a.sourceOrder < b.sourceOrder
+	}
+	if a.importOrder != b.importOrder {
+		return a.importOrder < b.importOrder
 	}
 	return strings.ToLower(a.name) < strings.ToLower(b.name)
 }
@@ -519,6 +527,7 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 	logger.Debug("{proxy/stream - GeneratePlaylist} Building playlist from %d channels", len(channels))
 
 	if sp.Config.SortField == "preserve-order" {
+		snapshotOriginalOrder(channels)
 		sort.SliceStable(channels, func(i, j int) bool {
 			return channelOriginalOrderLess(channels[i], channels[j])
 		})
