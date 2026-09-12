@@ -5,8 +5,9 @@
  */
 async function loadSources() {
     try {
-        const config = await apiCall('/api/config');
-        renderSources(config.sources || []);
+        const sources = await apiCall('/api/sources');
+        allSources = sources || [];
+        renderSources(allSources);
     } catch (error) {
         document.getElementById('sources-container').innerHTML =
             '<div class="bg-orange-900/20 border border-orange-600 text-orange-100 px-4 py-3 rounded">Failed to load sources</div>';
@@ -103,11 +104,11 @@ function showSourceModal(sourceIndex = null) {
 
     if (sourceIndex !== null) {
         title.textContent = 'Edit Source';
-        if (adminConfig && adminConfig.sources && adminConfig.sources[sourceIndex]) {
-            populateSourceForm(adminConfig.sources[sourceIndex], sourceIndex);
+        if (allSources && allSources[sourceIndex]) {
+            populateSourceForm(allSources[sourceIndex], sourceIndex);
         } else {
-            showNotification('Config not loaded yet', 'warning');
-            loadGlobalSettings();
+            showNotification('Sources not loaded yet', 'warning');
+            loadSources();
         }
     } else {
         title.textContent = 'Add Source';
@@ -171,7 +172,8 @@ function clearSourceForm() {
 
 /**
  * Reads the source modal form, validates required fields, and saves
- * the source to the config via the API. Triggers a restart after save.
+ * the source through the per-source API. The server reloads its source
+ * list and re-imports on its own, so no restart is needed.
  * @returns {Promise<void>}
  */
 async function saveSource() {
@@ -205,22 +207,18 @@ async function saveSource() {
             return;
         }
 
-        const config = await apiCall('/api/config');
-        if (!config.sources) config.sources = [];
         if (index === '') {
-            config.sources.push(source);
+            await apiCall('/api/sources', { method: 'POST', body: JSON.stringify(source) });
         } else {
-            config.sources[parseInt(index)] = source;
+            await apiCall(`/api/sources/${allSources[parseInt(index)].id}`, {
+                method: 'PUT',
+                body: JSON.stringify(source)
+            });
         }
-        delete config.xcOutputAccounts;
-        delete config.epgs;
-        delete config.sdAccounts;
-        await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
 
         hideModal('source-modal');
-        showNotification('Source saved successfully!', 'success');
+        showNotification('Source saved, re-importing in the background', 'success');
         loadSources();
-        setTimeout(() => restartService(), 500);
     } catch (error) {
         showNotification('Failed to save source: ' + error.message, 'danger');
     }
@@ -235,8 +233,8 @@ function editSource(index) {
 }
 
 /**
- * Deletes the source at the given index from config after user confirmation.
- * Triggers a restart after deletion.
+ * Deletes the source at the given index after user confirmation. The server
+ * reloads its source list and re-imports on its own.
  * @param {number} index - Zero-based index of the source to delete
  * @returns {Promise<void>}
  */
@@ -244,15 +242,9 @@ async function deleteSource(index) {
     if (!confirm('Are you sure you want to delete this source?')) return;
 
     try {
-        const config = await apiCall('/api/config');
-        config.sources.splice(index, 1);
-        delete config.xcOutputAccounts;
-        delete config.epgs;
-        delete config.sdAccounts;
-        await apiCall('/api/config', { method: 'POST', body: JSON.stringify(config) });
-        showNotification('Source deleted successfully!', 'success');
+        await apiCall(`/api/sources/${allSources[index].id}`, { method: 'DELETE' });
+        showNotification('Source deleted, re-importing in the background', 'success');
         loadSources();
-        setTimeout(() => restartService(), 1000);
     } catch (error) {
         showNotification('Failed to delete source', 'danger');
     }

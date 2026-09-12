@@ -17,6 +17,7 @@ let adminSocket = null;
 let adminSocketRetry = null;
 let activeGroupFilter = null;
 let allLocalSources = null;
+let allSources = null;
 let metaEntries = [];
 let metaCurrent = null;
 let metaPage = 1;
