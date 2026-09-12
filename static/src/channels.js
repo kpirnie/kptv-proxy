@@ -153,17 +153,38 @@ function renderChannelStatsBadges(channelName, stats) {
 }
 
 /**
- * Fetches all channels from the API, stores them in the module-level
- * allChannels cache, and triggers a page render.
- * @returns {Promise<Array>} The fetched channels array
+ * Fetches the current page of channels from the API, applying the active group
+ * filter and search term server-side. The group list is only returned when the
+ * cached generation token is stale, so unchanged polls carry just the page.
+ * @returns {Promise<Array>} The fetched page of channels
  */
 async function loadAllChannels() {
+  const params = new URLSearchParams();
+  params.set("page", currentPage);
+  params.set("size", pageSize);
+
+  if (activeGroupFilter) params.set("group", activeGroupFilter);
+
+  const searchInput = document.getElementById("channel-search");
+  const searchTerm = searchInput ? searchInput.value.trim() : "";
+  if (searchTerm) params.set("q", searchTerm);
+
+  if (channelGeneration !== null) params.set("gen", channelGeneration);
+
   try {
-    const channels = await apiCall("/api/channels");
-    allChannels = channels;
-    renderGroupFilterButtons();
+    const result = await apiCall(`/api/channels?${params.toString()}`);
+
+    allChannels = result.channels || [];
+    channelTotal = result.total || 0;
+    channelGeneration = result.generation;
+
+    if (result.groups) {
+      channelGroups = result.groups;
+      renderGroupFilterButtons();
+    }
+
     renderCurrentPage();
-    return channels;
+    return allChannels;
   } catch (error) {
     document.getElementById("all-channels-list").innerHTML =
       '<div class="bg-red-900/20 border border-red-600 text-red-100 px-4 py-3 rounded">Failed to load channels</div>';
@@ -179,9 +200,6 @@ async function loadAllChannels() {
  */
 function renderAllChannels(channels) {
   const container = document.getElementById("all-channels-list");
-
-  // sort the channels by name
-  channels.sort((a, b) => a.name.localeCompare(b.name));
 
   if (channels.length === 0) {
     container.innerHTML =
@@ -322,28 +340,23 @@ function renderChannelStatsBadgesForAllTab(channelName, stats) {
 }
 
 /**
- * Filters the allChannels cache by name or group using the search term,
- * resets to page 1, and re-renders the current page.
+ * Debounces a search term change, resetting to page 1 and refetching from the
+ * server once typing settles.
  * @param {string} searchTerm - Text to filter channel names and groups by
  */
 function filterChannels(searchTerm) {
-  if (!allChannels) return;
-  currentPage = 1;
-  applyChannelFilters();
+  clearTimeout(channelSearchTimer);
+  channelSearchTimer = setTimeout(() => {
+    currentPage = 1;
+    loadAllChannels();
+  }, 300);
 }
 
-/**
- * Renders the current page slice from filteredChannels or allChannels
- * and updates pagination controls.
- */
+/** Renders the fetched page of channels and updates pagination controls. */
 function renderCurrentPage() {
-  const channels = filteredChannels || allChannels;
-  if (!channels) return;
+  if (!allChannels) return;
 
-  const startIndex = (currentPage - 1) * pageSize;
-  const pageChannels = channels.slice(startIndex, startIndex + pageSize);
-
-  renderAllChannels(pageChannels);
+  renderAllChannels(allChannels);
   updatePaginationInfo();
 }
 
@@ -352,14 +365,12 @@ function renderCurrentPage() {
  * enables/disables first/prev/next/last buttons based on current page.
  */
 function updatePaginationInfo() {
-  const channels = filteredChannels || allChannels || [];
-  const totalChannels = channels.length;
-  const totalPages = Math.ceil(totalChannels / pageSize);
-  const startIndex = (currentPage - 1) * pageSize + 1;
-  const endIndex = Math.min(startIndex + pageSize - 1, totalChannels);
+  const totalPages = Math.ceil(channelTotal / pageSize);
+  const startIndex = channelTotal === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endIndex = Math.min(startIndex + pageSize - 1, channelTotal);
 
   document.getElementById("channel-pagination-info").textContent =
-    `Showing ${startIndex}-${endIndex} of ${totalChannels} channels`;
+    `Showing ${startIndex}-${endIndex} of ${channelTotal} channels`;
   document.getElementById("current-page").textContent = currentPage;
 
   const pageSelector = document.getElementById("page-selector");
@@ -400,18 +411,16 @@ function updatePaginationInfo() {
 function previousPage() {
   if (currentPage > 1) {
     currentPage--;
-    renderCurrentPage();
+    loadAllChannels();
   }
 }
 
 /** Navigates to the next page if not already on the last page. */
 function nextPage() {
-  const totalPages = Math.ceil(
-    (filteredChannels || allChannels || []).length / pageSize,
-  );
+  const totalPages = Math.ceil(channelTotal / pageSize);
   if (currentPage < totalPages) {
     currentPage++;
-    renderCurrentPage();
+    loadAllChannels();
   }
 }
 
@@ -419,18 +428,16 @@ function nextPage() {
 function goToFirstPage() {
   if (currentPage !== 1) {
     currentPage = 1;
-    renderCurrentPage();
+    loadAllChannels();
   }
 }
 
 /** Navigates to the last page. */
 function goToLastPage() {
-  const totalPages = Math.ceil(
-    (filteredChannels || allChannels || []).length / pageSize,
-  );
+  const totalPages = Math.ceil(channelTotal / pageSize);
   if (currentPage !== totalPages && totalPages > 0) {
     currentPage = totalPages;
-    renderCurrentPage();
+    loadAllChannels();
   }
 }
 
@@ -439,12 +446,10 @@ function goToLastPage() {
  * @param {number} page - Target page number (1-based)
  */
 function goToPage(page) {
-  const totalPages = Math.ceil(
-    (filteredChannels || allChannels || []).length / pageSize,
-  );
+  const totalPages = Math.ceil(channelTotal / pageSize);
   if (page >= 1 && page <= totalPages && page !== currentPage) {
     currentPage = page;
-    renderCurrentPage();
+    loadAllChannels();
   }
 }
 
@@ -466,32 +471,26 @@ function setGroupFilterCookie(group) {
 }
 
 /**
- * Derives unique sorted group names from allChannels and renders
- * filter buttons into #group-filter-btns. Restores saved cookie selection.
+ * Renders group filter buttons from the server-supplied group set, clearing a
+ * saved selection that no longer matches any existing group.
  */
 function renderGroupFilterButtons() {
   const container = document.getElementById("group-filter-btns");
-  if (!container || !allChannels) return;
+  if (!container) return;
 
-  const groups = [
-    ...new Set(
-      allChannels.map((ch) => ch.group || "Uncategorized").filter(Boolean),
-    ),
-  ].sort();
-
-  const saved = getGroupFilterCookie();
-  if (saved && groups.includes(saved)) {
-    activeGroupFilter = saved;
+  if (activeGroupFilter && !channelGroups.some((g) => g.name === activeGroupFilter)) {
+    activeGroupFilter = null;
+    setGroupFilterCookie("");
   }
 
   const allBtn = `<button class="group-filter-btn px-3 py-1 rounded text-xs border transition-colors ${!activeGroupFilter ? "bg-kptv-blue border-kptv-blue text-white" : "bg-kptv-gray-light border-kptv-border hover:border-kptv-blue"}"
         data-group="">All</button>`;
 
-  const groupBtns = groups
+  const groupBtns = channelGroups
     .map(
       (g) => `
-        <button class="group-filter-btn px-3 py-1 rounded text-xs border transition-colors ${activeGroupFilter === g ? "bg-kptv-blue border-kptv-blue text-white" : "bg-kptv-gray-light border-kptv-border hover:border-kptv-blue"}"
-            data-group="${escapeAttr(g)}">${escapeHtml(g)}</button>
+        <button class="group-filter-btn px-3 py-1 rounded text-xs border transition-colors ${activeGroupFilter === g.name ? "bg-kptv-blue border-kptv-blue text-white" : "bg-kptv-gray-light border-kptv-border hover:border-kptv-blue"}"
+            data-group="${escapeAttr(g.name)}">${escapeHtml(g.name)}</button>
     `,
     )
     .join("");
@@ -517,30 +516,7 @@ function renderGroupFilterButtons() {
   };
 }
 
-/**
- * Applies both the active group filter and text search against allChannels,
- * updating filteredChannels and re-rendering the current page.
- */
+/** Refetches the channel list with the current group filter and search term. */
 function applyChannelFilters() {
-  if (!allChannels) return;
-  const searchTerm = document
-    .getElementById("channel-search")
-    .value.trim()
-    .toLowerCase();
-
-  let result = allChannels;
-  if (activeGroupFilter) {
-    result = result.filter(
-      (ch) => (ch.group || "Uncategorized") === activeGroupFilter,
-    );
-  }
-  if (searchTerm) {
-    result = result.filter(
-      (ch) =>
-        ch.name.toLowerCase().includes(searchTerm) ||
-        (ch.group && ch.group.toLowerCase().includes(searchTerm)),
-    );
-  }
-  filteredChannels = activeGroupFilter || searchTerm ? result : null;
-  renderCurrentPage();
+  loadAllChannels();
 }

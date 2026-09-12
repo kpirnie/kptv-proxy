@@ -3,6 +3,7 @@ module kptv-proxy
 go 1.27.1
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/gorilla/mux v1.8.1
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/grafov/m3u8 v0.12.1
@@ -21,7 +22,6 @@ require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-sqlite3-wasm/v5 v5.0.35304 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect

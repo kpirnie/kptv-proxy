@@ -7,10 +7,14 @@ let allChannels = null;
 let allLogs = null;
 let currentPage = 1;
 let pageSize = 50;
-let filteredChannels = null;
+let channelTotal = 0;
+let channelGroups = [];
+let channelGeneration = null;
+let channelSearchTimer = null;
 let currentChannelName = null;
 let currentStreamData = null;
-let refreshInterval = null;
+let adminSocket = null;
+let adminSocketRetry = null;
 let activeGroupFilter = null;
 let allLocalSources = null;
 let metaEntries = [];
@@ -50,37 +54,53 @@ async function apiCall(endpoint, options = {}) {
 }
 
 /**
- * Starts the 5-second auto-refresh interval, updating stats,
- * active channels, and the all-channels list on each tick.
- * Preserves the current search filter and page position across refreshes.
+ * Opens the admin live-state websocket. Each pushed snapshot updates the stats
+ * display and active channel list; the channel list itself is only reloaded when
+ * the server reports a new import generation.
  */
-function startAutoRefresh() {
-    refreshInterval = setInterval(async () => {
-        loadStats();
-        loadActiveChannels();
+function connectAdminSocket() {
+    const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    adminSocket = new WebSocket(`${scheme}//${window.location.host}/api/ws`);
 
-        const savedPage = currentPage;
-        const savedGroup = activeGroupFilter;
-        const searchInput = document.getElementById('channel-search');
-        const currentSearch = searchInput ? searchInput.value.trim() : '';
+    adminSocket.onmessage = (event) => {
+        let message;
+        try {
+            message = JSON.parse(event.data);
+        } catch (error) {
+            return;
+        }
 
-        await loadAllChannels();
+        if (message.type !== 'state') return;
 
-        // restore group filter and search without resetting them
-        activeGroupFilter = savedGroup;
-        const totalPages = Math.ceil((filteredChannels || allChannels || []).length / pageSize);
-        currentPage = (savedPage > totalPages && totalPages > 0) ? totalPages
-            : (totalPages === 0 ? 1 : savedPage);
+        updateStatsDisplay(message.stats);
+        renderActiveChannels(message.activeChannels || []);
 
-        applyChannelFilters();
-    }, 5000);
+        if (channelGeneration !== null && message.generation !== channelGeneration) {
+            loadAllChannels();
+        }
+    };
+
+    adminSocket.onclose = () => {
+        adminSocket = null;
+        scheduleAdminSocketReconnect();
+    };
+
+    adminSocket.onerror = () => {
+        if (adminSocket) adminSocket.close();
+    };
 }
 
 /**
- * Stops the auto-refresh interval if it is currently running.
+ * Schedules a single reconnect attempt, ignoring the call when one is already
+ * pending so a flapping connection cannot stack timers.
  */
-function stopAutoRefresh() {
-    if (refreshInterval) clearInterval(refreshInterval);
+function scheduleAdminSocketReconnect() {
+    if (adminSocketRetry) return;
+
+    adminSocketRetry = setTimeout(() => {
+        adminSocketRetry = null;
+        connectAdminSocket();
+    }, 5000);
 }
 
 /**
@@ -263,20 +283,17 @@ async function saveGlobalSettings() {
 
 /**
  * Sends a graceful restart request to the server after user confirmation.
- * Stops auto-refresh during the restart and resumes it after completion.
  * @returns {Promise<void>}
  */
 async function restartService() {
     if (!confirm('Are you sure you want to restart the KPTV Proxy service? This will temporarily interrupt all streams.')) return;
 
     showLoadingOverlay('Restarting KPTV Proxy...');
-    stopAutoRefresh();
 
     try {
         const result = await apiCall('/api/restart', { method: 'POST' });
         hideLoadingOverlay();
         showNotification(result.message || 'Restart request sent successfully!', 'warning');
-        startAutoRefresh();
         setTimeout(() => {
             loadGlobalSettings();
             loadSources();
@@ -285,7 +302,6 @@ async function restartService() {
     } catch (error) {
         hideLoadingOverlay();
         showNotification('Failed to restart service', 'danger');
-        startAutoRefresh();
     }
 }
 
@@ -356,7 +372,6 @@ function setupEventListeners() {
     document.getElementById('refresh-channels').addEventListener('click', () => loadActiveChannels());
     document.getElementById('refresh-all-channels').addEventListener('click', () => {
         currentPage = 1;
-        filteredChannels = null;
         activeGroupFilter = null;
         document.getElementById('channel-search').value = '';
         setGroupFilterCookie('');
@@ -434,6 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadMetadata();
     loadStats();
     loadActiveChannels();
+    activeGroupFilter = getGroupFilterCookie() || null;
     loadAllChannels();
     loadLogs();
     loadXCAccounts();
@@ -442,7 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadEPGMappings();
 
-    startAutoRefresh();
+    connectAdminSocket();
 
     document.getElementById('footer-year').textContent = new Date().getFullYear();
 });
