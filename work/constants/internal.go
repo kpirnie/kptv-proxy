@@ -234,8 +234,9 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	// work/cache/cache.go — newEPGStore()
 	// -------------------------------------------------------------------------
-	EPGDiskTTL   time.Duration // TTL for EPG data written to the disk cache
-	EPGCachePath string        // Filesystem path for the disk-backed EPG cache
+	EPGDiskTTL       time.Duration // TTL for EPG data written to the disk cache
+	EPGCachePath     string        // Filesystem path for the disk-backed EPG cache
+	CatalogCachePath string        // Filesystem path for the disk-backed source catalog cache
 
 	// -------------------------------------------------------------------------
 	// work/users/session.go — CreateSession()
@@ -469,6 +470,7 @@ var Internal = InternalConstants{
 	EPGGlobalTimeout:   15 * time.Minute,
 	EPGDiskTTL:         12 * time.Hour,
 	EPGCachePath:       "/settings/kptv-epg",
+	CatalogCachePath:   "/settings/kptv-catalog",
 
 	// -------------------------------------------------------------------------
 	// Stream failure

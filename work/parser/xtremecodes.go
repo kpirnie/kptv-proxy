@@ -351,7 +351,7 @@ func ParseXtremeCodesAPI(ctx context.Context, httpClient *client.HeaderSettingCl
 	logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} from %s with optimized batch processing", utils.LogURL(cfg, source.URL))
 
 	cacheKey := fmt.Sprintf("xc:v2:%s:%s:%s", source.URL, source.Username, source.Password)
-	if cached, found := cache.GetXCData(cacheKey); found {
+	if cached, found := cache.GetCatalog(cacheKey); found {
 		logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Using cached XC API data for %s", source.Name)
 		var streams []*types.Stream
 		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
@@ -416,7 +416,7 @@ func ParseXtremeCodesAPI(ctx context.Context, httpClient *client.HeaderSettingCl
 	// only cache a complete catalog, a partial fetch would otherwise be served until it expires
 	if ctx.Err() == nil && len(allStreams) > 0 && liveCategoryOK && seriesCategoryOK && vodCategoryOK && liveOK && seriesOK && vodOK {
 		if data, err := json.Marshal(allStreams); err == nil {
-			cache.SetXCData(cacheKey, string(data))
+			cache.SetCatalog(cacheKey, string(data))
 			logger.Debug("{parser/xtremecodes - ParseXtremeCodesAPI} Cached %d streams for %s", len(allStreams), source.Name)
 		}
 	} else {

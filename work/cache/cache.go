@@ -21,6 +21,7 @@ type Cache struct {
 	cache    *otter.Cache[string, string]
 	duration time.Duration
 	epg      *epgStore
+	catalog  *catalogStore
 }
 
 // --------------------- EPG CACHING ---------------------
@@ -276,6 +277,13 @@ func NewCache(duration time.Duration) (*Cache, error) {
 		logger.Error("{cache - NewCache} failed to create EPG store: %v", err)
 		return nil, err
 	}
+
+	// create the disk-backed catalog store, sharing the in-memory TTL
+	catalog, err := newCatalogStore(constants.Internal.CatalogCachePath, duration)
+	if err != nil {
+		logger.Error("{cache - NewCache} failed to create catalog store: %v", err)
+		return nil, err
+	}
 	logger.Debug("{cache - NewCache} creating the cache")
 
 	// return the cache object
@@ -283,6 +291,7 @@ func NewCache(duration time.Duration) (*Cache, error) {
 		cache:    c,
 		duration: duration,
 		epg:      epg,
+		catalog:  catalog,
 	}, nil
 }
 

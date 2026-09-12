@@ -65,7 +65,7 @@ func ParseM3U8(ctx context.Context, httpClient *client.HeaderSettingClient, cfg 
 	logger.Debug("{parser/m3u8 - ParseM3U8} Parsing M3U8 from %s", utils.LogURL(cfg, source.URL))
 
 	cacheKey := fmt.Sprintf("m3u8:%s", source.URL)
-	if cached, found := cache.GetXCData(cacheKey); found {
+	if cached, found := cache.GetCatalog(cacheKey); found {
 		logger.Debug("{parser/m3u8 - ParseM3U8} Using cached M3U8 data for %s", source.Name)
 		var streams []*types.Stream
 		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
@@ -126,7 +126,7 @@ func ParseM3U8(ctx context.Context, httpClient *client.HeaderSettingClient, cfg 
 	// if there's actually streams
 	if len(streams) > 0 {
 		if data, err := json.Marshal(streams); err == nil {
-			cache.SetXCData(cacheKey, string(data))
+			cache.SetCatalog(cacheKey, string(data))
 			logger.Debug("{parser/m3u8 - ParseM3U8} Cached %d streams for %s", len(streams), source.Name)
 
 		}
