@@ -22,6 +22,12 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api/config", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetConfig(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/config", authCORS(users.PermConfigWrite, handleSetConfig(sp))).Methods("POST", "OPTIONS")
 
+	// Source management
+	router.HandleFunc("/api/sources", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetSources(sp)))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/sources", authCORS(users.PermConfigWrite, handleCreateSource(sp))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/sources/{id}", authCORS(users.PermConfigWrite, handleUpdateSource(sp))).Methods("PUT", "OPTIONS")
+	router.HandleFunc("/api/sources/{id}", authCORS(users.PermConfigWrite, handleDeleteSource(sp))).Methods("DELETE", "OPTIONS")
+
 	// Stats endpoint
 	router.HandleFunc("/api/stats", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetStats(sp)))).Methods("GET", "OPTIONS")
 

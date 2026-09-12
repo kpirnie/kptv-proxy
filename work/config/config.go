@@ -386,6 +386,12 @@ func loadFromDB() (*Config, error) {
 	return cfg, nil
 }
 
+// LoadSources re-reads the source rows from SQLite. Used by the admin source
+// endpoints to refresh the live config without a full restart.
+func LoadSources() ([]SourceConfig, error) {
+	return loadSourcesFromDB()
+}
+
 // loadSourcesFromDB converts kp_sources rows into SourceConfig values.
 func loadSourcesFromDB() ([]SourceConfig, error) {
 	rows, err := db.GetAllSources()
