@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"internal/singleflight"
 	"kptv-proxy/work/buffer"
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
@@ -33,6 +32,7 @@ import (
 	"github.com/panjf2000/ants/v2"
 	"github.com/puzpuzpuz/xsync/v3"
 	"go.uber.org/ratelimit"
+	"golang.org/x/sync/singleflight"
 )
 
 // setup the proxy-wide client semaphore for limiting concurrent outbound requests
