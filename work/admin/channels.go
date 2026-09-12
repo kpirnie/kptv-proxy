@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/epgindex"
@@ -12,20 +13,44 @@ import (
 	"kptv-proxy/work/utils"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
 )
 
-// handleGetAllChannels retrieves comprehensive information about all channels
-// in the system, including operational status and metadata for administrative
-// overview and management purposes.
+// handleGetAllChannels retrieves a page of channel information, filtered by an
+// optional group and search term. The full group set is returned alongside the
+// page whenever the caller's generation token does not match the current import
+// generation, so unchanged polls carry only the requested page.
 func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		var channels []ChannelResponse
+		query := r.URL.Query()
+
+		page, _ := strconv.Atoi(query.Get("page"))
+		if page < 1 {
+			page = 1
+		}
+
+		size, _ := strconv.Atoi(query.Get("size"))
+		if size < 1 {
+			size = constants.Internal.ChannelPageSizeDefault
+		}
+		if size > constants.Internal.ChannelPageSizeMax {
+			size = constants.Internal.ChannelPageSizeMax
+		}
+
+		search := strings.ToLower(strings.TrimSpace(query.Get("q")))
+		groupFilter := query.Get("group")
+		generation := sp.ImportGeneration()
+
+		channels := make([]ChannelResponse, 0)
+		groupCounts := make(map[string]int)
 
 		sp.Channels.Range(func(key string, value *types.Channel) bool {
 			channel := value
@@ -59,20 +84,67 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 				}
 			}
 
+			name := channel.Name
+			sources := len(channel.Streams)
+
+			channel.Mu.RUnlock()
+
+			groupCounts[group]++
+
+			if groupFilter != "" && group != groupFilter {
+				return true
+			}
+			if search != "" &&
+				!strings.Contains(strings.ToLower(name), search) &&
+				!strings.Contains(strings.ToLower(group), search) {
+				return true
+			}
+
 			channels = append(channels, ChannelResponse{
-				Name:    channel.Name,
+				Name:    name,
 				Active:  active,
 				Clients: clients,
 				Group:   group,
-				Sources: len(channel.Streams),
+				Sources: sources,
 				LogoURL: logoURL,
 			})
 
-			channel.Mu.RUnlock()
 			return true
 		})
 
-		if err := json.NewEncoder(w).Encode(channels); err != nil {
+		sort.Slice(channels, func(i, j int) bool {
+			return strings.ToLower(channels[i].Name) < strings.ToLower(channels[j].Name)
+		})
+
+		total := len(channels)
+		start := (page - 1) * size
+		if start > total {
+			start = total
+		}
+		end := start + size
+		if end > total {
+			end = total
+		}
+
+		response := ChannelListResponse{
+			Channels:   channels[start:end],
+			Total:      total,
+			Page:       page,
+			Size:       size,
+			Generation: generation,
+		}
+
+		if query.Get("gen") != strconv.FormatUint(generation, 10) {
+			response.Groups = make([]GroupCount, 0, len(groupCounts))
+			for name, count := range groupCounts {
+				response.Groups = append(response.Groups, GroupCount{Name: name, Count: count})
+			}
+			sort.Slice(response.Groups, func(i, j int) bool {
+				return response.Groups[i].Name < response.Groups[j].Name
+			})
+		}
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
 			addLogEntry("error", fmt.Sprintf("Failed to encode channels: %v", err))
 			http.Error(w, "Failed to encode channels", http.StatusInternalServerError)
 		}

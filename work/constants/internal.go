@@ -55,6 +55,12 @@ type InternalConstants struct {
 	XCShortEPGMaxLimit int // Upper bound on the client-supplied get_short_epg limit
 
 	// -------------------------------------------------------------------------
+	// work/admin/channels.go — handleGetAllChannels()
+	// -------------------------------------------------------------------------
+	ChannelPageSizeDefault int // Page size used when the client supplies none
+	ChannelPageSizeMax     int // Upper bound on the client-supplied page size
+
+	// -------------------------------------------------------------------------
 	// work/restream/restream.go — streamFallbackVideo() / streamLocalFallback()
 	// -------------------------------------------------------------------------
 	OversizedBufferMultiplier    int           // Multiplier used to detect and discard oversized buffers in the pool
@@ -357,6 +363,12 @@ var Internal = InternalConstants{
 	// XC player API
 	// -------------------------------------------------------------------------
 	XCShortEPGMaxLimit: 50,
+
+	// -------------------------------------------------------------------------
+	// Admin channel listing
+	// -------------------------------------------------------------------------
+	ChannelPageSizeDefault: 50,
+	ChannelPageSizeMax:     500,
 
 	// -------------------------------------------------------------------------
 	// Fallback video

@@ -38,6 +38,24 @@ type ChannelResponse struct {
 	Now              string `json:"now"`
 }
 
+// GroupCount pairs a channel group name with the number of channels carrying it.
+type GroupCount struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// ChannelListResponse is the paginated channel listing returned by /api/channels.
+// Groups is populated only when the caller's generation token is stale, since the
+// group set can only change when a committed import changes channel membership.
+type ChannelListResponse struct {
+	Channels   []ChannelResponse `json:"channels"`
+	Total      int               `json:"total"`
+	Page       int               `json:"page"`
+	Size       int               `json:"size"`
+	Generation uint64            `json:"generation"`
+	Groups     []GroupCount      `json:"groups,omitempty"`
+}
+
 // StreamInfo provides detailed information about individual streams within a channel,
 // including source metadata, ordering, and attributes for advanced channel management.
 type StreamInfo struct {
