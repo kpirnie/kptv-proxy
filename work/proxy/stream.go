@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"internal/singleflight"
 	"kptv-proxy/work/buffer"
 	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
@@ -70,6 +71,17 @@ type StreamProxy struct {
 	importGeneration      atomic.Uint64                        // bumped on each committed import so cached playlists are not reused across imports
 	groupIndex            atomic.Pointer[map[string]struct{}]  // lowercased set of known group titles, rebuilt on each committed import
 	nameIndex             atomic.Pointer[map[string]string]    // sanitized channel name -> real channel name, rebuilt on each committed import
+	playlistBuilds        singleflight.Group                   // collapses concurrent misses on the same playlist cache key into one build
+}
+
+// channelBatch is a lightweight struct pairing a channel name with its channel pointer,
+// used for efficient batch operations like sorting and playlist generation without
+// needing to re-query the concurrent map during iteration.
+type channelBatch struct {
+	name        string         // channel name as stored in the map key
+	channel     *types.Channel // pointer to the channel data
+	sourceOrder int            // lowest source order across the channel's streams
+	importOrder int            // lowest import order within that source
 }
 
 // New creates and initializes a new StreamProxy instance with all required dependencies.
@@ -138,16 +150,6 @@ func (sp *StreamProxy) ReinitRateLimiters() {
 	sp.SourceRateLimiters = make(map[string]ratelimit.Limiter)
 	sp.rateLimiterMutex.Unlock()
 	sp.initializeRateLimiters()
-}
-
-// channelBatch is a lightweight struct pairing a channel name with its channel pointer,
-// used for efficient batch operations like sorting and playlist generation without
-// needing to re-query the concurrent map during iteration.
-type channelBatch struct {
-	name        string         // channel name as stored in the map key
-	channel     *types.Channel // pointer to the channel data
-	sourceOrder int            // lowest source order across the channel's streams
-	importOrder int            // lowest import order within that source
 }
 
 // getChannelBatch snapshots the current channel map into an ordered slice for batch
@@ -512,19 +514,42 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 		cacheKey = fmt.Sprintf("playlist_%d_%s_type_%s", generation, account.Username, typeFilter)
 	}
 
-	// serve from cache if available
-	if sp.Config.CacheEnabled {
-		if cached, ok := sp.Cache.GetM3U8(cacheKey); ok {
-			logger.Debug("{proxy/stream - GeneratePlaylist} Serving cached playlist (key: %s)", cacheKey)
-			w.Header().Set("Content-Type", "application/x-mpegURL")
-			w.Header().Set("Cache-Control", "no-cache")
-			w.Write([]byte(cached))
-			return
+	// one in-flight build per cache key; concurrent misses wait on that build
+	// instead of each rendering the same playlist
+	result, err, _ := sp.playlistBuilds.Do(cacheKey, func() (any, error) {
+		if sp.Config.CacheEnabled {
+			if cached, ok := sp.Cache.GetM3U8(cacheKey); ok {
+				logger.Debug("{proxy/stream - GeneratePlaylist} Serving cached playlist (key: %s)", cacheKey)
+				return cached, nil
+			}
 		}
+
+		built := sp.buildPlaylist(groupFilter, typeFilter, account)
+
+		if sp.Config.CacheEnabled {
+			sp.Cache.SetM3U8(cacheKey, built)
+			logger.Debug("{proxy/stream - GeneratePlaylist} Cached generated playlist (key: %s)", cacheKey)
+		}
+
+		return built, nil
+	})
+
+	if err != nil {
+		logger.Error("{proxy/stream - GeneratePlaylist} Playlist build failed: %v", err)
+		http.Error(w, "Failed to generate playlist", http.StatusInternalServerError)
+		return
 	}
 
+	w.Header().Set("Content-Type", "application/x-mpegURL")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write([]byte(result.(string)))
+}
+
+// buildPlaylist renders the M3U8 body for the given filters and account. Callers
+// are responsible for cache lookup, storage, and response writing.
+func (sp *StreamProxy) buildPlaylist(groupFilter, typeFilter string, account *config.XCOutputAccount) string {
 	channels := sp.getChannelBatch()
-	logger.Debug("{proxy/stream - GeneratePlaylist} Building playlist from %d channels", len(channels))
+	logger.Debug("{proxy/stream - buildPlaylist} Building playlist from %d channels", len(channels))
 
 	if sp.Config.SortField == "preserve-order" {
 		snapshotOriginalOrder(channels)
@@ -626,26 +651,16 @@ func (sp *StreamProxy) GeneratePlaylist(w http.ResponseWriter, r *http.Request, 
 		account.Username, account.Password, groupFilter, typeFilter,
 		account.EnableVOD, account.EnableSeries)
 	if localCount > 0 {
-		logger.Debug("{proxy/stream - GeneratePlaylist} Appended %d local media entries", localCount)
+		logger.Debug("{proxy/stream - buildPlaylist} Appended %d local media entries", localCount)
 	}
-
-	result := playlist.String()
-
-	// cache the generated playlist for subsequent requests
-	if sp.Config.CacheEnabled {
-		sp.Cache.SetM3U8(cacheKey, result)
-		logger.Debug("{proxy/stream - GeneratePlaylist} Cached generated playlist (key: %s)", cacheKey)
-	}
-
-	w.Header().Set("Content-Type", "application/x-mpegURL")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Write([]byte(result))
 
 	if groupFilter == "" {
-		logger.Debug("{proxy/stream - GeneratePlaylist} Generated playlist with %d channels", len(channels))
+		logger.Debug("{proxy/stream - buildPlaylist} Generated playlist with %d channels", len(channels))
 	} else {
-		logger.Debug("{proxy/stream - GeneratePlaylist} Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, len(channels))
+		logger.Debug("{proxy/stream - buildPlaylist} Generated playlist for group '%s' with %d channels (out of %d total)", groupFilter, filteredCount, len(channels))
 	}
+
+	return playlist.String()
 }
 
 // GetChannelGroup extracts the group classification from channel attributes by checking
