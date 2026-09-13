@@ -12,8 +12,12 @@
     }
   ],
   "security": [
-    { "bearerAuth": [] },
-    { "cookieAuth": [] }
+    {
+      "bearerAuth": []
+    },
+    {
+      "cookieAuth": []
+    }
   ],
   "components": {
     "securitySchemes": {
@@ -33,124 +37,317 @@
       "Error": {
         "type": "object",
         "properties": {
-          "error": { "type": "string" }
+          "error": {
+            "type": "string"
+          }
         }
       },
       "Success": {
         "type": "object",
         "properties": {
-          "status": { "type": "string", "example": "success" }
+          "status": {
+            "type": "string",
+            "example": "success"
+          }
         }
       },
       "Config": {
         "type": "object",
         "properties": {
-          "baseURL":               { "type": "string",  "example": "http://localhost:8080" },
-          "bufferSizePerStream":   { "type": "integer", "example": 8 },
-          "cacheEnabled":          { "type": "boolean" },
-          "cacheDuration":         { "type": "string",  "example": "30m" },
-          "importRefreshInterval": { "type": "string",  "example": "12h" },
-          "workerThreads":         { "type": "integer", "example": 8 },
-          "logLevel":              { "type": "string",  "enum": ["DEBUG","INFO","WARN","ERROR","NONE"] },
-          "obfuscateUrls":         { "type": "boolean" },
-          "sortField":             { "type": "string",  "example": "tvg-name" },
-          "sortDirection":         { "type": "string",  "enum": ["asc","desc"] },
-          "streamTimeout":         { "type": "string",  "example": "30s" },
-          "maxConnectionsToApp":   { "type": "integer", "example": 100 },
-          "watcherEnabled":        { "type": "boolean" },
-          "ffmpegMode":            { "type": "boolean" },
-          "ffmpegPreInput":        { "type": "array",   "items": { "type": "string" } },
-          "ffmpegPreOutput":       { "type": "array",   "items": { "type": "string" } },
-          "responseHeaderTimeout": { "type": "string",  "example": "10s" },
-          "slowClientBufferChunks": { "type": "integer", "example": 16 },
+          "baseURL": {
+            "type": "string",
+            "example": "http://localhost:8080"
+          },
+          "bufferSizePerStream": {
+            "type": "integer",
+            "example": 8
+          },
+          "cacheEnabled": {
+            "type": "boolean"
+          },
+          "cacheDuration": {
+            "type": "string",
+            "example": "30m"
+          },
+          "importRefreshInterval": {
+            "type": "string",
+            "example": "12h"
+          },
+          "workerThreads": {
+            "type": "integer",
+            "example": 8
+          },
+          "logLevel": {
+            "type": "string",
+            "enum": [
+              "DEBUG",
+              "INFO",
+              "WARN",
+              "ERROR",
+              "NONE"
+            ]
+          },
+          "obfuscateUrls": {
+            "type": "boolean"
+          },
+          "sortField": {
+            "type": "string",
+            "example": "tvg-name"
+          },
+          "sortDirection": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "streamTimeout": {
+            "type": "string",
+            "example": "30s"
+          },
+          "maxConnectionsToApp": {
+            "type": "integer",
+            "example": 100
+          },
+          "watcherEnabled": {
+            "type": "boolean"
+          },
+          "ffmpegMode": {
+            "type": "boolean"
+          },
+          "ffmpegPreInput": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ffmpegPreOutput": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "responseHeaderTimeout": {
+            "type": "string",
+            "example": "10s"
+          },
+          "slowClientBufferChunks": {
+            "type": "integer",
+            "example": 16
+          },
           "sources": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/Source" }
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            }
           }
         }
       },
       "Source": {
         "type": "object",
-        "required": ["name","url"],
+        "required": [
+          "name",
+          "url"
+        ],
         "properties": {
-          "name":                   { "type": "string" },
-          "url":                    { "type": "string" },
-          "username":               { "type": "string" },
-          "password":               { "type": "string" },
-          "order":                  { "type": "integer", "example": 1 },
-          "maxConnections":         { "type": "integer", "example": 5 },
-          "maxStreamTimeout":       { "type": "string",  "example": "30s" },
-          "retryDelay":             { "type": "string",  "example": "5s" },
-          "maxRetries":             { "type": "integer", "example": 3 },
-          "maxFailuresBeforeBlock": { "type": "integer", "example": 5 },
-          "minDataSize":            { "type": "integer", "example": 2 },
-          "userAgent":              { "type": "string" },
-          "reqOrigin":              { "type": "string" },
-          "reqReferrer":            { "type": "string" },
-          "liveIncludeRegex":       { "type": "string" },
-          "liveExcludeRegex":       { "type": "string" },
-          "seriesIncludeRegex":     { "type": "string" },
-          "seriesExcludeRegex":     { "type": "string" },
-          "vodIncludeRegex":        { "type": "string" },
-          "vodExcludeRegex":        { "type": "string" }
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer",
+            "example": 1
+          },
+          "maxConnections": {
+            "type": "integer",
+            "example": 5
+          },
+          "maxStreamTimeout": {
+            "type": "string",
+            "example": "30s"
+          },
+          "retryDelay": {
+            "type": "string",
+            "example": "5s"
+          },
+          "maxRetries": {
+            "type": "integer",
+            "example": 3
+          },
+          "maxFailuresBeforeBlock": {
+            "type": "integer",
+            "example": 5
+          },
+          "minDataSize": {
+            "type": "integer",
+            "example": 2
+          },
+          "userAgent": {
+            "type": "string"
+          },
+          "reqOrigin": {
+            "type": "string"
+          },
+          "reqReferrer": {
+            "type": "string"
+          },
+          "liveIncludeRegex": {
+            "type": "string"
+          },
+          "liveExcludeRegex": {
+            "type": "string"
+          },
+          "seriesIncludeRegex": {
+            "type": "string"
+          },
+          "seriesExcludeRegex": {
+            "type": "string"
+          },
+          "vodIncludeRegex": {
+            "type": "string"
+          },
+          "vodExcludeRegex": {
+            "type": "string"
+          }
         }
       },
       "EPG": {
         "type": "object",
-        "required": ["name","url"],
+        "required": [
+          "name",
+          "url"
+        ],
         "properties": {
-          "id":    { "type": "integer" },
-          "name":  { "type": "string" },
-          "url":   { "type": "string" },
-          "order": { "type": "integer", "example": 1 }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer",
+            "example": 1
+          }
         }
       },
       "XCAccount": {
         "type": "object",
-        "required": ["name","username","password"],
+        "required": [
+          "name",
+          "username",
+          "password"
+        ],
         "properties": {
-          "id":             { "type": "integer" },
-          "name":           { "type": "string" },
-          "username":       { "type": "string" },
-          "password":       { "type": "string" },
-          "maxConnections": { "type": "integer", "example": 10 },
-          "enableLive":     { "type": "boolean" },
-          "enableSeries":   { "type": "boolean" },
-          "enableVOD":      { "type": "boolean" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "maxConnections": {
+            "type": "integer",
+            "example": 10
+          },
+          "enableLive": {
+            "type": "boolean"
+          },
+          "enableSeries": {
+            "type": "boolean"
+          },
+          "enableVOD": {
+            "type": "boolean"
+          }
         }
       },
       "SDAccount": {
         "type": "object",
-        "required": ["name","username","password"],
+        "required": [
+          "name",
+          "username",
+          "password"
+        ],
         "properties": {
-          "id":              { "type": "integer" },
-          "name":            { "type": "string" },
-          "username":        { "type": "string" },
-          "password":        { "type": "string" },
-          "enabled":         { "type": "boolean" },
-          "daysToFetch":     { "type": "integer", "example": 7 },
-          "selectedLineups": { "type": "array", "items": { "type": "string" } }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "daysToFetch": {
+            "type": "integer",
+            "example": 7
+          },
+          "selectedLineups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "Channel": {
         "type": "object",
         "properties": {
-          "name":    { "type": "string" },
-          "active":  { "type": "boolean" },
-          "clients": { "type": "integer" },
-          "group":   { "type": "string" },
-          "sources": { "type": "integer" },
-          "logoURL": { "type": "string" }
+          "name": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "clients": {
+            "type": "integer"
+          },
+          "group": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "integer"
+          },
+          "logoURL": {
+            "type": "string"
+          }
         }
       },
       "ActiveChannel": {
         "allOf": [
-          { "$ref": "#/components/schemas/Channel" },
+          {
+            "$ref": "#/components/schemas/Channel"
+          },
           {
             "type": "object",
             "properties": {
-              "bytesTransferred": { "type": "integer" },
-              "currentSource":    { "type": "string" }
+              "bytesTransferred": {
+                "type": "integer"
+              },
+              "currentSource": {
+                "type": "string"
+              }
             }
           }
         ]
@@ -158,173 +355,459 @@
       "StreamInfo": {
         "type": "object",
         "properties": {
-          "index":       { "type": "integer" },
-          "url":         { "type": "string" },
-          "sourceName":  { "type": "string" },
-          "sourceOrder": { "type": "integer" },
-          "attributes":  { "type": "object", "additionalProperties": { "type": "string" } }
+          "index": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          },
+          "sourceName": {
+            "type": "string"
+          },
+          "sourceOrder": {
+            "type": "integer"
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
         }
       },
       "ChannelStreams": {
         "type": "object",
         "properties": {
-          "channelName":          { "type": "string" },
-          "currentStreamIndex":   { "type": "integer" },
-          "preferredStreamIndex": { "type": "integer" },
-          "obfuscated":           { "type": "boolean" },
+          "channelName": {
+            "type": "string"
+          },
+          "currentStreamIndex": {
+            "type": "integer"
+          },
+          "preferredStreamIndex": {
+            "type": "integer"
+          },
+          "obfuscated": {
+            "type": "boolean"
+          },
           "streams": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/StreamInfo" }
+            "items": {
+              "$ref": "#/components/schemas/StreamInfo"
+            }
           }
         }
       },
       "StreamStats": {
         "type": "object",
         "properties": {
-          "streaming":       { "type": "boolean" },
-          "container":       { "type": "string" },
-          "videoCodec":      { "type": "string" },
-          "audioCodec":      { "type": "string" },
-          "videoResolution": { "type": "string" },
-          "fps":             { "type": "number" },
-          "audioChannels":   { "type": "string" },
-          "bitrate":         { "type": "integer" },
-          "streamType":      { "type": "string" },
-          "valid":           { "type": "boolean" },
-          "lastUpdated":     { "type": "integer" }
+          "streaming": {
+            "type": "boolean"
+          },
+          "container": {
+            "type": "string"
+          },
+          "videoCodec": {
+            "type": "string"
+          },
+          "audioCodec": {
+            "type": "string"
+          },
+          "videoResolution": {
+            "type": "string"
+          },
+          "fps": {
+            "type": "number"
+          },
+          "audioChannels": {
+            "type": "string"
+          },
+          "bitrate": {
+            "type": "integer"
+          },
+          "streamType": {
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "lastUpdated": {
+            "type": "integer"
+          }
         }
       },
       "Stats": {
         "type": "object",
         "properties": {
-          "totalChannels":       { "type": "integer" },
-          "activeStreams":       { "type": "integer" },
-          "totalSources":        { "type": "integer" },
-          "totalEpgs":           { "type": "integer" },
-          "connectedClients":    { "type": "integer" },
-          "uptime":              { "type": "string" },
-          "memoryUsage":         { "type": "string" },
-          "cacheStatus":         { "type": "string" },
-          "workerThreads":       { "type": "integer" },
-          "totalConnections":    { "type": "integer" },
-          "bytesTransferred":    { "type": "string" },
-          "activeRestreamers":   { "type": "integer" },
-          "streamErrors":        { "type": "integer" },
-          "responseTime":        { "type": "string" },
-          "watcherEnabled":      { "type": "boolean" },
-          "upstreamConnections": { "type": "integer" },
-          "activeChannels":      { "type": "integer" },
-          "avgClientsPerStream": { "type": "number" }
+          "totalChannels": {
+            "type": "integer"
+          },
+          "activeStreams": {
+            "type": "integer"
+          },
+          "totalSources": {
+            "type": "integer"
+          },
+          "totalEpgs": {
+            "type": "integer"
+          },
+          "connectedClients": {
+            "type": "integer"
+          },
+          "uptime": {
+            "type": "string"
+          },
+          "memoryUsage": {
+            "type": "string"
+          },
+          "cacheStatus": {
+            "type": "string"
+          },
+          "workerThreads": {
+            "type": "integer"
+          },
+          "totalConnections": {
+            "type": "integer"
+          },
+          "bytesTransferred": {
+            "type": "string"
+          },
+          "activeRestreamers": {
+            "type": "integer"
+          },
+          "streamErrors": {
+            "type": "integer"
+          },
+          "responseTime": {
+            "type": "string"
+          },
+          "watcherEnabled": {
+            "type": "boolean"
+          },
+          "upstreamConnections": {
+            "type": "integer"
+          },
+          "activeChannels": {
+            "type": "integer"
+          },
+          "avgClientsPerStream": {
+            "type": "number"
+          }
         }
       },
       "LogEntry": {
         "type": "object",
         "properties": {
-          "timestamp": { "type": "string" },
-          "level":     { "type": "string", "enum": ["debug","info","warn","error"] },
-          "message":   { "type": "string" }
+          "timestamp": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "debug",
+              "info",
+              "warn",
+              "error"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
         }
       },
       "Token": {
         "type": "object",
         "properties": {
-          "id":          { "type": "integer" },
-          "name":        { "type": "string" },
-          "permissions": { "type": "integer" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "integer"
+          }
         }
       },
       "Permissions": {
         "type": "object",
         "properties": {
-          "read":        { "type": "integer", "example": 1 },
-          "configWrite": { "type": "integer", "example": 2 },
-          "restart":     { "type": "integer", "example": 4 },
-          "streams":     { "type": "integer", "example": 8 },
-          "logs":        { "type": "integer", "example": 16 },
-          "xcAccounts":  { "type": "integer", "example": 32 },
-          "epgs":        { "type": "integer", "example": 64 },
-          "sd":          { "type": "integer", "example": 128 },
-          "all":         { "type": "integer", "example": 255 }
+          "read": {
+            "type": "integer",
+            "example": 1
+          },
+          "configWrite": {
+            "type": "integer",
+            "example": 2
+          },
+          "restart": {
+            "type": "integer",
+            "example": 4
+          },
+          "streams": {
+            "type": "integer",
+            "example": 8
+          },
+          "logs": {
+            "type": "integer",
+            "example": 16
+          },
+          "xcAccounts": {
+            "type": "integer",
+            "example": 32
+          },
+          "epgs": {
+            "type": "integer",
+            "example": 64
+          },
+          "sd": {
+            "type": "integer",
+            "example": 128
+          },
+          "all": {
+            "type": "integer",
+            "example": 255
+          }
         }
       },
       "LocalSource": {
         "type": "object",
-        "required": ["name","path","mediaType"],
+        "required": [
+          "name",
+          "path",
+          "mediaType"
+        ],
         "properties": {
-          "id":          { "type": "integer" },
-          "name":        { "type": "string" },
-          "path":        { "type": "string" },
-          "mediaType":   { "type": "string", "enum": ["music","movies","shows"] },
-          "groupPrefix": { "type": "string" },
-          "order":       { "type": "integer", "example": 1 },
-          "enabled":     { "type": "boolean" },
-          "incRegex":    { "type": "string" },
-          "excRegex":    { "type": "string" },
-          "lastScan":    { "type": "integer", "description": "Unix timestamp of the last completed scan" },
-          "entryCount":  { "type": "integer" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "music",
+              "movies",
+              "shows"
+            ]
+          },
+          "groupPrefix": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer",
+            "example": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "incRegex": {
+            "type": "string"
+          },
+          "excRegex": {
+            "type": "string"
+          },
+          "lastScan": {
+            "type": "integer",
+            "description": "Unix timestamp of the last completed scan"
+          },
+          "entryCount": {
+            "type": "integer"
+          }
         }
       },
-
       "Person": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "role": { "type": "string" }
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
         }
       },
-
       "ChannelEPGMapping": {
         "type": "object",
         "properties": {
-          "epg_id":   { "type": "string" },
-          "epg_name": { "type": "string" }
+          "epg_id": {
+            "type": "string"
+          },
+          "epg_name": {
+            "type": "string"
+          }
         }
       },
-
+      "ChannelLogo": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "override",
+              "upload",
+              "epg"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "description": "Source URL for override/epg, content hash for upload"
+          }
+        }
+      },
       "LocalMediaEntry": {
         "type": "object",
         "properties": {
-          "id":              { "type": "integer" },
-          "local_source_id": { "type": "integer" },
-          "hash":            { "type": "string" },
-          "path":            { "type": "string" },
-          "media_type":      { "type": "string", "enum": ["music","movies","shows"] },
-          "group_title":     { "type": "string" },
-          "tvg_name":        { "type": "string" },
-          "display":         { "type": "string" },
-          "duration":        { "type": "integer" },
-          "year":            { "type": "string" },
-          "artist":          { "type": "string" },
-          "album":           { "type": "string" },
-          "disc":            { "type": "integer" },
-          "track":           { "type": "integer" },
-          "series":          { "type": "string" },
-          "season":          { "type": "integer" },
-          "episode":         { "type": "integer" },
-          "episode_title":   { "type": "string" },
-          "title":           { "type": "string" },
-          "sort_title":      { "type": "string" },
-          "plot":            { "type": "string" },
-          "tagline":         { "type": "string" },
-          "poster":          { "type": "string" },
-          "fanart":          { "type": "string" },
-          "rating":          { "type": "number" },
-          "critic_rating":   { "type": "integer" },
-          "mpaa":            { "type": "string" },
-          "country":         { "type": "string" },
-          "premiered":       { "type": "string" },
-          "imdb_id":         { "type": "string" },
-          "tmdb_id":         { "type": "string" },
-          "tvdb_id":         { "type": "string" },
-          "collection":      { "type": "string" },
-          "genres":          { "type": "array", "items": { "type": "string" } },
-          "studios":         { "type": "array", "items": { "type": "string" } },
-          "tags":            { "type": "array", "items": { "type": "string" } },
-          "directors":       { "type": "array", "items": { "type": "string" } },
-          "writers":         { "type": "array", "items": { "type": "string" } },
-          "cast":            { "type": "array", "items": { "$ref": "#/components/schemas/Person" } },
-          "mod_time":        { "type": "integer" },
-          "file_size":       { "type": "integer" }
+          "id": {
+            "type": "integer"
+          },
+          "local_source_id": {
+            "type": "integer"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "music",
+              "movies",
+              "shows"
+            ]
+          },
+          "group_title": {
+            "type": "string"
+          },
+          "tvg_name": {
+            "type": "string"
+          },
+          "display": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "integer"
+          },
+          "year": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "album": {
+            "type": "string"
+          },
+          "disc": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "integer"
+          },
+          "series": {
+            "type": "string"
+          },
+          "season": {
+            "type": "integer"
+          },
+          "episode": {
+            "type": "integer"
+          },
+          "episode_title": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "sort_title": {
+            "type": "string"
+          },
+          "plot": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": "string"
+          },
+          "poster": {
+            "type": "string"
+          },
+          "fanart": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "number"
+          },
+          "critic_rating": {
+            "type": "integer"
+          },
+          "mpaa": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "premiered": {
+            "type": "string"
+          },
+          "imdb_id": {
+            "type": "string"
+          },
+          "tmdb_id": {
+            "type": "string"
+          },
+          "tvdb_id": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "studios": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "directors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "writers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cast": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Person"
+            }
+          },
+          "mod_time": {
+            "type": "integer"
+          },
+          "file_size": {
+            "type": "integer"
+          }
         }
       }
     }
@@ -334,23 +817,74 @@
       "get": {
         "summary": "Get current configuration",
         "operationId": "getConfig",
-        "tags": ["Configuration"],
-        "security": [{"bearerAuth": []},{"cookieAuth": []}],
+        "tags": [
+          "Configuration"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "Current config", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Config" } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Current config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Config"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "post": {
         "summary": "Save configuration",
         "operationId": "setConfig",
-        "tags": ["Configuration"],
-        "security": [{"bearerAuth": []},{"cookieAuth": []}],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Config" } } } },
+        "tags": [
+          "Configuration"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Config"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Saved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
-          "400": { "description": "Invalid payload" },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -358,10 +892,23 @@
       "get": {
         "summary": "Get system statistics",
         "operationId": "getStats",
-        "tags": ["System"],
+        "tags": [
+          "System"
+        ],
         "responses": {
-          "200": { "description": "Stats", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Stats" } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -369,10 +916,16 @@
       "post": {
         "summary": "Trigger a graceful restart",
         "operationId": "restart",
-        "tags": ["System"],
+        "tags": [
+          "System"
+        ],
         "responses": {
-          "200": { "description": "Restart initiated" },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Restart initiated"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -380,14 +933,34 @@
       "post": {
         "summary": "Enable or disable the stream watcher",
         "operationId": "toggleWatcher",
-        "tags": ["System"],
+        "tags": [
+          "System"
+        ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "type": "object", "properties": { "enabled": { "type": "boolean" } }, "required": ["enabled"] } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "Toggled" },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Toggled"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -395,19 +968,41 @@
       "get": {
         "summary": "Get application logs",
         "operationId": "getLogs",
-        "tags": ["Logs"],
+        "tags": [
+          "Logs"
+        ],
         "responses": {
-          "200": { "description": "Log entries", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/LogEntry" } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LogEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "delete": {
         "summary": "Clear application logs",
         "operationId": "clearLogs",
-        "tags": ["Logs"],
+        "tags": [
+          "Logs"
+        ],
         "responses": {
-          "200": { "description": "Cleared" },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Cleared"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -415,10 +1010,26 @@
       "get": {
         "summary": "Get all channels",
         "operationId": "getAllChannels",
-        "tags": ["Channels"],
+        "tags": [
+          "Channels"
+        ],
         "responses": {
-          "200": { "description": "All channels", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Channel" } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "All channels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Channel"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -426,10 +1037,26 @@
       "get": {
         "summary": "Get currently active/streaming channels",
         "operationId": "getActiveChannels",
-        "tags": ["Channels"],
+        "tags": [
+          "Channels"
+        ],
         "responses": {
-          "200": { "description": "Active channels", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ActiveChannel" } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Active channels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActiveChannel"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -437,11 +1064,33 @@
       "get": {
         "summary": "Get streams for a channel",
         "operationId": "getChannelStreams",
-        "tags": ["Channels"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "tags": [
+          "Channels"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Channel streams", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChannelStreams" } } } },
-          "404": { "description": "Channel not found" }
+          "200": {
+            "description": "Channel streams",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelStreams"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found"
+          }
         }
       }
     },
@@ -449,11 +1098,33 @@
       "get": {
         "summary": "Get FFprobe stream stats for a channel",
         "operationId": "getChannelStats",
-        "tags": ["Channels"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "tags": [
+          "Channels"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Stream stats", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StreamStats" } } } },
-          "404": { "description": "Channel not found" }
+          "200": {
+            "description": "Stream stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamStats"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found"
+          }
         }
       }
     },
@@ -461,13 +1132,47 @@
       "post": {
         "summary": "Manually switch the active stream",
         "operationId": "setChannelStream",
-        "tags": ["Channels"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamIndex": { "type": "integer" } }, "required": ["streamIndex"] } } } },
+        "tags": [
+          "Channels"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "streamIndex": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "streamIndex"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Stream switched" },
-          "400": { "description": "Invalid index" },
-          "404": { "description": "Channel not found" }
+          "200": {
+            "description": "Stream switched"
+          },
+          "400": {
+            "description": "Invalid index"
+          },
+          "404": {
+            "description": "Channel not found"
+          }
         }
       }
     },
@@ -475,23 +1180,75 @@
       "post": {
         "summary": "Set custom stream ordering for a channel",
         "operationId": "setChannelOrder",
-        "tags": ["Channels"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamOrder": { "type": "array", "items": { "type": "string" } } }, "required": ["streamOrder"] } } } },
+        "tags": [
+          "Channels"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "streamOrder": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "streamOrder"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Order applied" },
-          "400": { "description": "Length mismatch" },
-          "404": { "description": "Channel not found" }
+          "200": {
+            "description": "Order applied"
+          },
+          "400": {
+            "description": "Length mismatch"
+          },
+          "404": {
+            "description": "Channel not found"
+          }
         }
       },
       "delete": {
         "summary": "Reset channel to default stream order",
         "operationId": "resetChannelOrder",
-        "tags": ["Channels"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "tags": [
+          "Channels"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Order reset" },
-          "404": { "description": "Channel not found" }
+          "200": {
+            "description": "Order reset"
+          },
+          "404": {
+            "description": "Channel not found"
+          }
         }
       }
     },
@@ -499,12 +1256,44 @@
       "post": {
         "summary": "Mark a stream as dead (manual)",
         "operationId": "killStream",
-        "tags": ["Channels"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamIndex": { "type": "integer" } }, "required": ["streamIndex"] } } } },
+        "tags": [
+          "Channels"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "streamIndex": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "streamIndex"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Stream killed" },
-          "404": { "description": "Channel not found" }
+          "200": {
+            "description": "Stream killed"
+          },
+          "404": {
+            "description": "Channel not found"
+          }
         }
       }
     },
@@ -512,12 +1301,44 @@
       "post": {
         "summary": "Revive a dead stream",
         "operationId": "reviveStream",
-        "tags": ["Channels"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "streamIndex": { "type": "integer" } }, "required": ["streamIndex"] } } } },
+        "tags": [
+          "Channels"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "streamIndex": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "streamIndex"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Stream revived" },
-          "404": { "description": "Channel not found" }
+          "200": {
+            "description": "Stream revived"
+          },
+          "404": {
+            "description": "Channel not found"
+          }
         }
       }
     },
@@ -525,20 +1346,51 @@
       "get": {
         "summary": "Get all EPG sources",
         "operationId": "getEPGs",
-        "tags": ["EPGs"],
+        "tags": [
+          "EPGs"
+        ],
         "responses": {
-          "200": { "description": "EPG list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/EPG" } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "EPG list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EPG"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "post": {
         "summary": "Create an EPG source",
         "operationId": "createEPG",
-        "tags": ["EPGs"],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EPG" } } } },
+        "tags": [
+          "EPGs"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EPG"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Created" },
-          "400": { "description": "Invalid payload" }
+          "200": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          }
         }
       }
     },
@@ -546,22 +1398,61 @@
       "put": {
         "summary": "Update an EPG source",
         "operationId": "updateEPG",
-        "tags": ["EPGs"],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EPG" } } } },
+        "tags": [
+          "EPGs"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EPG"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Updated" },
-          "400": { "description": "Invalid payload" }
+          "200": {
+            "description": "Updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          }
         }
       },
       "delete": {
         "summary": "Delete an EPG source",
         "operationId": "deleteEPG",
-        "tags": ["EPGs"],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "tags": [
+          "EPGs"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Deleted" },
-          "400": { "description": "Invalid ID" }
+          "200": {
+            "description": "Deleted"
+          },
+          "400": {
+            "description": "Invalid ID"
+          }
         }
       }
     },
@@ -569,20 +1460,51 @@
       "get": {
         "summary": "Get all XC output accounts",
         "operationId": "getXCAccounts",
-        "tags": ["XC Accounts"],
+        "tags": [
+          "XC Accounts"
+        ],
         "responses": {
-          "200": { "description": "XC accounts", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/XCAccount" } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "XC accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/XCAccount"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "post": {
         "summary": "Create an XC output account",
         "operationId": "createXCAccount",
-        "tags": ["XC Accounts"],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/XCAccount" } } } },
+        "tags": [
+          "XC Accounts"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/XCAccount"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Created" },
-          "400": { "description": "Invalid payload" }
+          "200": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          }
         }
       }
     },
@@ -590,20 +1512,55 @@
       "put": {
         "summary": "Update an XC output account",
         "operationId": "updateXCAccount",
-        "tags": ["XC Accounts"],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/XCAccount" } } } },
+        "tags": [
+          "XC Accounts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/XCAccount"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Updated" }
+          "200": {
+            "description": "Updated"
+          }
         }
       },
       "delete": {
         "summary": "Delete an XC output account",
         "operationId": "deleteXCAccount",
-        "tags": ["XC Accounts"],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "tags": [
+          "XC Accounts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Deleted" }
+          "200": {
+            "description": "Deleted"
+          }
         }
       }
     },
@@ -611,19 +1568,48 @@
       "get": {
         "summary": "Get all Schedules Direct accounts",
         "operationId": "getSDAccounts",
-        "tags": ["Schedules Direct"],
+        "tags": [
+          "Schedules Direct"
+        ],
         "responses": {
-          "200": { "description": "SD accounts", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SDAccount" } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "SD accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SDAccount"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "post": {
         "summary": "Create a Schedules Direct account",
         "operationId": "createSDAccount",
-        "tags": ["Schedules Direct"],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SDAccount" } } } },
+        "tags": [
+          "Schedules Direct"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SDAccount"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Created" }
+          "200": {
+            "description": "Created"
+          }
         }
       }
     },
@@ -631,20 +1617,55 @@
       "put": {
         "summary": "Update a Schedules Direct account",
         "operationId": "updateSDAccount",
-        "tags": ["Schedules Direct"],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SDAccount" } } } },
+        "tags": [
+          "Schedules Direct"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SDAccount"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Updated" }
+          "200": {
+            "description": "Updated"
+          }
         }
       },
       "delete": {
         "summary": "Delete a Schedules Direct account",
         "operationId": "deleteSDAccount",
-        "tags": ["Schedules Direct"],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "tags": [
+          "Schedules Direct"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Deleted" }
+          "200": {
+            "description": "Deleted"
+          }
         }
       }
     },
@@ -652,14 +1673,38 @@
       "post": {
         "summary": "Discover Schedules Direct lineups for credentials",
         "operationId": "discoverSDLineups",
-        "tags": ["Schedules Direct"],
+        "tags": [
+          "Schedules Direct"
+        ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "type": "object", "properties": { "username": { "type": "string" }, "password": { "type": "string" } }, "required": ["username","password"] } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "username",
+                  "password"
+                ]
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "Lineups discovered" },
-          "401": { "description": "SD authentication failed" }
+          "200": {
+            "description": "Lineups discovered"
+          },
+          "401": {
+            "description": "SD authentication failed"
+          }
         }
       }
     },
@@ -667,31 +1712,270 @@
       "get": {
         "summary": "Get EPG mapping for a channel",
         "operationId": "getChannelEPG",
-        "tags": ["EPG Channel Mapping"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "tags": [
+          "EPG Channel Mapping"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "EPG mapping", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChannelEPGMapping" } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "EPG mapping",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelEPGMapping"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "post": {
         "summary": "Set EPG mapping for a channel",
         "operationId": "setChannelEPG",
-        "tags": ["EPG Channel Mapping"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChannelEPGMapping" } } } },
+        "tags": [
+          "EPG Channel Mapping"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelEPGMapping"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Saved" },
-          "400": { "description": "Invalid payload" }
+          "200": {
+            "description": "Saved"
+          },
+          "400": {
+            "description": "Invalid payload"
+          }
         }
       },
       "delete": {
         "summary": "Clear EPG mapping for a channel",
         "operationId": "deleteChannelEPG",
-        "tags": ["EPG Channel Mapping"],
-        "parameters": [{ "name": "channel", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "tags": [
+          "EPG Channel Mapping"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Cleared" }
+          "200": {
+            "description": "Cleared"
+          }
+        }
+      }
+    },
+    "/api/channels/{channel}/logo": {
+      "get": {
+        "summary": "Get the logo assignment for a channel",
+        "operationId": "getChannelLogo",
+        "tags": [
+          "Channel Logos"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logo assignment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelLogo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "summary": "Set the logo for a channel",
+        "description": "JSON sets a manual override, a library hash, or pulls the mapped EPG icon. multipart/form-data with a 'logo' file part stores an upload.",
+        "operationId": "setChannelLogo",
+        "tags": [
+          "Channel Logos"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelLogo"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "logo": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "400": {
+            "description": "Invalid payload"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear the logo assignment for a channel",
+        "operationId": "deleteChannelLogo",
+        "tags": [
+          "Channel Logos"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cleared"
+          }
+        }
+      }
+    },
+    "/api/logos": {
+      "get": {
+        "summary": "List uploaded logo hashes",
+        "operationId": "getLogoLibrary",
+        "tags": [
+          "Channel Logos"
+        ],
+        "responses": {
+          "200": {
+            "description": "Library hashes, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logos/pull-epg": {
+      "post": {
+        "summary": "Assign mapped EPG icons to every mapped channel",
+        "operationId": "bulkPullLogosFromEPG",
+        "tags": [
+          "Channel Logos"
+        ],
+        "responses": {
+          "200": {
+            "description": "Count of updated channels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logos/{hash}": {
+      "get": {
+        "summary": "Get a stored logo image",
+        "operationId": "getLogo",
+        "tags": [
+          "Channel Logos"
+        ],
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image bytes, or a 302 redirect when the source cannot be fetched"
+          },
+          "404": {
+            "description": "Not found"
+          }
         }
       }
     },
@@ -699,10 +1983,34 @@
       "get": {
         "summary": "Fuzzy search the EPG channel index",
         "operationId": "searchEPGChannels",
-        "tags": ["EPG Channel Mapping"],
-        "parameters": [{ "name": "q", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Search term; empty returns an empty list" }],
+        "tags": [
+          "EPG Channel Mapping"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search term; empty returns an empty list"
+          }
+        ],
         "responses": {
-          "200": { "description": "Up to 50 matching EPG channels", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } }
+          "200": {
+            "description": "Up to 50 matching EPG channels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -710,9 +2018,23 @@
       "get": {
         "summary": "All channel to EPG ID mappings",
         "operationId": "getAllChannelEPGs",
-        "tags": ["EPG Channel Mapping"],
+        "tags": [
+          "EPG Channel Mapping"
+        ],
         "responses": {
-          "200": { "description": "Map of channel name to epg_id", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": { "type": "string" } } } } }
+          "200": {
+            "description": "Map of channel name to epg_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -720,9 +2042,20 @@
       "post": {
         "summary": "Trigger an immediate EPG cache refresh",
         "operationId": "refreshEPG",
-        "tags": ["EPGs"],
+        "tags": [
+          "EPGs"
+        ],
         "responses": {
-          "200": { "description": "Refresh triggered", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } }
+          "200": {
+            "description": "Refresh triggered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -730,20 +2063,51 @@
       "get": {
         "summary": "List configured local media sources",
         "operationId": "getLocalSources",
-        "tags": ["Local Sources"],
+        "tags": [
+          "Local Sources"
+        ],
         "responses": {
-          "200": { "description": "Local source list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/LocalSource" } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Local source list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LocalSource"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "post": {
         "summary": "Create a local media source",
         "operationId": "createLocalSource",
-        "tags": ["Local Sources"],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalSource" } } } },
+        "tags": [
+          "Local Sources"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalSource"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Created" },
-          "400": { "description": "Invalid payload" }
+          "200": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          }
         }
       }
     },
@@ -751,10 +2115,31 @@
       "post": {
         "summary": "Scan all enabled local sources",
         "operationId": "scanAllLocalSources",
-        "tags": ["Local Sources"],
+        "tags": [
+          "Local Sources"
+        ],
         "responses": {
-          "200": { "description": "Scan complete", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string" }, "count": { "type": "integer" } } } } } },
-          "500": { "description": "Scan failed" }
+          "200": {
+            "description": "Scan complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Scan failed"
+          }
         }
       }
     },
@@ -762,21 +2147,58 @@
       "put": {
         "summary": "Update a local media source",
         "operationId": "updateLocalSource",
-        "tags": ["Local Sources"],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalSource" } } } },
+        "tags": [
+          "Local Sources"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalSource"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Updated" },
-          "404": { "description": "Local source not found" }
+          "200": {
+            "description": "Updated"
+          },
+          "404": {
+            "description": "Local source not found"
+          }
         }
       },
       "delete": {
         "summary": "Delete a local media source",
         "operationId": "deleteLocalSource",
-        "tags": ["Local Sources"],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "tags": [
+          "Local Sources"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Deleted" }
+          "200": {
+            "description": "Deleted"
+          }
         }
       }
     },
@@ -784,11 +2206,41 @@
       "post": {
         "summary": "Scan a single local source",
         "operationId": "scanLocalSource",
-        "tags": ["Local Sources"],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "tags": [
+          "Local Sources"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Scan complete", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string" }, "count": { "type": "integer" } } } } } },
-          "500": { "description": "Scan failed" }
+          "200": {
+            "description": "Scan complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Scan failed"
+          }
         }
       }
     },
@@ -796,15 +2248,76 @@
       "get": {
         "summary": "List scanned local media entries",
         "operationId": "getLocalMedia",
-        "tags": ["Local Media"],
+        "tags": [
+          "Local Media"
+        ],
         "parameters": [
-          { "name": "source", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Filter to a single local source ID" },
-          { "name": "q", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Free-text filter against display title and group" },
-          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "default": 1 } },
-          { "name": "size", "in": "query", "required": false, "schema": { "type": "integer", "default": 100 }, "description": "Max 1000" }
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Filter to a single local source ID"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Free-text filter against display title and group"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100
+            },
+            "description": "Max 1000"
+          }
         ],
         "responses": {
-          "200": { "description": "Paged entries", "content": { "application/json": { "schema": { "type": "object", "properties": { "total": { "type": "integer" }, "page": { "type": "integer" }, "size": { "type": "integer" }, "entries": { "type": "array", "items": { "$ref": "#/components/schemas/LocalMediaEntry" } } } } } } }
+          "200": {
+            "description": "Paged entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "size": {
+                      "type": "integer"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LocalMediaEntry"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -812,23 +2325,79 @@
       "get": {
         "summary": "Get a single local media entry",
         "operationId": "getLocalMediaEntry",
-        "tags": ["Local Media"],
-        "parameters": [{ "name": "hash", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "tags": [
+          "Local Media"
+        ],
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Media entry", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalMediaEntry" } } } },
-          "404": { "description": "Entry not found" }
+          "200": {
+            "description": "Media entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalMediaEntry"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entry not found"
+          }
         }
       },
       "put": {
         "summary": "Edit metadata for a local media entry",
         "operationId": "updateLocalMedia",
-        "tags": ["Local Media"],
-        "parameters": [{ "name": "hash", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalMediaEntry" } } }, "description": "Identity and location fields (id, local_source_id, hash, path, media_type) are ignored and taken from the stored row" },
+        "tags": [
+          "Local Media"
+        ],
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalMediaEntry"
+              }
+            }
+          },
+          "description": "Identity and location fields (id, local_source_id, hash, path, media_type) are ignored and taken from the stored row"
+        },
         "responses": {
-          "200": { "description": "Updated entry", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalMediaEntry" } } } },
-          "404": { "description": "Entry not found" },
-          "500": { "description": "Edit failed" }
+          "200": {
+            "description": "Updated entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalMediaEntry"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entry not found"
+          },
+          "500": {
+            "description": "Edit failed"
+          }
         }
       }
     },
@@ -836,14 +2405,38 @@
       "get": {
         "summary": "Get poster or fanart for a local media entry",
         "operationId": "getLocalMediaArt",
-        "tags": ["Local Media"],
+        "tags": [
+          "Local Media"
+        ],
         "parameters": [
-          { "name": "hash", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "kind", "in": "path", "required": true, "schema": { "type": "string", "enum": ["poster", "fanart"] } }
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "poster",
+                "fanart"
+              ]
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Image bytes, or a 302 redirect for remote artwork URLs" },
-          "404": { "description": "Not found" }
+          "200": {
+            "description": "Image bytes, or a 302 redirect for remote artwork URLs"
+          },
+          "404": {
+            "description": "Not found"
+          }
         }
       }
     },
@@ -851,30 +2444,114 @@
       "get": {
         "summary": "Get all API tokens",
         "operationId": "getTokens",
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "responses": {
-          "200": { "description": "Token list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Token" } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Token list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Token"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "post": {
         "summary": "Create an API token",
         "operationId": "createToken",
-        "tags": ["Auth"],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "permissions": { "type": "integer" } }, "required": ["name","permissions"] } } } },
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "permissions": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "permissions"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Token created — raw value returned once only", "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "integer" }, "name": { "type": "string" }, "token": { "type": "string" } } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Token created — raw value returned once only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "delete": {
         "summary": "Delete an API token by ID",
         "operationId": "deleteToken",
-        "tags": ["Auth"],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] } } } },
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Deleted" },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -882,9 +2559,20 @@
       "get": {
         "summary": "Get permission bitmask constants",
         "operationId": "getPermissions",
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "responses": {
-          "200": { "description": "Permission constants", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Permissions" } } } }
+          "200": {
+            "description": "Permission constants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Permissions"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -892,10 +2580,31 @@
       "get": {
         "summary": "Get current session info",
         "operationId": "getMe",
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "responses": {
-          "200": { "description": "Session user", "content": { "application/json": { "schema": { "type": "object", "properties": { "username": { "type": "string" }, "name": { "type": "string" } } } } } },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Session user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "username": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     }
