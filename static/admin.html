@@ -947,6 +947,66 @@
         </div>
     </div>
 
+    <!-- channel logo modal -->
+    <div id="channel-logo-modal" class="modal">
+        <div class="modal-content bg-kptv-gray rounded border border-kptv-border w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+            <div class="border-b border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between items-center sticky top-0">
+                <h2 class="text-xl font-semibold" id="channel-logo-modal-title">Channel Logo</h2>
+                <button class="text-gray-400 hover:text-white" id="close-channel-logo-modal">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <div class="mb-4 flex items-center gap-3 p-3 bg-kptv-gray-light border border-kptv-border rounded">
+                    <img id="channel-logo-current-img" class="w-16 h-16 object-contain rounded" alt="">
+                    <div class="text-sm text-gray-300" id="channel-logo-current"></div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Paste a logo URL</label>
+                    <div class="flex gap-2">
+                        <input
+                            class="flex-1 bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="text" id="channel-logo-url" placeholder="https://...">
+                        <button class="px-3 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded text-sm transition-colors"
+                            id="save-channel-logo-url-btn" type="button">Set</button>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Upload a logo</label>
+                    <div class="flex gap-2">
+                        <input
+                            class="flex-1 bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                            type="file" id="channel-logo-file" accept="image/*">
+                        <button class="px-3 py-2 bg-kptv-blue hover:bg-kptv-blue-light rounded text-sm transition-colors"
+                            id="upload-channel-logo-btn" type="button">Upload</button>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <button class="px-3 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-sm transition-colors"
+                        id="pull-channel-logo-epg-btn" type="button">Pull from mapped EPG</button>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-2">Pick from library</label>
+                    <div id="channel-logo-library" class="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto"></div>
+                </div>
+            </div>
+            <div class="border-t border-kptv-border bg-kptv-gray-light px-4 py-3 flex justify-between">
+                <button
+                    class="px-4 py-2 bg-red-900 border border-red-700 hover:bg-red-800 rounded transition-colors text-sm"
+                    id="clear-channel-logo-btn" type="button">Clear Logo</button>
+                <button
+                    class="px-4 py-2 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors"
+                    id="cancel-channel-logo-btn" type="button">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- epg modal -->
     <div id="epg-modal" class="modal">
         <div
