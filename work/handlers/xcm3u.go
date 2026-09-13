@@ -7,6 +7,7 @@ import (
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/localscan"
 	"kptv-proxy/work/logger"
+	"kptv-proxy/work/logos"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/utils"
 	"net/http"
@@ -20,6 +21,9 @@ func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *c
 
 	// channel-name -> mapped epg_id; unmapped channels fall back to the dummy id
 	epgMap := proxy.ChannelEPGMap()
+
+	// live logos resolve through the proxy; vod and series keep provider art
+	logoResolver := logos.NewResolver(fmt.Sprintf("%s/logo/%s/%s", sp.Config.BaseURL, account.Username, account.Password), epgMap)
 
 	for _, item := range getSortedChannels(sp) {
 		item.channel.Mu.RLock()
@@ -51,6 +55,9 @@ func writeXCM3UPlaylist(w http.ResponseWriter, sp *proxy.StreamProxy, account *c
 
 		streamID := streamIDFromName(item.name)
 		logo := attrs["tvg-logo"]
+		if contentType == "live" {
+			logo = logoResolver.For(item.name, logo)
+		}
 		group := groupTitleOf(attrs)
 		tvgID := proxy.EPGIDForChannel(item.name, epgMap)
 

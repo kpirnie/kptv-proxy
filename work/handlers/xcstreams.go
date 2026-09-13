@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"kptv-proxy/work/localscan"
+	"kptv-proxy/work/logos"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
@@ -189,6 +190,9 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 	// channel-name -> mapped epg_id; unmapped channels fall back to the dummy id
 	epgMap := proxy.ChannelEPGMap()
 
+	// live logos resolve through the proxy; vod and series keep provider art
+	logoResolver := logos.NewResolver(fmt.Sprintf("%s/logo/%s/%s", baseURL, username, password), epgMap)
+
 	for _, item := range getSortedChannels(sp) {
 		item.channel.Mu.RLock()
 
@@ -211,6 +215,9 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 		streamID := streamIDFromName(item.name)
 		group := groupTitleOf(attrs)
 		logo := attrs["tvg-logo"]
+		if contentType == "live" {
+			logo = logoResolver.For(item.name, logo)
+		}
 		tvgID := proxy.EPGIDForChannel(item.name, epgMap)
 
 		directURL := buildXCStreamURL(baseURL, contentType, username, password, streamID, extension)
