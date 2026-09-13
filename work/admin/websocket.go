@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"kptv-proxy/work/constants"
+	"kptv-proxy/work/epgindex"
 	"kptv-proxy/work/proxy"
 	"net/http"
 	"sync"
@@ -20,6 +21,7 @@ type adminStateMessage struct {
 	Stats          StatsResponse     `json:"stats"`
 	ActiveChannels []ChannelResponse `json:"activeChannels"`
 	Generation     uint64            `json:"generation"`
+	EPGReady       bool              `json:"epgReady"`
 }
 
 // adminSocketClient is one connected admin socket and its outbound frame queue.
@@ -78,6 +80,7 @@ func buildAdminState(sp *proxy.StreamProxy) adminStateMessage {
 		Stats:          buildStats(sp),
 		ActiveChannels: buildActiveChannels(sp),
 		Generation:     sp.ImportGeneration(),
+		EPGReady:       epgindex.Ready(),
 	}
 }
 

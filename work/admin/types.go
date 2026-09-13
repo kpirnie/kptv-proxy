@@ -53,6 +53,7 @@ type ChannelListResponse struct {
 	Page       int               `json:"page"`
 	Size       int               `json:"size"`
 	Generation uint64            `json:"generation"`
+	EPGReady   bool              `json:"epgReady"`
 	Groups     []GroupCount      `json:"groups,omitempty"`
 }
 

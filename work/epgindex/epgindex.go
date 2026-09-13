@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"kptv-proxy/work/logger"
@@ -40,6 +41,7 @@ var (
 	reAttrChannel    = regexp.MustCompile(`channel="([^"]*)"`)
 	reTitle          = regexp.MustCompile(`(?s)<title[^>]*>(.*?)</title>`)
 	reDesc           = regexp.MustCompile(`(?s)<desc[^>]*>(.*?)</desc>`)
+	epgReady         atomic.Bool
 )
 
 // ProgrammeBuilder parses <programme> fragments as they arrive and holds only
@@ -149,6 +151,16 @@ func Size() int {
 	mu.RLock()
 	defer mu.RUnlock()
 	return len(index)
+}
+
+// Ready reports whether the index is fully built and not currently being rebuilt.
+func Ready() bool {
+	return epgReady.Load()
+}
+
+// SetReady marks the index as usable, or as being rebuilt.
+func SetReady(ready bool) {
+	epgReady.Store(ready)
 }
 
 // RebuildFromSlices parses raw XMLTV <channel> element strings and replaces

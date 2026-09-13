@@ -43,13 +43,13 @@ function renderActiveChannels(channels) {
                     <div class="flex-1">
                         <div class="font-semibold">
                             ${escapeHtml(channel.name)}
-                            ${hasEPGMapping(channel.name) ? `<span class="inline-block w-2 h-2 rounded-full bg-green-500 ml-1" title="EPG Mapped"></span>` : ""}
+                            ${epgReady && hasEPGMapping(channel.name) ? `<span class="inline-block w-2 h-2 rounded-full bg-green-500 ml-1" title="EPG Mapped"></span>` : ""}
                         </div>
                         <div class="text-sm text-gray-400">
                             <span class="connection-dot status-active"></span>
                             ${channel.clients || 0} client(s) connected
                         </div>
-                        ${channel.now ? `<div class="text-xs text-gray-400 mt-1">Now: ${escapeHtml(channel.now)}</div>` : ""}
+                        ${epgReady && channel.now ? `<div class="text-xs text-gray-400 mt-1">Now: ${escapeHtml(channel.now)}</div>` : ""}
                         <div class="mt-2 flex flex-wrap gap-1" id="stats-${safeId}">
                             <span class="text-xs text-gray-400">Loading stats...</span>
                         </div>
@@ -67,12 +67,12 @@ function renderActiveChannels(channels) {
                             </svg>
                             <span>Streams</span>
                         </button>
-                        <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-xs transition-colors flex items-center space-x-1"
-                            data-action="epg" data-channel="${escapeAttr(channel.name)}">
+                        <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border rounded text-xs transition-colors flex items-center space-x-1 ${epgReady ? "hover:bg-kptv-border" : "opacity-50 cursor-not-allowed"}"
+                            ${epgReady ? `data-action="epg" data-channel="${escapeAttr(channel.name)}"` : "disabled"}>
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                             </svg>
-                            <span>EPG</span>
+                            <span>${epgReady ? "EPG" : "EPG Loading"}</span>
                         </button>
                         <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-xs transition-colors flex items-center space-x-1"
                             data-action="logo" data-channel="${escapeAttr(channel.name)}">
@@ -185,6 +185,7 @@ async function loadAllChannels() {
     allChannels = result.channels || [];
     channelTotal = result.total || 0;
     channelGeneration = result.generation;
+    epgReady = result.epgReady === true;
 
     if (result.groups) {
       channelGroups = result.groups;
@@ -231,7 +232,7 @@ function renderAllChannels(channels) {
                     <div class="flex-1">
                         <div class="font-semibold">
                             ${escapeHtml(channel.name)}
-                            ${hasEPGMapping(channel.name) ? `<span class="inline-block w-2 h-2 rounded-full bg-green-500 ml-1" title="EPG Mapped"></span>` : ""}
+                            ${epgReady && hasEPGMapping(channel.name) ? `<span class="inline-block w-2 h-2 rounded-full bg-green-500 ml-1" title="EPG Mapped"></span>` : ""}
                         </div>
                         <div class="text-sm text-gray-400">
                             Group: ${escapeHtml(channel.group || "Uncategorized")} |
@@ -259,12 +260,12 @@ function renderAllChannels(channels) {
                             </svg>
                             <span>Streams</span>
                         </button>
-                        <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-xs transition-colors flex items-center space-x-1"
-                            data-action="epg" data-channel="${escapeAttr(channel.name)}">
+                        <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border rounded text-xs transition-colors flex items-center space-x-1 ${epgReady ? "hover:bg-kptv-border" : "opacity-50 cursor-not-allowed"}"
+                            ${epgReady ? `data-action="epg" data-channel="${escapeAttr(channel.name)}"` : "disabled"}>
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                             </svg>
-                            <span>EPG</span>
+                            <span>${epgReady ? "EPG" : "EPG Loading"}</span>
                         </button>
                         <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-xs transition-colors flex items-center space-x-1"
                             data-action="logo" data-channel="${escapeAttr(channel.name)}">

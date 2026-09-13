@@ -267,8 +267,12 @@ func (sp *StreamProxy) FetchAndMergeEPG(w io.Writer) (bool, error) {
 
 	if !hasURLSources && !hasSDSources {
 		logger.Warn("{proxy/epg - FetchAndMergeEPG} No EPG sources configured, skipping merge")
+		epgindex.SetReady(true)
 		return false, nil
 	}
+
+	epgindex.SetReady(false)
+	defer epgindex.SetReady(true)
 
 	// load the channel mapping up front so programmes can be expanded as
 	// they stream through instead of being collected and filtered later

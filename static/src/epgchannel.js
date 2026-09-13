@@ -26,6 +26,17 @@ function hasEPGMapping(channelName) {
 }
 
 /**
+ * Updates the EPG readiness flag and re-renders the channel lists when it
+ * changes, so the EPG controls flip between loading and ready states.
+ * @param {boolean} ready
+ */
+function setEPGReady(ready) {
+    if (ready === epgReady) return;
+    epgReady = ready;
+    if (allChannels) renderCurrentPage();
+}
+
+/**
  * Opens the EPG channel mapping modal for a channel, loading the
  * current mapping and initializing the search input.
  * @param {string} channelName - Channel to map EPG for
@@ -140,7 +151,7 @@ function renderEPGSearchResults(results) {
     // store results array for index-based lookup on click
     el._epgResults = results;
 
-    el.onclick = function(e) {
+    el.onclick = function (e) {
         const row = e.target.closest('.epg-result-row');
         if (!row) return;
         const idx = parseInt(row.dataset.epgIndex, 10);

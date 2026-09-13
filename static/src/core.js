@@ -15,6 +15,7 @@ let currentChannelName = null;
 let currentStreamData = null;
 let adminSocket = null;
 let adminSocketRetry = null;
+let epgReady = false;
 let activeGroupFilter = null;
 let allLocalSources = null;
 let allSources = null;
@@ -73,6 +74,7 @@ function connectAdminSocket() {
 
         if (message.type !== 'state') return;
 
+        setEPGReady(message.epgReady === true);
         updateStatsDisplay(message.stats);
         renderActiveChannels(message.activeChannels || []);
 

@@ -134,6 +134,7 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 			Page:       page,
 			Size:       size,
 			Generation: generation,
+			EPGReady:   epgindex.Ready(),
 		}
 
 		if query.Get("gen") != strconv.FormatUint(generation, 10) {
