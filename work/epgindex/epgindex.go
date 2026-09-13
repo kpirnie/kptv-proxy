@@ -15,6 +15,7 @@ import (
 type EPGChannel struct {
 	ID           string   // the id attribute from <channel id="...">
 	DisplayNames []string // all <display-name> values
+	Icon         string   // the src attribute from <icon src="...">, when present
 }
 
 // EPGProgramme holds one parsed <programme> entry for XC guide responses.
@@ -30,6 +31,8 @@ var (
 	index            []EPGChannel
 	reChannelBlock   = regexp.MustCompile(`(?s)<channel\s[^>]*id="([^"]*)"[^>]*>(.*?)</channel>`)
 	reDisplayName    = regexp.MustCompile(`<display-name[^>]*>([^<]*)</display-name>`)
+	reIcon           = regexp.MustCompile(`<icon[^>]*\ssrc="([^"]*)"`)
+	iconIndex        map[string]string
 	progIndex        map[string][]EPGProgramme
 	reProgrammeBlock = regexp.MustCompile(`(?s)<programme\s([^>]*)>(.*?)</programme>`)
 	reAttrStart      = regexp.MustCompile(`start="([^"]*)"`)
@@ -153,6 +156,7 @@ func Size() int {
 // materializing the full document string.
 func RebuildFromSlices(channelElements []string) {
 	fresh := make([]EPGChannel, 0, len(channelElements))
+	icons := make(map[string]string, len(channelElements))
 	for _, el := range channelElements {
 		m := reChannelBlock.FindStringSubmatch(el)
 		if m == nil || strings.TrimSpace(m[1]) == "" {
@@ -165,11 +169,18 @@ func RebuildFromSlices(channelElements []string) {
 				ch.DisplayNames = append(ch.DisplayNames, name)
 			}
 		}
+		if im := reIcon.FindStringSubmatch(m[2]); im != nil {
+			ch.Icon = decodeXMLText(strings.TrimSpace(im[1]))
+			if ch.Icon != "" {
+				icons[ch.ID] = ch.Icon
+			}
+		}
 		fresh = append(fresh, ch)
 	}
 
 	mu.Lock()
 	index = fresh
+	iconIndex = icons
 	mu.Unlock()
 
 	logger.Debug("{epgindex - RebuildFromSlices} Index rebuilt with %d channels", len(fresh))
@@ -206,6 +217,14 @@ func NowTitle(channelID string) string {
 		}
 	}
 	return ""
+}
+
+// IconFor returns the <icon src> advertised by the mapped EPG channel, or an
+// empty string when the channel has none.
+func IconFor(channelID string) string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return iconIndex[channelID]
 }
 
 // parseXMLTVTime handles the standard XMLTV timestamp with or without a zone.
