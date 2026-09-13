@@ -88,6 +88,13 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api/local-media/{hash}", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetLocalMediaEntry(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/local-media/{hash}", authCORS(users.PermConfigWrite, handleUpdateLocalMedia(sp))).Methods("PUT", "OPTIONS")
 	router.HandleFunc("/api/local-media/{hash}/art/{kind}", authCORS(users.PermRead, handleGetLocalMediaArt(sp))).Methods("GET", "OPTIONS")
+
+	// Logo endpoints
+	router.HandleFunc("/api/logos", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetLogoLibrary(sp)))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/logos/pull-epg", authCORS(users.PermConfigWrite, handleBulkPullLogosFromEPG(sp))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/logo", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetChannelLogo(sp)))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/logo", authCORS(users.PermConfigWrite, handleSetChannelLogo(sp))).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/channels/{channel}/logo", authCORS(users.PermConfigWrite, handleDeleteChannelLogo(sp))).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/api/logos/{hash}", authCORS(users.PermRead, handleGetLogo(sp))).Methods("GET", "OPTIONS")
 
 	// Schedules Direct endpoints
