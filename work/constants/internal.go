@@ -239,6 +239,15 @@ type InternalConstants struct {
 	CatalogCachePath string        // Filesystem path for the disk-backed source catalog cache
 
 	// -------------------------------------------------------------------------
+	// work/logos/store.go — Init()
+	// -------------------------------------------------------------------------
+	LogoPath         string        // Filesystem path for uploaded/library channel logos
+	LogoCachePath    string        // Filesystem path for the disk-backed remote logo cache
+	LogoFetchTimeout time.Duration // Ceiling for a single remote logo fetch
+	LogoMaxBytes     int64         // Maximum accepted size (bytes) for an uploaded or fetched logo
+	LogoDefaultURL   string        // Final fallback icon, emitted to clients as-is
+
+	// -------------------------------------------------------------------------
 	// work/users/session.go — CreateSession()
 	// -------------------------------------------------------------------------
 	SessionTTL         time.Duration // Standard session lifetime
@@ -471,6 +480,15 @@ var Internal = InternalConstants{
 	EPGDiskTTL:         12 * time.Hour,
 	EPGCachePath:       "/settings/kptv-epg",
 	CatalogCachePath:   "/settings/kptv-catalog",
+
+	// -------------------------------------------------------------------------
+	// Logo
+	// -------------------------------------------------------------------------
+	LogoPath:         "/settings/logos",
+	LogoCachePath:    "/settings/logos/cache",
+	LogoFetchTimeout: 15 * time.Second,
+	LogoMaxBytes:     5 << 20, // 5MB
+	LogoDefaultURL:   "https://cdn.kevp.us/tv/kptv-icon.png",
 
 	// -------------------------------------------------------------------------
 	// Stream failure
