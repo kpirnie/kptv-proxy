@@ -205,6 +205,14 @@ func initSchema(db *sql.DB) error {
 		epg_name    TEXT NOT NULL DEFAULT ''
 	);
 
+	CREATE TABLE IF NOT EXISTS kp_channel_logo (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		channel    TEXT    NOT NULL UNIQUE,
+		kind       TEXT    NOT NULL DEFAULT '',
+		value      TEXT    NOT NULL DEFAULT '',
+		updated_at INTEGER NOT NULL DEFAULT 0
+	);
+
 	CREATE TABLE IF NOT EXISTS kp_stream_order (
 		id      INTEGER PRIMARY KEY AUTOINCREMENT,
 		channel TEXT    NOT NULL,
