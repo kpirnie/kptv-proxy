@@ -232,6 +232,9 @@ func (sp *StreamProxy) ImportStreams() {
 	sp.rebuildNameIndex()
 
 	logger.Debug("{proxy/stream - ImportStreams} Import committed %d channels (%d sources carried forward)", len(newChannels), len(failedSources))
+
+	// warm logos for all channels in the new catalog, fetching them concurrently
+	go sp.warmChannelLogos()
 }
 
 // carryForwardStreams collects the streams still held for sources that did not import

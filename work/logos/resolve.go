@@ -34,34 +34,60 @@ func NewResolver(prefix string, epgMap map[string]string) *Resolver {
 	}
 }
 
-// For resolves the logo for a channel in priority order: manual override,
-// uploaded logo, the mapped EPG icon, the provider tvg-logo, then the
-// configured default. Everything but the default is served back through the
-// proxy, so provider URL rotation and origin leakage stop mattering.
+// For resolves the logo URL to advertise for a channel. Everything but the
+// configured default is served back through the proxy, so provider URL rotation
+// and origin leakage stop mattering.
 func (r *Resolver) For(channelName, providerLogo string) string {
+	kind, value := r.resolve(channelName, providerLogo)
+
+	switch kind {
+	case "upload":
+		return r.serve(value)
+	case "remote":
+		return r.serve(Register(value))
+	}
+
+	return constants.Internal.LogoDefaultURL
+}
+
+// SourceFor returns the remote URL behind a channel's resolved logo, or an
+// empty string when it resolves to an upload or the configured default. The
+// warm pass uses it to pre-fetch without rendering an export.
+func (r *Resolver) SourceFor(channelName, providerLogo string) string {
+	kind, value := r.resolve(channelName, providerLogo)
+	if kind == "remote" {
+		return value
+	}
+	return ""
+}
+
+// resolve walks the priority order — manual override, uploaded logo, mapped EPG
+// icon, provider tvg-logo, configured default — and reports what a channel
+// resolves to.
+func (r *Resolver) resolve(channelName, providerLogo string) (string, string) {
 	if l, ok := r.assigned[channelName]; ok && l.Value != "" {
 		switch l.Kind {
 		case "upload":
-			return r.serve(l.Value)
+			return "upload", l.Value
 		case "override":
-			return r.serve(Register(l.Value))
+			return "remote", l.Value
 		case "epg":
 			if icon := r.epgIcon(channelName); icon != "" {
-				return r.serve(Register(icon))
+				return "remote", icon
 			}
-			return r.serve(Register(l.Value))
+			return "remote", l.Value
 		}
 	}
 
 	if icon := r.epgIcon(channelName); icon != "" {
-		return r.serve(Register(icon))
+		return "remote", icon
 	}
 
 	if providerLogo != "" {
-		return r.serve(Register(providerLogo))
+		return "remote", providerLogo
 	}
 
-	return constants.Internal.LogoDefaultURL
+	return "default", ""
 }
 
 // epgIcon returns the icon advertised by the EPG channel mapped to a proxy
