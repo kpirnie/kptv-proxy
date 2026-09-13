@@ -213,6 +213,11 @@ func initSchema(db *sql.DB) error {
 		updated_at INTEGER NOT NULL DEFAULT 0
 	);
 
+	CREATE TABLE IF NOT EXISTS kp_logo_url (
+		hash TEXT PRIMARY KEY,
+		url  TEXT NOT NULL
+	);
+
 	CREATE TABLE IF NOT EXISTS kp_stream_order (
 		id      INTEGER PRIMARY KEY AUTOINCREMENT,
 		channel TEXT    NOT NULL,
