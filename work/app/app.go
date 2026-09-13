@@ -2,6 +2,7 @@ package app
 
 import (
 	"kptv-proxy/work/buffer"
+	"kptv-proxy/work/cache"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/db"
@@ -42,9 +43,18 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
+	// Initialize the cache instance with TTL from config
+	cacheInstance, err := cache.NewCache(cfg.CacheDuration)
+	if err != nil {
+		workerPool.Release()
+		logger.Error("Failed to create cache: %v", err)
+		return nil, err
+	}
+
 	// Initialize the on-disk logo store, sharing the cache TTL
 	if err := logos.Init(cfg.CacheDuration); err != nil {
 		workerPool.Release()
+		cacheInstance.Close()
 		logger.Error("Failed to create logo store: %v", err)
 		return nil, err
 	}
