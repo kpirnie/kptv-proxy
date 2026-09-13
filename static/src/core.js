@@ -368,6 +368,7 @@ function setupEventListeners() {
         setGroupFilterCookie('');
         loadAllChannels();
     });
+    document.getElementById("pull-epg-logos-btn").addEventListener("click", () => bulkPullLogosFromEPG());
 
     // Log controls
     document.getElementById('refresh-logs').addEventListener('click', () => loadLogs());

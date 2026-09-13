@@ -74,6 +74,13 @@ function renderActiveChannels(channels) {
                             </svg>
                             <span>EPG</span>
                         </button>
+                        <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-xs transition-colors flex items-center space-x-1"
+                            data-action="logo" data-channel="${escapeAttr(channel.name)}">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <span>Logo</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -87,6 +94,7 @@ function renderActiveChannels(channels) {
     if (!btn || !container.contains(btn)) return;
     if (btn.dataset.action === "streams") showStreamSelector(btn.dataset.channel);
     else if (btn.dataset.action === "epg") showEPGChannelModal(btn.dataset.channel);
+    else if (btn.dataset.action === "logo") showChannelLogoModal(btn.dataset.channel);
   };
 
   channels.forEach((channel) => loadChannelStats(channel.name));
@@ -258,6 +266,13 @@ function renderAllChannels(channels) {
                             </svg>
                             <span>EPG</span>
                         </button>
+                        <button class="px-3 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded text-xs transition-colors flex items-center space-x-1"
+                            data-action="logo" data-channel="${escapeAttr(channel.name)}">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <span>Logo</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -273,6 +288,7 @@ function renderAllChannels(channels) {
     if (!btn || !container.contains(btn)) return;
     if (btn.dataset.action === "streams") showStreamSelector(btn.dataset.channel);
     else if (btn.dataset.action === "epg") showEPGChannelModal(btn.dataset.channel);
+    else if (btn.dataset.action === "logo") showChannelLogoModal(btn.dataset.channel);
   };
 
   channels.forEach((channel) => {
