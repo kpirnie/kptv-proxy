@@ -39,6 +39,7 @@ func RegisterRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	// Local media endpoints — files served directly from disk
 	router.HandleFunc("/local/{username}/{password}/{hash}", handlers.HandleLocalStream(sp)).Methods("GET", "HEAD")
 	router.HandleFunc("/localart/{username}/{password}/{hash}/{kind}", handlers.HandleLocalArtwork(sp)).Methods("GET", "HEAD")
+	router.HandleFunc("/logo/{username}/{password}/{hash}", handlers.HandleLogo(sp)).Methods("GET", "HEAD")
 
 	// Xtream Codes endpoints — self-authenticating via XC accounts (handled later)
 	router.HandleFunc("/player_api.php", handlers.HandleXCPlayerAPI(sp)).Methods("GET", "POST", "HEAD")
