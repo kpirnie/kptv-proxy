@@ -88,6 +88,7 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api/local-media/{hash}", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetLocalMediaEntry(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/local-media/{hash}", authCORS(users.PermConfigWrite, handleUpdateLocalMedia(sp))).Methods("PUT", "OPTIONS")
 	router.HandleFunc("/api/local-media/{hash}/art/{kind}", authCORS(users.PermRead, handleGetLocalMediaArt(sp))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/logos/{hash}", authCORS(users.PermRead, handleGetLogo(sp))).Methods("GET", "OPTIONS")
 
 	// Schedules Direct endpoints
 	router.HandleFunc("/api/sd-accounts", authCORS(users.PermSD, middleware.GzipMiddleware(handleGetSDAccounts(sp)))).Methods("GET", "OPTIONS")

@@ -7,6 +7,7 @@ import (
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/epgindex"
+	"kptv-proxy/work/logos"
 	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
@@ -52,6 +53,8 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 		channels := make([]ChannelResponse, 0)
 		groupCounts := make(map[string]int)
 
+		logoResolver := logos.NewResolver("/api/logos", proxy.ChannelEPGMap())
+
 		sp.Channels.Range(func(key string, value *types.Channel) bool {
 			channel := value
 			channel.Mu.RLock()
@@ -72,17 +75,16 @@ func handleGetAllChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 			}
 
 			group := "Uncategorized"
-			logoURL := "https://cdn.kevp.us/tv/kptv-icon.png"
+			providerLogo := ""
 			if len(channel.Streams) > 0 {
 				if g, ok := channel.Streams[0].Attributes["group-title"]; ok && g != "" {
 					group = g
 				} else if g, ok := channel.Streams[0].Attributes["tvg-group"]; ok && g != "" {
 					group = g
 				}
-				if logo, ok := channel.Streams[0].Attributes["tvg-logo"]; ok && logo != "" {
-					logoURL = logo
-				}
+				providerLogo = channel.Streams[0].Attributes["tvg-logo"]
 			}
+			logoURL := logoResolver.For(channel.Name, providerLogo)
 
 			name := channel.Name
 			sources := len(channel.Streams)
@@ -170,6 +172,8 @@ func handleGetActiveChannels(sp *proxy.StreamProxy) http.HandlerFunc {
 func buildActiveChannels(sp *proxy.StreamProxy) []ChannelResponse {
 	channels := make([]ChannelResponse, 0)
 
+	logoResolver := logos.NewResolver("/api/logos", proxy.ChannelEPGMap())
+
 	sp.Channels.Range(func(key string, value *types.Channel) bool {
 		channel := value
 		channel.Mu.RLock()
@@ -191,7 +195,7 @@ func buildActiveChannels(sp *proxy.StreamProxy) []ChannelResponse {
 
 			activityTime := time.Since(time.Unix(channel.Restreamer.LastActivity.Load(), 0))
 			estimatedBytes := int64(0)
-			logoURL := "https://cdn.kevp.us/tv/kptv-icon.png"
+			providerLogo := ""
 
 			if activityTime < 60*time.Second && clients > 0 {
 				baseRate := int64(500 * 1024 * clients)
@@ -200,9 +204,7 @@ func buildActiveChannels(sp *proxy.StreamProxy) []ChannelResponse {
 			}
 
 			if len(channel.Streams) > 0 {
-				if logo, ok := channel.Streams[0].Attributes["tvg-logo"]; ok && logo != "" {
-					logoURL = logo
-				}
+				providerLogo = channel.Streams[0].Attributes["tvg-logo"]
 			}
 
 			channels = append(channels, ChannelResponse{
@@ -211,7 +213,7 @@ func buildActiveChannels(sp *proxy.StreamProxy) []ChannelResponse {
 				Clients:          clients,
 				CurrentSource:    currentSource,
 				BytesTransferred: estimatedBytes,
-				LogoURL:          logoURL,
+				LogoURL:          logoResolver.For(channel.Name, providerLogo),
 			})
 		}
 
@@ -223,17 +225,13 @@ func buildActiveChannels(sp *proxy.StreamProxy) []ChannelResponse {
 	proxy.RangeFileSessions(func(session *proxy.FileSession) bool {
 		existing, seen := sessions[session.ChannelName]
 		if !seen {
-			logoURL := session.LogoURL
-			if logoURL == "" {
-				logoURL = "https://cdn.kevp.us/tv/kptv-icon.png"
-			}
 			sessions[session.ChannelName] = &ChannelResponse{
 				Name:             session.ChannelName,
 				Active:           true,
 				Clients:          1,
 				CurrentSource:    session.SourceName,
 				BytesTransferred: session.Bytes.Load(),
-				LogoURL:          logoURL,
+				LogoURL:          logoResolver.For(session.ChannelName, session.LogoURL),
 			}
 			return true
 		}
