@@ -73,6 +73,7 @@ function renderXCAccounts(accounts) {
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
+                            <span>All</span>
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
                             title="Copy Live Playlist URL"
@@ -80,6 +81,7 @@ function renderXCAccounts(accounts) {
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
+                            <span>Live</span>
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
                             title="Copy Series Playlist URL"
@@ -87,6 +89,7 @@ function renderXCAccounts(accounts) {
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
+                            <span>Series</span>
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
                             title="Copy VOD Playlist URL"
@@ -94,6 +97,7 @@ function renderXCAccounts(accounts) {
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
+                            <span>VOD</span>
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
                             title="Copy EPG Playlist URL"
@@ -101,6 +105,7 @@ function renderXCAccounts(accounts) {
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
+                            <span>EPG</span>
                         </button>
                     </div>
                 </div>
