@@ -29,7 +29,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 Tokens support granular permission bitmasks:
 
 | Permission | Description |
-|-----------|-------------|
+| ----------- | ------------- |
 | `Read` | GET endpoints only |
 | `Config Write` | Modify global configuration |
 | `Restart` | Trigger graceful restarts |
@@ -162,6 +162,15 @@ Tokens support granular permission bitmasks:
 - **Direct File Serving**: Local files stream straight from disk with range request support, not proxied through the aggregation pipeline
 - **XC Catalog Integration**: Local movies and shows are appended to Xtream Codes VOD/series output; music rides in VOD under categories
 
+### 🖼️ **Channel Logo Management**
+
+- **Proxied Logos**: Live channel logos are fetched once, cached on disk under `/settings/logos/cache`, and served from the proxy — exports never point at a provider CDN
+- **Resolution Order**: Manual override → uploaded logo → mapped EPG `<icon>` → provider `tvg-logo` → configured default
+- **Uploads & Library**: Upload a logo per channel or pick one already uploaded; files are content-hashed under `/settings/logos`
+- **Bulk EPG Pull**: Assign mapped EPG icons across every mapped channel in one pass
+- **Lazy & Warmed**: Uncached logos fetch on first request, and every import commit warms the live channel set in the background
+- **Cache TTL**: Cached logos expire on the global cache duration; a stale copy is preferred over a failed fetch
+
 ---
 
 ## 🤝 Acknowledgments & 👥 Contributors
@@ -239,7 +248,7 @@ A special thank you to the contributors who help improve this project!
 mkdir settings
 ```
 
-2. **Start the proxy:**
+1. **Start the proxy:**
 
 ```bash
 # Docker
@@ -249,11 +258,11 @@ docker compose up -d
 podman-compose up -d
 ```
 
-3. **Complete initial setup:**
+1. **Complete initial setup:**
 
 On first run, navigate to `http://your-server-ip:PORT/` — you will be redirected to `/register` to create your admin account.
 
-4. **Access your services:**
+1. **Access your services:**
 
 ```
 Admin Interface:         http://your-server-ip:PORT/
@@ -389,7 +398,7 @@ The Accounts tab consolidates all output account management and security:
 Per-account configuration:
 
 | Setting | Description |
-|---------|-------------|
+| --------- | ------------- |
 | Name | Friendly name for the account |
 | Username | XC login username |
 | Password | XC login password (auto-generate available) |
@@ -401,6 +410,7 @@ Per-account configuration:
 > **Note**: Enable Live/Series/VOD control what appears in the account's generated M3U playlist and XC catalog listings only. Direct stream routes (`/live/`, `/movie/`, `/series/`) authenticate on the account's username/password alone and aren't gated by these flags.
 
 Quick copy buttons on each account card:
+
 - Base URL
 - Username
 - Password
@@ -436,6 +446,7 @@ Managed as a sub-tab under Source Management, alongside Remote Sources.
 - **Dead Stream Management**: Mark streams as dead or revive them with visual indicators
 - **Real-Time Status**: Active/inactive indicators with client counts
 - **Search & Filter**: Find channels by name or group
+- **Logo Management**: Set a channel logo by URL, upload, library pick, or EPG pull, with a bulk EPG pull across mapped channels
 - **Auto-Refresh**: Live updates of channel status
 
 ### Metadata
@@ -538,7 +549,7 @@ The Stream Watcher runs as a background service monitoring active streams every 
 ## APP Endpoints
 
 | Endpoint | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `GET /` | Web admin interface (requires admin auth) |
 | `GET /login` | Login page |
 | `GET /register` | Initial setup page (only accessible when no admin exists) |
@@ -559,7 +570,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### Auth
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
+| ---------- | -------- | ------------- |
 | `/api/auth/me` | GET | Current session info |
 | `/api/auth/password` | POST | Change password |
 | `/api/auth/permissions` | GET | Permission constants |
@@ -570,7 +581,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### Config & System
 
 | Endpoint | Method | Permission | Description |
-|----------|--------|-----------|-------------|
+| ---------- | -------- | ----------- | ------------- |
 | `/api/config` | GET | Read | Get current configuration |
 | `/api/config` | POST | Config Write | Update configuration |
 | `/api/stats` | GET | Read | System statistics |
@@ -580,7 +591,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### Channels
 
 | Endpoint | Method | Permission | Description |
-|----------|--------|-----------|-------------|
+| ---------- | -------- | ----------- | ------------- |
 | `/api/channels` | GET | Read | All channels |
 | `/api/channels/active` | GET | Read | Active channels only |
 | `/api/channels/{channel}/streams` | GET | Read | Available streams for channel |
@@ -594,14 +605,14 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### Logs
 
 | Endpoint | Method | Permission | Description |
-|----------|--------|-----------|-------------|
+| ---------- | -------- | ----------- | ------------- |
 | `/api/logs` | GET | Logs | Application logs |
 | `/api/logs` | DELETE | Logs | Clear logs |
 
 ### XC Accounts
 
 | Endpoint | Method | Permission | Description |
-|----------|--------|-----------|-------------|
+| ---------- | -------- | ----------- | ------------- |
 | `/api/xc-accounts` | GET | XC Accounts | List XC output accounts |
 | `/api/xc-accounts` | POST | XC Accounts | Create XC output account |
 | `/api/xc-accounts/{id}` | PUT | XC Accounts | Update XC output account |
@@ -610,7 +621,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### EPGs
 
 | Endpoint | Method | Permission | Description |
-|----------|--------|-----------|-------------|
+| ---------- | -------- | ----------- | ------------- |
 | `/api/epgs` | GET | EPGs | List EPG sources |
 | `/api/epgs` | POST | EPGs | Create EPG source |
 | `/api/epgs/{id}` | PUT | EPGs | Update EPG source |
@@ -619,7 +630,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### EPG Channel Mapping
 
 | Endpoint | Method | Permission | Description |
-|----------|--------|-----------|-------------|
+| ---------- | -------- | ----------- | ------------- |
 | `/api/channels/{channel}/epg` | GET | Read | Get EPG mapping for a channel |
 | `/api/channels/{channel}/epg` | POST | EPGs | Set EPG mapping for a channel |
 | `/api/channels/{channel}/epg` | DELETE | EPGs | Clear EPG mapping for a channel |
@@ -630,7 +641,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### Local Sources
 
 | Endpoint | Method | Permission | Description |
-|----------|--------|-----------|-------------|
+| ---------- | -------- | ----------- | ------------- |
 | `/api/local-sources` | GET | Read | List configured local media sources |
 | `/api/local-sources` | POST | Config Write | Create a local media source |
 | `/api/local-sources/{id}` | PUT | Config Write | Update a local media source |
@@ -641,7 +652,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### Local Media
 
 | Endpoint | Method | Permission | Description |
-|----------|--------|-----------|-------------|
+| ---------- | -------- | ----------- | ------------- |
 | `/api/local-media` | GET | Read | List scanned local media entries (`?source=`, `?q=`, `?page=`, `?size=`) |
 | `/api/local-media/{hash}` | GET | Read | Get a single local media entry |
 | `/api/local-media/{hash}` | PUT | Config Write | Edit metadata for a local media entry |
@@ -650,7 +661,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### Schedules Direct
 
 | Endpoint | Method | Permission | Description |
-|----------|--------|-----------|-------------|
+| ---------- | -------- | ----------- | ------------- |
 | `/api/sd-accounts` | GET | SD | List SD accounts |
 | `/api/sd-accounts` | POST | SD | Create SD account |
 | `/api/sd-accounts/{id}` | PUT | SD | Update SD account |
@@ -660,7 +671,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### Xtream Codes Output
 
 | Endpoint | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `GET /player_api.php` | Main XC API endpoint |
 | `GET /get.php` | M3U playlist export |
 | `GET /xmltv.php` | EPG data |
@@ -671,7 +682,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 ### HDHomeRun (Local Network Only)
 
 | Endpoint | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `GET /discover.json` | Device discovery |
 | `GET /device.xml` | UPnP device descriptor |
 | `GET /lineup_status.json` | Lineup status |
@@ -692,7 +703,7 @@ Each stream is classified as `live`, `vod`, or `series` so filters, XC catalog p
 ### Global Settings
 
 | Setting | Default | Description |
-|---------|---------|-------------|
+| --------- | --------- | ------------- |
 | `baseURL` | `"http://localhost:8080"` | Base URL for generated stream links |
 | `bufferSizePerStream` | `16` | Per-stream buffer size in MB |
 | `cacheEnabled` | `true` | Enable playlist caching |
@@ -714,7 +725,7 @@ Each stream is classified as `live`, `vod`, or `series` so filters, XC catalog p
 ### Per-Source Settings
 
 | Setting | Required | Description | Example |
-|---------|----------|-------------|---------|
+| --------- | ---------- | ------------- | --------- |
 | `name` | Yes | Friendly name | `"Primary IPTV"` |
 | `url` | Yes | M3U8 playlist URL or XC base URL | `"http://provider.com/list.m3u8"` |
 | `username` | No | XC API username | `"user123"` |
@@ -741,7 +752,7 @@ For XC sources, the importer fetches live, series, and VOD catalogs plus each ty
 ### XC Output Account Settings
 
 | Setting | Required | Description |
-|---------|----------|-------------|
+| --------- | ---------- | ------------- |
 | `name` | Yes | Friendly account name |
 | `username` | Yes | XC login username |
 | `password` | Yes | XC login password |
