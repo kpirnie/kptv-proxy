@@ -5,6 +5,7 @@ import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/localscan"
 	"kptv-proxy/work/logger"
+	"kptv-proxy/work/logos"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 
@@ -194,6 +195,9 @@ func (sp *StreamProxy) buildPlaylist(groupFilter, typeFilter string, account *co
 	// channel-name -> mapped epg_id; unmapped channels fall back to the dummy id
 	epgMap := ChannelEPGMap()
 
+	// live logos resolve through the proxy; vod and series keep provider art
+	logoResolver := logos.NewResolver(fmt.Sprintf("%s/logo/%s/%s", sp.Config.BaseURL, account.Username, account.Password), epgMap)
+
 	for _, ch := range channels {
 		ch.channel.Mu.RLock()
 		if len(ch.channel.Streams) > 0 {
@@ -247,11 +251,20 @@ func (sp *StreamProxy) buildPlaylist(groupFilter, typeFilter string, account *co
 				playlist.WriteString(fmt.Sprintf(" tvg-id=\"%s\"", epgID))
 			}
 
+			if contentType == "live" {
+				resolved := logoResolver.For(ch.name, attrs["tvg-logo"])
+				playlist.WriteString(fmt.Sprintf(" tvg-logo=\"%s\"", utils.EscapeM3UAttribute(resolved)))
+			}
+
 			// other EXTINF attributes...
 			for key, value := range attrs {
-				if key != "tvg-name" && key != "duration" && key != "tvg-id" {
-					playlist.WriteString(fmt.Sprintf(" %s=\"%s\"", key, utils.EscapeM3UAttribute(value)))
+				if key == "tvg-name" || key == "duration" || key == "tvg-id" {
+					continue
 				}
+				if key == "tvg-logo" && contentType == "live" {
+					continue
+				}
+				playlist.WriteString(fmt.Sprintf(" %s=\"%s\"", key, utils.EscapeM3UAttribute(value)))
 			}
 
 			// write the channel name and proxy URL with XC credentials
