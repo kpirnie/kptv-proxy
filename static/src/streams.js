@@ -39,7 +39,7 @@ function renderStreamSelector(data) {
             <button id="reset-order-btn" type="button"
                 class="px-3 py-1 text-xs font-semibold bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border text-white rounded"
                 onclick="resetStreamOrder()">
-                Reset to Default
+                Reset
             </button>
             <span id="order-save-status" class="text-xs text-gray-500"></span>
         </div>

@@ -38,12 +38,11 @@ function renderTokens(tokens, permissions) {
                 </div>
             </div>
             <div class="mt-4 pt-4 border-t border-kptv-border flex gap-2">
-                <button class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm transition-colors flex items-center space-x-1"
+                <button title="Delete" class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm transition-colors flex items-center space-x-1"
                     onclick="deleteToken(${token.id})">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                     </svg>
-                    <span>Delete</span>
                 </button>
             </div>
         </div>
@@ -60,14 +59,14 @@ function getPermissionLabels(bitmask, permissions) {
     if (bitmask === permissions.all) return 'Full Access';
 
     const labels = [];
-    if (bitmask & permissions.read)        labels.push('Read');
+    if (bitmask & permissions.read) labels.push('Read');
     if (bitmask & permissions.configWrite) labels.push('Config');
-    if (bitmask & permissions.restart)     labels.push('Restart');
-    if (bitmask & permissions.streams)     labels.push('Streams');
-    if (bitmask & permissions.logs)        labels.push('Logs');
-    if (bitmask & permissions.xcAccounts)  labels.push('XC Accounts');
-    if (bitmask & permissions.epgs)        labels.push('EPGs');
-    if (bitmask & permissions.sd)          labels.push('SD');
+    if (bitmask & permissions.restart) labels.push('Restart');
+    if (bitmask & permissions.streams) labels.push('Streams');
+    if (bitmask & permissions.logs) labels.push('Logs');
+    if (bitmask & permissions.xcAccounts) labels.push('XC Accounts');
+    if (bitmask & permissions.epgs) labels.push('EPGs');
+    if (bitmask & permissions.sd) labels.push('SD');
 
     return labels.length > 0 ? labels.join(', ') : 'None';
 }

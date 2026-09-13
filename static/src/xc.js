@@ -43,72 +43,64 @@ function renderXCAccounts(accounts) {
                         <button class="font-bold flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
                             title="Xtreme Codes" disabled>XC</button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                            title="Copy base URL"
+                            title="Copy Base URL"
                             data-copy="${escapeAttr(base)}" data-msg="URL copied">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
-                            URL
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                            title="Copy username"
+                            title="Copy Username"
                             data-copy="${escapeAttr(account.username)}" data-msg="Username copied">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                             </svg>
-                            User
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                            title="Copy password"
+                            title="Copy Password"
                             data-copy="${escapeAttr(account.password)}" data-msg="Password copied">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
                             </svg>
-                            Pass
                         </button>
                     </div>
                     <div class="flex items-center gap-2">
                         <button class="font-bold flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
                             title="M3U Playlists" disabled>M3U</button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                            title="Copy all playlist URL"
+                            title="Copy All Playlist URL"
                             data-copy="${escapeAttr(base + '/pl' + cred)}" data-msg="All playlist URL copied">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
-                            All
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                            title="Copy live playlist URL"
+                            title="Copy Live Playlist URL"
                             data-copy="${escapeAttr(base + '/pl' + cred + '/live')}" data-msg="Live playlist URL copied">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
-                            Live
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                            title="Copy series playlist URL"
+                            title="Copy Series Playlist URL"
                             data-copy="${escapeAttr(base + '/pl' + cred + '/series')}" data-msg="Series playlist URL copied">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
-                            Series
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                            title="Copy VOD playlist URL"
+                            title="Copy VOD Playlist URL"
                             data-copy="${escapeAttr(base + '/pl' + cred + '/vod')}" data-msg="VOD playlist URL copied">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
-                            VOD
                         </button>
                         <button class="flex items-center gap-1 px-2 py-1 bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border rounded transition-colors text-gray-300 text-sm"
-                            title="Copy EPG playlist URL"
+                            title="Copy EPG Playlist URL"
                             data-copy="${escapeAttr(base + '/epg' + cred)}" data-msg="EPG playlist URL copied">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                             </svg>
-                            EPG
                         </button>
                     </div>
                 </div>
@@ -119,19 +111,17 @@ function renderXCAccounts(accounts) {
                 ${account.enableVOD ? '<span class="px-2 py-0.5 bg-orange-700 text-white text-xs rounded">VOD</span>' : ''}
             </div>
             <div class="mt-4 pt-4 border-t border-kptv-border flex gap-2">
-                <button class="px-3 py-1 bg-kptv-blue hover:bg-kptv-blue-light rounded text-sm transition-colors flex items-center space-x-1"
+                <button title="Edit Account" class="px-3 py-1 bg-kptv-blue hover:bg-kptv-blue-light rounded text-sm transition-colors flex items-center space-x-1"
                     data-action="edit" data-index="${index}">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                     </svg>
-                    <span>Edit</span>
                 </button>
-                <button class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm transition-colors flex items-center space-x-1"
+                <button title="Delete Account" class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm transition-colors flex items-center space-x-1"
                     data-action="delete" data-index="${index}">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                     </svg>
-                    <span>Delete</span>
                 </button>
             </div>
         </div>
