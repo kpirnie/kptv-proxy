@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -19,8 +20,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/klauspost/compress/gzip"
 )
 
 // DummyChannelID is the XMLTV id of the synthetic keep-alive channel. It is
@@ -90,6 +89,36 @@ func (sp *StreamProxy) FetchEPGData(ctx context.Context, sources []epgSource, pr
 
 			srcCtx, srcCancel := context.WithTimeout(ctx, constants.Internal.EPGSourceTimeout)
 			defer srcCancel()
+
+			// local file sources are read straight off disk; no request and
+			// no retry cycle applies
+			if IsLocalEPGPath(source.url) {
+				f, err := os.Open(source.url)
+				if err != nil {
+					logger.Error("{proxy/epg - FetchEPGData} Failed to open %s: %v", source.name, err)
+					return
+				}
+				defer f.Close()
+
+				channelCount, programmeCount, bytesRead, err := readEPGStream(f, source.name, channelChan, programmeChan)
+				if err != nil {
+					logger.Error("{proxy/epg - FetchEPGData} Failed to read from %s: %v", source.name, err)
+					return
+				}
+
+				if bytesRead == 0 {
+					logger.Warn("{proxy/epg - FetchEPGData} Empty file from %s", source.name)
+					return
+				}
+
+				if channelCount == 0 && programmeCount == 0 {
+					logger.Warn("{proxy/epg - FetchEPGData} No channels or programmes found in %s (%d bytes)", source.name, bytesRead)
+				} else {
+					logger.Debug("{proxy/epg - FetchEPGData} Processed %s: %d channels, %d programmes (%d bytes)", source.name, channelCount, programmeCount, bytesRead)
+				}
+
+				return
+			}
 
 			newEPGRequest := func() (*http.Request, error) {
 				req, err := http.NewRequestWithContext(srcCtx, "GET", source.url, nil)
@@ -165,25 +194,9 @@ func (sp *StreamProxy) FetchEPGData(ctx context.Context, sources []epgSource, pr
 			}
 			defer resp.Body.Close()
 
-			// sniff the first two bytes for the gzip magic number so both
-			// plain .xml and .xml.gz sources are handled transparently
-			br := bufio.NewReaderSize(resp.Body, 64*1024)
-			var reader io.Reader = br
-			if magic, err := br.Peek(2); err == nil && magic[0] == 0x1f && magic[1] == 0x8b {
-				gzr, err := gzip.NewReader(br)
-				if err != nil {
-					logger.Error("{proxy/epg - FetchEPGData} Failed to init gzip reader for %s: %v", source.name, err)
-					resp.Body.Close()
-					return
-				}
-				defer gzr.Close()
-				reader = gzr
-				logger.Debug("{proxy/epg - FetchEPGData} Detected gzip content from %s", source.name)
-			}
-
 			// stream-scan the document, emitting complete fragments as they
 			// arrive instead of buffering the entire response in memory
-			channelCount, programmeCount, bytesRead, err := scanEPGFragments(reader, channelChan, programmeChan)
+			channelCount, programmeCount, bytesRead, err := readEPGStream(resp.Body, source.name, channelChan, programmeChan)
 			if err != nil {
 				logger.Error("{proxy/epg - FetchEPGData} Failed to read from %s: %v", source.name, err)
 				return
@@ -595,6 +608,33 @@ func generateDummyEPGEntry() (string, string) {
 	)
 
 	return channel, programme
+}
+
+// IsLocalEPGPath reports whether an EPG source location is a container
+// filesystem path rather than an HTTP URL.
+func IsLocalEPGPath(location string) bool {
+	return strings.HasPrefix(location, "/")
+}
+
+// readEPGStream sniffs the first two bytes for the gzip magic number so both
+// plain .xml and .xml.gz sources are handled transparently, then stream-scans
+// the document into the fragment channels.
+func readEPGStream(r io.Reader, name string, channelChan, programmeChan chan<- string) (int, int, int64, error) {
+	br := bufio.NewReaderSize(r, 64*1024)
+
+	var reader io.Reader = br
+	if magic, err := br.Peek(2); err == nil && magic[0] == 0x1f && magic[1] == 0x8b {
+		gzr, err := gzip.NewReader(br)
+		if err != nil {
+			logger.Error("{proxy/epg - readEPGStream} Failed to init gzip reader for %s: %v", name, err)
+			return 0, 0, 0, err
+		}
+		defer gzr.Close()
+		reader = gzr
+		logger.Debug("{proxy/epg - readEPGStream} Detected gzip content from %s", name)
+	}
+
+	return scanEPGFragments(reader, channelChan, programmeChan)
 }
 
 // scanEPGFragments incrementally reads an XMLTV document from r, extracting
