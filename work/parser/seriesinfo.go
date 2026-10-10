@@ -78,8 +78,8 @@ func (s *XCSeriesInfo) UnmarshalJSON(data []byte) error {
 }
 
 // FetchXCSeriesInfo retrieves the season and episode tree for a single series
-// from a source's Xtreme Codes API, honoring that source's rate limiter and
-// connection ceiling. Callers are responsible for caching the result.
+// from a source's Xtreme Codes API, honoring that source's rate limiter.
+// Callers are responsible for caching the result.
 //
 // Parameters:
 //   - httpClient: configured HTTP client with custom header support for source authentication
@@ -92,16 +92,9 @@ func (s *XCSeriesInfo) UnmarshalJSON(data []byte) error {
 //   - *XCSeriesInfo: the decoded series tree, nil on failure
 //   - error: request, status, or decode failure
 func FetchXCSeriesInfo(httpClient *client.HeaderSettingClient, cfg *config.Config, source *config.SourceConfig, rateLimiter ratelimit.Limiter, seriesID string) (*XCSeriesInfo, error) {
-	currentConns := source.ActiveConns.Load()
-	if currentConns >= int32(source.MaxConnections) {
-		logger.Warn("{parser/seriesinfo - FetchXCSeriesInfo} Cannot fetch series info (connection limit %d/%d): %s",
-			currentConns, source.MaxConnections, utils.LogURL(cfg, source.URL))
-		return nil, fmt.Errorf("source at connection limit")
-	}
-
-	source.ActiveConns.Add(1)
-	defer source.ActiveConns.Add(-1)
-
+	// a single short API call is not a stream slot, so it neither checks nor holds
+	// one; gating it emptied the episode tree whenever the source was busy, and
+	// holding one could refuse a concurrent episode playback on the same source
 	if rateLimiter != nil {
 		rateLimiter.Take()
 		logger.Debug("{parser/seriesinfo - FetchXCSeriesInfo} Applied rate limit for XC series info request: %s", source.Name)
