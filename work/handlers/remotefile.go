@@ -17,7 +17,6 @@ import (
 	"mime"
 	"net/http"
 	"os"
-	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -148,41 +147,23 @@ func episodeOnSource(sp *proxy.StreamProxy, origin seriesOrigin, mappings []db.S
 	upstreamID := ""
 	extension := ""
 
-	for seasonKey, seasonEpisodes := range info.Episodes {
-		count := 0
-		for _, ep := range seasonEpisodes {
-			if string(ep.ID) == "" {
-				continue
-			}
+	for _, numbered := range numberProviderEpisodes(info) {
+		epExtension := utils.NormalizeContainerExtension(numbered.ep.ContainerExtension)
 
-			seasonNum, convErr := strconv.Atoi(seasonKey)
-			if convErr != nil {
-				seasonNum, _ = strconv.Atoi(string(ep.Season))
-			}
+		learned = append(learned, db.SeriesEpisode{
+			EpisodeID:   episodeIDFromChannel(origin.ChannelName, numbered.season, numbered.episode),
+			ChannelName: origin.ChannelName,
+			Season:      numbered.season,
+			Episode:     numbered.episode,
+			SourceURL:   origin.Source.URL,
+			SeriesID:    origin.UpstreamID,
+			UpstreamID:  string(numbered.ep.ID),
+			Extension:   epExtension,
+		})
 
-			episodeNum, convErr := strconv.Atoi(string(ep.EpisodeNum))
-			if convErr != nil || episodeNum == 0 {
-				episodeNum = count + 1
-			}
-			count++
-
-			epExtension := utils.NormalizeContainerExtension(ep.ContainerExtension)
-
-			learned = append(learned, db.SeriesEpisode{
-				EpisodeID:   episodeIDFromChannel(origin.ChannelName, seasonNum, episodeNum),
-				ChannelName: origin.ChannelName,
-				Season:      seasonNum,
-				Episode:     episodeNum,
-				SourceURL:   origin.Source.URL,
-				SeriesID:    origin.UpstreamID,
-				UpstreamID:  string(ep.ID),
-				Extension:   epExtension,
-			})
-
-			if seasonNum == season && episodeNum == episode {
-				upstreamID = string(ep.ID)
-				extension = epExtension
-			}
+		if numbered.season == season && numbered.episode == episode {
+			upstreamID = string(numbered.ep.ID)
+			extension = epExtension
 		}
 	}
 

@@ -46,6 +46,14 @@ type mergedSeriesEpisode struct {
 	entry map[string]any
 }
 
+// providerEpisode is one playable entry from a provider's episode tree, paired
+// with the season and episode numbers the proxy mints its episode ID from.
+type providerEpisode struct {
+	season  int
+	episode int
+	ep      parser.XCEpisode
+}
+
 // mergedSeriesCacheSource is the synthetic source_url the merged get_series_info
 // payload is stored under, since a tree assembled from several providers belongs
 // to none of them.
@@ -250,6 +258,43 @@ func episodeIDFromChannel(channelName string, season, episode int) int {
 	return streamIDFromName(fmt.Sprintf("%s|episode|s%de%d", channelName, season, episode))
 }
 
+// numberProviderEpisodes resolves the season and episode number for every
+// playable entry in a provider's tree. Missing, zero, and repeated episode
+// numbers within a season are moved past the highest number already used in
+// that season, so a provider that repeats a number keeps every episode instead
+// of collapsing them onto one ID. The info builder and playback failover both
+// number through here so their episode IDs always agree.
+func numberProviderEpisodes(info *parser.XCSeriesInfo) []providerEpisode {
+	numbered := make([]providerEpisode, 0, 64)
+
+	for seasonKey, seasonEpisodes := range info.Episodes {
+		used := make(map[int]bool)
+		highest := 0
+
+		for _, ep := range seasonEpisodes {
+			if string(ep.ID) == "" {
+				continue
+			}
+
+			seasonNum, err := strconv.Atoi(seasonKey)
+			if err != nil {
+				seasonNum, _ = strconv.Atoi(string(ep.Season))
+			}
+
+			episodeNum, err := strconv.Atoi(string(ep.EpisodeNum))
+			if err != nil || episodeNum <= 0 || used[episodeNum] {
+				episodeNum = highest + 1
+			}
+			used[episodeNum] = true
+			highest = max(highest, episodeNum)
+
+			numbered = append(numbered, providerEpisode{season: seasonNum, episode: episodeNum, ep: ep})
+		}
+	}
+
+	return numbered
+}
+
 // remoteSeriesOrigins resolves a proxy series ID to every Xtreme Codes provider
 // carrying it, walking the channel's streams from its preferred index and
 // skipping dead and blocked entries so the admin's ordering and kill controls
@@ -390,65 +435,50 @@ collect:
 		answered++
 
 		mappings := make([]db.SeriesEpisode, 0, 64)
-		counts := make(map[string]int)
+		for _, numbered := range numberProviderEpisodes(info) {
+			ep := numbered.ep
+			seasonNum := numbered.season
+			episodeNum := numbered.episode
 
-		for season, seasonEpisodes := range info.Episodes {
-			for _, ep := range seasonEpisodes {
-				if string(ep.ID) == "" {
-					continue
-				}
+			extension := utils.NormalizeContainerExtension(ep.ContainerExtension)
+			episodeID := episodeIDFromChannel(channelName, seasonNum, episodeNum)
 
-				seasonNum, convErr := strconv.Atoi(season)
-				if convErr != nil {
-					seasonNum, _ = strconv.Atoi(string(ep.Season))
-				}
+			mappings = append(mappings, db.SeriesEpisode{
+				EpisodeID:   episodeID,
+				ChannelName: channelName,
+				Season:      seasonNum,
+				Episode:     episodeNum,
+				SourceURL:   origin.Source.URL,
+				SeriesID:    origin.UpstreamID,
+				UpstreamID:  string(ep.ID),
+				Extension:   extension,
+			})
 
-				episodeNum, convErr := strconv.Atoi(string(ep.EpisodeNum))
-				if convErr != nil || episodeNum == 0 {
-					episodeNum = counts[season] + 1
-				}
-				counts[season]++
-
-				extension := utils.NormalizeContainerExtension(ep.ContainerExtension)
-				episodeID := episodeIDFromChannel(channelName, seasonNum, episodeNum)
-
-				mappings = append(mappings, db.SeriesEpisode{
-					EpisodeID:   episodeID,
-					ChannelName: channelName,
-					Season:      seasonNum,
-					Episode:     episodeNum,
-					SourceURL:   origin.Source.URL,
-					SeriesID:    origin.UpstreamID,
-					UpstreamID:  string(ep.ID),
-					Extension:   extension,
-				})
-
-				key := fmt.Sprintf("%d|%d", seasonNum, episodeNum)
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
-
-				seasonKey := strconv.Itoa(seasonNum)
-				entry := map[string]any{
-					"id":                  strconv.Itoa(episodeID),
-					"episode_num":         strconv.Itoa(episodeNum),
-					"title":               ep.Title,
-					"container_extension": extension,
-					"season":              seasonKey,
-					"custom_sid":          ep.CustomSID,
-					"added":               ep.Added,
-					"direct_source":       buildXCStreamURL(baseURL, "series", username, password, episodeID, extension),
-				}
-				if len(ep.Info) > 0 {
-					var epInfo any
-					if err := json.Unmarshal(ep.Info, &epInfo); err == nil {
-						entry["info"] = epInfo
-					}
-				}
-
-				merged[seasonKey] = append(merged[seasonKey], mergedSeriesEpisode{num: episodeNum, entry: entry})
+			key := fmt.Sprintf("%d|%d", seasonNum, episodeNum)
+			if seen[key] {
+				continue
 			}
+			seen[key] = true
+
+			seasonKey := strconv.Itoa(seasonNum)
+			entry := map[string]any{
+				"id":                  strconv.Itoa(episodeID),
+				"episode_num":         strconv.Itoa(episodeNum),
+				"title":               ep.Title,
+				"container_extension": extension,
+				"season":              seasonKey,
+				"custom_sid":          ep.CustomSID,
+				"added":               ep.Added,
+				"direct_source":       buildXCStreamURL(baseURL, "series", username, password, episodeID, extension),
+			}
+			if len(ep.Info) > 0 {
+				var epInfo any
+				if err := json.Unmarshal(ep.Info, &epInfo); err == nil {
+					entry["info"] = epInfo
+				}
+			}
+
+			merged[seasonKey] = append(merged[seasonKey], mergedSeriesEpisode{num: episodeNum, entry: entry})
 		}
 
 		if len(mappings) > 0 {
