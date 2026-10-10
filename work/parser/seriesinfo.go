@@ -20,11 +20,11 @@ import (
 type XCEpisode struct {
 	ID                 XCID            `json:"id"`
 	EpisodeNum         XCID            `json:"episode_num"`
-	Title              string          `json:"title"`
+	Title              XCID            `json:"title"`
 	ContainerExtension string          `json:"container_extension"`
 	Season             XCID            `json:"season"`
-	CustomSID          string          `json:"custom_sid"`
-	Added              string          `json:"added"`
+	CustomSID          XCID            `json:"custom_sid"`
+	Added              XCID            `json:"added"`
 	Info               json.RawMessage `json:"info"`
 }
 
