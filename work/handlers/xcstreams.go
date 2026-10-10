@@ -227,7 +227,6 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 			Name:              item.name,
 			StreamType:        contentType,
 			StreamID:          streamID,
-			SeriesID:          seriesIDForType(contentType, streamID),
 			StreamIcon:        logo,
 			EPGChannelID:      tvgID,
 			Added:             "0",
@@ -243,32 +242,6 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 
 		streams = append(streams, s)
 		num++
-	}
-
-	if contentType == "series" {
-		for _, e := range localscan.SeriesForExport() {
-			seriesID := localscan.XCStreamID(e.Hash)
-
-			name := e.Series
-			if name == "" {
-				name = e.Display
-			}
-
-			streams = append(streams, xcStream{
-				Num:          num,
-				Name:         name,
-				StreamType:   "series",
-				SeriesID:     seriesID,
-				StreamIcon:   localArtURL(baseURL, username, password, e, "poster"),
-				EPGChannelID: "",
-				Added:        "0",
-				CategoryID:   categoryIDFromName(localscan.SeriesCategory(e)),
-				CustomSid:    "",
-				DirectSource: "",
-			})
-			num++
-		}
-		return streams
 	}
 
 	for _, e := range localscan.EntriesForContentType(contentType) {
@@ -299,6 +272,76 @@ func buildStreamList(sp *proxy.StreamProxy, contentType, baseURL, username, pass
 	}
 
 	return streams
+}
+
+// buildSeriesList builds the XC get_series payload from remote series channels
+// followed by local shows. Channels are always ordered alphabetically by name.
+func buildSeriesList(sp *proxy.StreamProxy, baseURL, username, password string) []xcSeries {
+	series := []xcSeries{}
+	num := 1
+
+	for _, item := range getSortedChannels(sp) {
+		item.channel.Mu.RLock()
+
+		if len(item.channel.Streams) == 0 || getChannelContentType(item.channel) != "series" {
+			item.channel.Mu.RUnlock()
+			continue
+		}
+
+		attrs := item.channel.Streams[0].Attributes
+		item.channel.Mu.RUnlock()
+
+		series = append(series, xcSeries{
+			Num:          num,
+			Name:         item.name,
+			SeriesID:     streamIDFromName(item.name),
+			Cover:        attrs["tvg-logo"],
+			LastModified: "0",
+			Rating:       "0",
+			BackdropPath: []string{},
+			CategoryID:   categoryIDFromName(groupTitleOf(attrs)),
+		})
+		num++
+	}
+
+	for _, e := range localscan.SeriesForExport() {
+		name := e.Series
+		if name == "" {
+			name = e.Display
+		}
+
+		cast := make([]string, 0, len(e.Cast))
+		for _, p := range e.Cast {
+			if p.Name != "" {
+				cast = append(cast, p.Name)
+			}
+		}
+
+		backdrops := []string{}
+		if url := localArtURL(baseURL, username, password, e, "fanart"); url != "" {
+			backdrops = append(backdrops, url)
+		}
+
+		series = append(series, xcSeries{
+			Num:          num,
+			Name:         name,
+			SeriesID:     localscan.XCStreamID(e.Hash),
+			Cover:        localArtURL(baseURL, username, password, e, "poster"),
+			Plot:         e.Plot,
+			Cast:         strings.Join(cast, ", "),
+			Director:     strings.Join(e.Directors, ", "),
+			Genre:        strings.Join(e.Genres, ", "),
+			ReleaseDate:  e.Premiered,
+			LastModified: "0",
+			Rating:       fmt.Sprintf("%.1f", e.Rating),
+			Rating5Based: e.Rating / 2,
+			BackdropPath: backdrops,
+			CategoryID:   categoryIDFromName(localscan.SeriesCategory(e)),
+		})
+		num++
+	}
+
+	return series
 }
 
 // buildCategoryList iterates sorted channels and returns unique categories for a

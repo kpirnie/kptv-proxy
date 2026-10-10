@@ -53,7 +53,6 @@ type xcStream struct {
 	Name               string `json:"name"`
 	StreamType         string `json:"stream_type"`
 	StreamID           int    `json:"stream_id"`
-	SeriesID           int    `json:"series_id,omitempty"`
 	StreamIcon         string `json:"stream_icon"`
 	EPGChannelID       string `json:"epg_channel_id"`
 	Added              string `json:"added"`
@@ -63,6 +62,27 @@ type xcStream struct {
 	DirectSource       string `json:"direct_source"`
 	TVArchiveDuration  int    `json:"tv_archive_duration"`
 	ContainerExtension string `json:"container_extension,omitempty"`
+}
+
+// xcSeries represents a series entry in XC get_series output, which uses its
+// own shape rather than the stream shape returned for live and VOD.
+type xcSeries struct {
+	Num            int      `json:"num"`
+	Name           string   `json:"name"`
+	SeriesID       int      `json:"series_id"`
+	Cover          string   `json:"cover"`
+	Plot           string   `json:"plot"`
+	Cast           string   `json:"cast"`
+	Director       string   `json:"director"`
+	Genre          string   `json:"genre"`
+	ReleaseDate    string   `json:"releaseDate"`
+	LastModified   string   `json:"last_modified"`
+	Rating         string   `json:"rating"`
+	Rating5Based   float64  `json:"rating_5based"`
+	BackdropPath   []string `json:"backdrop_path"`
+	YoutubeTrailer string   `json:"youtube_trailer"`
+	EpisodeRunTime int      `json:"episode_run_time"`
+	CategoryID     string   `json:"category_id"`
 }
 
 // xcCategory represents a category in XC API output.
@@ -292,7 +312,7 @@ func HandleXCPlayerAPI(sp *proxy.StreamProxy) http.HandlerFunc {
 				return
 			}
 			writeCachedXCList(sp, w, username, "series", func() any {
-				return buildStreamList(sp, "series", sp.Config.BaseURL, username, password)
+				return buildSeriesList(sp, sp.Config.BaseURL, username, password)				
 			})
 
 		case "get_series_info":

@@ -240,15 +240,6 @@ func buildLocalSeriesInfo(e *localscan.MediaEntry, baseURL, username, password s
 	}
 }
 
-// seriesIDForType returns the series_id an XC client needs to drill into a
-// series entry, leaving every other content type's value omitted.
-func seriesIDForType(contentType string, streamID int) int {
-	if contentType == "series" {
-		return streamID
-	}
-	return 0
-}
-
 // episodeIDFromChannel mints a stable proxy episode ID from the series channel
 // and the episode's season and number. The ID is deliberately independent of any
 // provider, so every source carrying the episode resolves through it and
