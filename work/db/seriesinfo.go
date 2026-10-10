@@ -23,6 +23,11 @@ type SeriesEpisode struct {
 	Extension   string
 }
 
+// internalSeriesSourcePattern matches the synthetic source_url values the proxy
+// caches its own payloads under, such as the merged multi-provider series tree.
+// They belong to no configured source and must survive source pruning.
+const internalSeriesSourcePattern = "kptv://%"
+
 // GetSeriesInfo returns the cached get_series_info payload for a source's series,
 // along with whether it is still within the supplied TTL.
 func GetSeriesInfo(sourceURL, seriesID string, ttl time.Duration) (string, bool) {
@@ -155,7 +160,7 @@ func PruneSeriesInfo(keepURLs []string) error {
 	defer tx.Rollback()
 
 	if len(keepURLs) == 0 {
-		if _, err := tx.Exec(`DELETE FROM kp_series_info`); err != nil {
+		if _, err := tx.Exec(`DELETE FROM kp_series_info WHERE source_url NOT LIKE ?`, internalSeriesSourcePattern); err != nil {
 			logger.Error("{db/seriesinfo - PruneSeriesInfo} delete all info: %v", err)
 			return err
 		}
@@ -167,13 +172,14 @@ func PruneSeriesInfo(keepURLs []string) error {
 	}
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(keepURLs)), ",")
-	args := make([]any, 0, len(keepURLs))
+	args := make([]any, 0, len(keepURLs)+1)
 	for _, url := range keepURLs {
 		args = append(args, url)
 	}
+	args = append(args, internalSeriesSourcePattern)
 
 	for _, table := range []string{"kp_series_info", "kp_series_episodes"} {
-		query := fmt.Sprintf(`DELETE FROM %s WHERE source_url NOT IN (%s)`, table, placeholders)
+		query := fmt.Sprintf(`DELETE FROM %s WHERE source_url NOT IN (%s) AND source_url NOT LIKE ?`, table, placeholders)
 		if _, err := tx.Exec(query, args...); err != nil {
 			logger.Error("{db/seriesinfo - PruneSeriesInfo} prune %s: %v", table, err)
 			return err
