@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"kptv-proxy/work/config"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/localscan"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 // seriesOrigin is one provider's copy of a series, paired with the channel it
@@ -310,7 +312,9 @@ func remoteSeriesOrigins(sp *proxy.StreamProxy, seriesID int) ([]seriesOrigin, b
 
 // buildRemoteSeriesInfo assembles the get_series_info response for a series
 // carried by upstream Xtreme Codes sources. Every provider carrying the series
-// is queried and their episode trees are merged, first provider to carry a
+// is queried in parallel, bounded by SeriesInfoWaitTimeout so a stalled provider
+// cannot outlast the player's own timeout, and the episode trees that arrived
+// are merged in the channel's stream order, first provider to carry a
 // season and episode winning, so a provider with a partial listing no longer
 // truncates the tree. Episode IDs and source URLs point back at this proxy, and
 // each provider's mappings are persisted under its own key so playback can fail
@@ -345,10 +349,42 @@ func buildRemoteSeriesInfo(sp *proxy.StreamProxy, seriesID int, baseURL, usernam
 	bestCount := 0
 	answered := 0
 
-	for _, origin := range origins {
-		info, err := parser.FetchXCSeriesInfo(sp.HttpClient, sp.Config, origin.Source, sp.RateLimiterForSource(origin.Source), origin.UpstreamID)
-		if err != nil {
-			logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Series info fetch failed for %s on %s: %v", channelName, origin.Source.Name, err)
+	type fetchedSeriesInfo struct {
+		index int
+		info  *parser.XCSeriesInfo
+	}
+
+	// buffered so providers answering after the deadline never block their goroutine
+	arrivals := make(chan fetchedSeriesInfo, len(origins))
+	for i, origin := range origins {
+		go func(index int, origin seriesOrigin) {
+			info, err := parser.FetchXCSeriesInfo(sp.HttpClient, sp.Config, origin.Source, sp.RateLimiterForSource(origin.Source), origin.UpstreamID)
+			if err != nil {
+				logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Series info fetch failed for %s on %s: %v", channelName, origin.Source.Name, err)
+				info = nil
+			}
+			arrivals <- fetchedSeriesInfo{index: index, info: info}
+		}(i, origin)
+	}
+
+	results := make([]*parser.XCSeriesInfo, len(origins))
+	deadline := time.NewTimer(constants.Internal.SeriesInfoWaitTimeout)
+	defer deadline.Stop()
+
+collect:
+	for pending := len(origins); pending > 0; pending-- {
+		select {
+		case arrival := <-arrivals:
+			results[arrival.index] = arrival.info
+		case <-deadline.C:
+			logger.Warn("{handlers/xcoutput - buildRemoteSeriesInfo} Series info wait expired for %s with %d of %d providers pending", channelName, pending, len(origins))
+			break collect
+		}
+	}
+
+	for i, origin := range origins {
+		info := results[i]
+		if info == nil {
 			continue
 		}
 		answered++

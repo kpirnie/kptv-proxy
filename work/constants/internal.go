@@ -50,6 +50,11 @@ type InternalConstants struct {
 	RemoteFileRetries       int           // Extra attempts against the same provider before moving to the next
 
 	// -------------------------------------------------------------------------
+	// work/handlers/xcseries.go — buildRemoteSeriesInfo()
+	// -------------------------------------------------------------------------
+	SeriesInfoWaitTimeout time.Duration // Max wait for providers to answer get_series_info before merging what arrived
+
+	// -------------------------------------------------------------------------
 	// work/handlers/xcoutput.go — HandleXCPlayerAPI()
 	// -------------------------------------------------------------------------
 	XCShortEPGMaxLimit int // Upper bound on the client-supplied get_short_epg limit
@@ -381,6 +386,11 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	RemoteFileHeaderTimeout: 8 * time.Second,
 	RemoteFileRetries:       1,
+
+	// -------------------------------------------------------------------------
+	// Remote series info
+	// -------------------------------------------------------------------------
+	SeriesInfoWaitTimeout: 12 * time.Second,
 
 	// -------------------------------------------------------------------------
 	// XC player API
