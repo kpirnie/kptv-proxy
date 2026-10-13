@@ -98,6 +98,12 @@ func (r *Restream) Stream() {
 		outcome, bytesTransferred := r.runAttempt(currentIdx)
 		logger.Debug("{restream/restream - Stream} Channel %s: Stream %d outcome %d (%d bytes)", r.Channel.Name, currentIdx, outcome, bytesTransferred)
 
+		// a stream that delivered real data has proven itself, so its
+		// cumulative failure count starts over
+		if bytesTransferred >= constants.Internal.EOFSuccessThreshold {
+			r.resetStreamFailures(currentIdx)
+		}
+
 		switch outcome {
 
 		case outcomeStopped:
@@ -242,6 +248,16 @@ func (r *Restream) streamEligible(index int) bool {
 	}
 
 	return s.Source.ActiveConns.Load() < int32(s.Source.MaxConnections)
+}
+
+// resetStreamFailures clears a stream's cumulative failure count so occasional
+// blips spread over its lifetime never add up to an auto-block.
+func (r *Restream) resetStreamFailures(index int) {
+	r.Channel.Mu.RLock()
+	if index < len(r.Channel.Streams) {
+		atomic.StoreInt32(&r.Channel.Streams[index].Failures, 0)
+	}
+	r.Channel.Mu.RUnlock()
 }
 
 // recordStreamFailure tracks a failing stream for potential auto-blocking once
