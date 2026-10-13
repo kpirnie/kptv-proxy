@@ -297,6 +297,11 @@ func (r *Restream) streamHLSSegmentsFrom(playlistURL string, initialBody []byte,
 			segmentBytes, err := r.streamSegment(segmentURL, effectiveURL, targetDuration)
 			if err != nil {
 				segmentErrors++
+
+				// mark the failed segment so the next refresh doesn't replay it
+				// behind newer segments — out-of-order TS timestamps break playback
+				// far worse than the brief gap of skipping it
+				segmentTracker.MarkProcessed(segmentURL)
 				logger.Warn("{restream/hls - streamHLSSegmentsFrom} Error streaming segment for channel %s: %v (errors: %d/5)",
 					r.Channel.Name, err, segmentErrors)
 
