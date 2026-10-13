@@ -76,14 +76,13 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 			r.Channel.Name, index, stream.Source.Name)
 	}
 
-	// Enforce connection limit for this source
-	if stream.Source.ActiveConns.Load() >= int32(stream.Source.MaxConnections) {
+	// Enforce connection limit for this source — reserve the slot in one atomic
+	// step so two channels starting at once can't both pass a separate check
+	if stream.Source.ActiveConns.Add(1) > int32(stream.Source.MaxConnections) {
+		stream.Source.ActiveConns.Add(-1)
 		logger.Debug("{restream/restream - StreamFromSource} Channel %s: Stream %d source at max connections (%d)", r.Channel.Name, index, stream.Source.MaxConnections)
 		return false, 0
 	}
-
-	// Increment active connections for the source
-	stream.Source.ActiveConns.Add(1)
 	defer stream.Source.ActiveConns.Add(-1) // ensure decrement when function exits
 
 	// FFmpeg mode hands the URL straight to ffmpeg, but only after the same

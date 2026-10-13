@@ -195,11 +195,13 @@ func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 		limiter.Take()
 	}
 
-	if source.ActiveConns.Load() >= int32(source.MaxConnections) {
+	// reserve the slot in one atomic step so concurrent requests can't both
+	// pass a separate check and exceed the source's connection limit
+	if source.ActiveConns.Add(1) > int32(source.MaxConnections) {
+		source.ActiveConns.Add(-1)
 		logger.Debug("{handlers/remotefile - attemptRemoteFile} source at max connections (%d): %s", source.MaxConnections, utils.LogURL(sp.Config, source.URL))
 		return false
 	}
-	source.ActiveConns.Add(1)
 	defer source.ActiveConns.Add(-1)
 
 	headerCtx, cancel := context.WithCancel(r.Context())
