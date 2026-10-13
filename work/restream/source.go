@@ -41,23 +41,6 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 		return false, 0
 	}
 
-	// CHECK FFMPEG MODE - with lock already held
-	if r.Config.FFmpegMode {
-		streamURL := r.Channel.Streams[index].URL
-		r.Channel.Mu.RUnlock()
-
-		// debug logger
-		logger.Debug("{restream/restream - StreamFromSource} Channel %s", r.Channel.Name)
-
-		return r.streamWithFFmpeg(streamURL)
-	}
-
-	if index >= len(r.Channel.Streams) {
-
-		// If the requested index is invalid, unlock and exit
-		r.Channel.Mu.RUnlock()
-		return false, 0
-	}
 	stream := r.Channel.Streams[index]
 	r.Channel.Mu.RUnlock()
 
@@ -102,6 +85,13 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 	// Increment active connections for the source
 	stream.Source.ActiveConns.Add(1)
 	defer stream.Source.ActiveConns.Add(-1) // ensure decrement when function exits
+
+	// FFmpeg mode hands the URL straight to ffmpeg, but only after the same
+	// dead/blocked checks, rate limiting, and connection accounting as a native fetch
+	if r.Config.FFmpegMode {
+		logger.Debug("{restream/restream - StreamFromSource} Channel %s: Streaming stream %d via FFmpeg", r.Channel.Name, index)
+		return r.streamWithFFmpeg(stream.URL)
+	}
 
 	// Retrieve variants (master playlist) or a live response (direct URL)
 	variants, isMaster, liveResp, cancelLive, err := r.getStreamVariants(stream.URL, stream.Source)
