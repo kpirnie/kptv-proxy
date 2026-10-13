@@ -3,6 +3,7 @@ package restream
 import (
 	"context"
 	"kptv-proxy/work/constants"
+	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/metrics"
 	"kptv-proxy/work/stream"
@@ -52,6 +53,7 @@ func (r *Restream) Stream() {
 	maxTotalAttempts := streamCount * constants.Internal.StreamMaxAttemptsMultiplier // maximum attempts across streams
 	totalAttempts := 0                                                               // attempts counter
 	consecutiveFailures := make(map[int]int)                                         // map of stream index → consecutive failures
+	consecutiveSkips := 0                                                            // ineligible streams passed over in a row
 
 	for {
 
@@ -74,6 +76,7 @@ func (r *Restream) Stream() {
 			atomic.StoreInt32(&r.CurrentIndex, int32(target))
 			totalAttempts = 0
 			consecutiveFailures = make(map[int]int)
+			consecutiveSkips = 0
 		}
 
 		// Attempt budget spent — play the fallback video, then start over
@@ -84,6 +87,7 @@ func (r *Restream) Stream() {
 			}
 			totalAttempts = 0
 			consecutiveFailures = make(map[int]int)
+			consecutiveSkips = 0
 			continue
 		}
 
@@ -103,7 +107,24 @@ func (r *Restream) Stream() {
 		case outcomeSwitch:
 			continue
 
+		case outcomeSkipped:
+			// an ineligible stream was never attempted, so it neither spends the
+			// attempt budget nor counts toward auto-blocking — a full rotation
+			// with nothing eligible spends the budget so the fallback video plays
+			// instead of spinning on the same unusable streams
+			totalAttempts--
+			consecutiveSkips++
+			logger.Debug("{restream/restream - Stream} Channel %s: Stream %d ineligible, skipping (consecutive skips: %d)", r.Channel.Name, currentIdx, consecutiveSkips)
+			if consecutiveSkips >= streamCount {
+				totalAttempts = maxTotalAttempts
+				consecutiveSkips = 0
+			}
+			if streamCount > 1 {
+				atomic.StoreInt32(&r.CurrentIndex, int32((currentIdx+1)%streamCount))
+			}
+
 		case outcomeSuccess:
+			consecutiveSkips = 0
 			consecutiveFailures[currentIdx] = 0
 			totalAttempts = 0
 			r.LastStreamFailed.Store(false)
@@ -118,6 +139,7 @@ func (r *Restream) Stream() {
 			continue
 
 		case outcomeFailure:
+			consecutiveSkips = 0
 			consecutiveFailures[currentIdx]++
 			logger.Debug("{restream/restream - Stream} Channel %s: Stream %d failed (consecutive failures: %d)",
 				r.Channel.Name, currentIdx, consecutiveFailures[currentIdx])
@@ -171,6 +193,10 @@ func (r *Restream) startingIndex(streamCount int) int {
 //   - int64: bytes transferred during the attempt
 func (r *Restream) runAttempt(index int) (streamOutcome, int64) {
 
+	if !r.streamEligible(index) {
+		return outcomeSkipped, 0
+	}
+
 	ctx, cancel := context.WithCancel(r.LifetimeContext())
 	r.SetAttemptContext(ctx, cancel)
 	defer func() {
@@ -197,6 +223,25 @@ func (r *Restream) runAttempt(index int) (streamOutcome, int64) {
 	}
 
 	return outcomeFailure, bytesTransferred
+}
+
+// streamEligible reports whether the stream at index can be attempted right
+// now. Dead, blocked, and capacity-limited streams are passed over without an
+// upstream request, and without being treated as a failure of the stream.
+func (r *Restream) streamEligible(index int) bool {
+	r.Channel.Mu.RLock()
+	if index >= len(r.Channel.Streams) {
+		r.Channel.Mu.RUnlock()
+		return false
+	}
+	s := r.Channel.Streams[index]
+	r.Channel.Mu.RUnlock()
+
+	if deadstreams.IsStreamDead(r.Channel.Name, s.URLHash) || atomic.LoadInt32(&s.Blocked) == 1 {
+		return false
+	}
+
+	return s.Source.ActiveConns.Load() < int32(s.Source.MaxConnections)
 }
 
 // recordStreamFailure tracks a failing stream for potential auto-blocking once

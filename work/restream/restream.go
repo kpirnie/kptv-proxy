@@ -43,6 +43,7 @@ const (
 	outcomeSwitch
 	outcomeSuccess
 	outcomeFailure
+	outcomeSkipped
 )
 
 // getStreamBuffer retrieves a 32KB buffer from the pool for stream processing.
