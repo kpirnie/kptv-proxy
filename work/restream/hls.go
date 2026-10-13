@@ -400,14 +400,14 @@ func (r *Restream) streamHLSSegmentsFrom(playlistURL string, initialBody []byte,
 func (r *Restream) getHLSSegments(playlistURL string) ([]string, string, time.Duration, error) {
 	logger.Debug("{restream/hls - getHLSSegments} Fetching playlist for channel %s: %s", r.Channel.Name, utils.LogURL(r.Config, playlistURL))
 
-	// Apply rate limiting before HLS playlist request to prevent server overload
-	if r.RateLimiter != nil {
-		r.RateLimiter.Take()
-		logger.Debug("{restream/hls - getHLSSegments} Rate limit applied for channel %s", r.Channel.Name)
-	}
-
 	// Locate source configuration for authentication headers (cached)
 	source := r.resolveSourceForURL(playlistURL)
+
+	// Apply the source's rate limit before the playlist request to prevent server overload
+	if !r.takeRateLimit(source) {
+		return nil, "", 0, r.Context().Err()
+	}
+	logger.Debug("{restream/hls - getHLSSegments} Rate limit applied for channel %s", r.Channel.Name)
 
 	// Build HTTP request with appropriate timeout for playlist fetching
 	req, err := http.NewRequest("GET", playlistURL, nil)
@@ -650,14 +650,14 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string, targetDuration 
 	logger.Debug("{restream/hls - streamSegment} Starting segment stream for channel %s: %s",
 		r.Channel.Name, utils.LogURL(r.Config, segmentURL))
 
-	// Apply rate limiting to prevent overwhelming source servers
-	if r.RateLimiter != nil {
-		r.RateLimiter.Take()
-		logger.Debug("{restream/hls - streamSegment} Rate limit applied for channel %s", r.Channel.Name)
-	}
-
 	// Locate source configuration for authentication headers (cached)
 	source := r.resolveSourceForURL(playlistURL)
+
+	// Apply the source's rate limit to prevent overwhelming source servers
+	if !r.takeRateLimit(source) {
+		return 0, r.Context().Err()
+	}
+	logger.Debug("{restream/hls - streamSegment} Rate limit applied for channel %s", r.Channel.Name)
 
 	// Resolve tracking URLs to actual segment URLs
 	originalURL := segmentURL

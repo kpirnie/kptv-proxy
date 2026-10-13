@@ -67,6 +67,7 @@ func (sp *StreamProxy) HandleRestreamingClient(w http.ResponseWriter, r *http.Re
 		logger.Debug("{proxy/stream - HandleRestreamingClient} Channel %s: Creating new restreamer with rate limiting", channel.Name)
 
 		restreamer = restream.NewRestreamer(channel, (sp.Config.BufferSizePerStream * 1024 * 1024), sp.HttpClient, sp.Config, rateLimiter)
+		restreamer.RateLimiterFor = sp.getRateLimiterForSource
 		channel.Restreamer = restreamer.Restreamer
 	} else {
 		// reuse the existing restreamer, ensuring the client map is initialized

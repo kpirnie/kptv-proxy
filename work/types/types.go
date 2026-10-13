@@ -95,6 +95,7 @@ type Restreamer struct {
 	HttpClient       *client.HeaderSettingClient                // HTTP client with custom header support for source authentication
 	Config           *config.Config                             // Application configuration reference for URL obfuscation and operational parameters
 	RateLimiter      ratelimit.Limiter                          // Hold the rate limitter
+	RateLimiterFor   LimiterResolver                            // Resolves the limiter of the source being fetched, at request time
 	SwitchTo         atomic.Int32                               // pending switch target index, -1 when none
 	attemptCtx       atomic.Pointer[CtxBundle]                  // per-attempt context, cancelled to interrupt a single upstream attempt
 	Stats            *StreamStats                               // setup the stats
@@ -103,6 +104,10 @@ type Restreamer struct {
 	BufferPtr        atomic.Pointer[buffer.RingBuffer]          // Shared ring buffer, swapped atomically to avoid torn reads vs watcher/stats
 	SwitchNotify     atomic.Pointer[chan struct{}]              // switch-notify channel, pointer-swapped atomically
 }
+
+// LimiterResolver returns the rate limiter for a source, so a restreamer paces
+// each request against the provider it is actually fetching from.
+type LimiterResolver func(*config.SourceConfig) ratelimit.Limiter
 
 // CtxBundle pairs a context with its cancel func so both can be swapped as a
 // single atomic unit, eliminating torn reads when the streaming context is

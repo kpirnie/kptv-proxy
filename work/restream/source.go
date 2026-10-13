@@ -85,12 +85,12 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 
 	// CRITICAL: Apply rate limiting BEFORE attempting connection to provider
 	// This prevents overwhelming the provider with too many simultaneous connection attempts
-	if r.RateLimiter != nil {
-		r.RateLimiter.Take()
-		if r.Config.Debug {
-			logger.Debug("{restream/restream - StreamFromSource} Channel %s: Applied rate limit for stream %d (source: %s)",
-				r.Channel.Name, index, stream.Source.Name)
-		}
+	if !r.takeRateLimit(stream.Source) {
+		return false, 0
+	}
+	if r.Config.Debug {
+		logger.Debug("{restream/restream - StreamFromSource} Channel %s: Applied rate limit for stream %d (source: %s)",
+			r.Channel.Name, index, stream.Source.Name)
 	}
 
 	// Enforce connection limit for this source

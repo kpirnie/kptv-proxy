@@ -65,6 +65,38 @@ func putStreamBuffer(buf *[]byte) {
 	streamBufferPool.Put(buf)
 }
 
+// takeRateLimit waits on the limiter of the source about to be fetched, falling
+// back to the channel's limiter when the source is unknown. It honours the
+// attempt context so a stop or switch is not held in the limiter queue.
+//
+// Returns:
+//   - bool: false when the wait was cancelled
+func (r *Restream) takeRateLimit(source *config.SourceConfig) bool {
+	limiter := r.RateLimiter
+	if source != nil && r.RateLimiterFor != nil {
+		if l := r.RateLimiterFor(source); l != nil {
+			limiter = l
+		}
+	}
+	if limiter == nil {
+		return true
+	}
+
+	ctx := r.Context()
+	taken := make(chan struct{})
+	go func() {
+		limiter.Take()
+		close(taken)
+	}()
+
+	select {
+	case <-taken:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 // Restream wraps types.Restreamer to allow adding methods in this package.
 // This enables higher-level restreaming logic without polluting the base struct.
 type Restream struct {
