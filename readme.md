@@ -705,7 +705,7 @@ Each stream is classified as `live`, `vod`, or `series` so filters, XC catalog p
 | Setting | Default | Description |
 | --------- | --------- | ------------- |
 | `baseURL` | `"http://localhost:8080"` | Base URL for generated stream links |
-| `bufferSizePerStream` | `16` | Per-stream buffer size in MB |
+| `bufferSizePerStream` | `4` | Per-stream buffer size in MB |
 | `cacheEnabled` | `true` | Enable playlist caching |
 | `cacheDuration` | `"30m"` | Cache lifetime |
 | `importRefreshInterval` | `"12h"` | How often to refresh source playlists |

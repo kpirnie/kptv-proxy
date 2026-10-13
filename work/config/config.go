@@ -639,7 +639,7 @@ func syncSDAccountsToDB(accounts []SDAccount) error {
 func getDefaultConfig() *Config {
 	return &Config{
 		BaseURL:               "http://localhost:8080",
-		BufferSizePerStream:   1,
+		BufferSizePerStream:   4,
 		CacheEnabled:          true,
 		CacheDuration:         30 * time.Minute,
 		ImportRefreshInterval: 12 * time.Hour,
@@ -666,7 +666,7 @@ func validateAndSetDefaults(config *Config) {
 		config.BaseURL = "http://localhost:8080"
 	}
 	if config.BufferSizePerStream <= 0 {
-		config.BufferSizePerStream = 1
+		config.BufferSizePerStream = 4
 	}
 	if config.CacheDuration <= 0 {
 		config.CacheDuration = 30 * time.Minute
