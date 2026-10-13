@@ -739,6 +739,13 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string, targetDuration 
 		chunkDelay = paceDuration / time.Duration(chunks)
 	}
 
+	// one timer reused for every pacing wait instead of a new one per chunk
+	var paceTimer *time.Timer
+	if chunkDelay > 0 {
+		paceTimer = time.NewTimer(chunkDelay)
+		defer paceTimer.Stop()
+	}
+
 	// Stream segment data to clients in chunks
 	for {
 		// Read chunk from segment
@@ -771,11 +778,12 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string, targetDuration 
 			}
 
 			// pacing sleep between chunks (zero when unpaceable)
-			if chunkDelay > 0 {
+			if paceTimer != nil {
+				paceTimer.Reset(chunkDelay)
 				select {
 				case <-r.Context().Done():
 					return totalBytes, nil
-				case <-time.After(chunkDelay):
+				case <-paceTimer.C:
 				}
 			}
 
