@@ -512,7 +512,7 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	WatcherMaxConcurrent:       100,
 	WatcherCleanupInterval:     30 * time.Second,
-	WatcherCheckInterval:       30 * time.Second,
+	WatcherCheckInterval:       15 * time.Second,
 	WatcherDebugCheckInterval:  15 * time.Second,
 	WatcherPollingInterval:     500 * time.Millisecond,
 	WatcherGracePeriod:         30 * time.Second,
