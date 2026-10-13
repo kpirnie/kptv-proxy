@@ -798,18 +798,10 @@ func (r *Restream) streamSegment(segmentURL, playlistURL string, targetDuration 
 				return totalBytes, nil
 			}
 
-			// Transient error - retry with backoff
-			consecutiveErrors++
-			if consecutiveErrors >= maxConsecutiveErrors {
-				logger.Error("{restream/hls - streamSegment} Max read errors for channel %s: %v (count: %d)",
-					r.Channel.Name, err, consecutiveErrors)
-				return totalBytes, err
-			}
-
-			logger.Warn("{restream/hls - streamSegment} Read error for channel %s: %v (consecutive: %d, retrying...)",
-				r.Channel.Name, err, consecutiveErrors)
-			time.Sleep(constants.Internal.BufferWriteRetryDelay)
-			continue
+			// a response body that errored can't recover — re-reading it only
+			// returns the same error, so fail the segment straight away
+			logger.Error("{restream/hls - streamSegment} Read error for channel %s: %v", r.Channel.Name, err)
+			return totalBytes, err
 		}
 
 		// Successful read with no errors - reset counter

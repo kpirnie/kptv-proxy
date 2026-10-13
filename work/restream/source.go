@@ -426,6 +426,7 @@ func (r *Restream) streamFromResponse(resp *http.Response, prefix []byte) (bool,
 				logger.Debug("{restream/restream - streamFromResponse} Channel %s: Graceful switch", r.Channel.Name)
 				return true, totalBytes
 			}
+			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 		default:
 		}
 
@@ -495,14 +496,10 @@ func (r *Restream) streamFromResponse(resp *http.Response, prefix []byte) (bool,
 				return true, totalBytes
 			}
 
-			consecutiveErrors++
-			if consecutiveErrors >= maxConsecutiveErrors {
-				logger.Error("{restream/restream - streamFromResponse} Channel %s: %v (consecutive: %d)", r.Channel.Name, err, consecutiveErrors)
-				return false, totalBytes
-			}
-
-			time.Sleep(constants.Internal.RetryDelay)
-			continue
+			// a response body that errored can't recover — re-reading it only
+			// returns the same error, so fail the attempt straight away
+			logger.Error("{restream/restream - streamFromResponse} Channel %s: %v", r.Channel.Name, err)
+			return false, totalBytes
 		}
 
 		consecutiveErrors = 0

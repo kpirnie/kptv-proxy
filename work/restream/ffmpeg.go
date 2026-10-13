@@ -247,18 +247,10 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 				return success, totalBytes
 			}
 
-			// Transient error - retry with backoff
-			consecutiveErrors++
-			if consecutiveErrors >= maxConsecutiveErrors {
-				logger.Error("{restream/ffmpeg - streamWithFFmpeg} Max consecutive read errors for channel %s: %v (count: %d)",
-					r.Channel.Name, err, consecutiveErrors)
-				return false, totalBytes
-			}
-
-			logger.Warn("{restream/ffmpeg - streamWithFFmpeg} Read error for channel %s: %v (consecutive: %d, retrying...)",
-				r.Channel.Name, err, consecutiveErrors)
-			time.Sleep(100 * time.Millisecond)
-			continue
+			// a failed read on ffmpeg's stdout pipe means the pipe is gone —
+			// re-reading it only returns the same error, so fail straight away
+			logger.Error("{restream/ffmpeg - streamWithFFmpeg} Read error for channel %s: %v", r.Channel.Name, err)
+			return false, totalBytes
 		}
 
 		// Successful read with no errors - reset counter
