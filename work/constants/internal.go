@@ -34,6 +34,7 @@ type InternalConstants struct {
 	StreamActivityUpdateInterval time.Duration // How often the LastActivity timestamp is refreshed while streaming
 	StreamMetricUpdateInterval   time.Duration // How often Prometheus byte/connection metrics are updated
 	StreamMaxConsecutiveErrors   int           // Max sequential read errors before streamFromURL aborts
+	StreamReadIdleTimeout        time.Duration // Max time with no upstream bytes before a direct stream attempt is abandoned
 
 	// -------------------------------------------------------------------------
 	// work/restream/restream.go — getStreamVariants() / testAndStreamVariant()
@@ -372,6 +373,7 @@ var Internal = InternalConstants{
 	StreamActivityUpdateInterval: 1 * time.Second,
 	StreamMetricUpdateInterval:   10 * time.Second,
 	StreamMaxConsecutiveErrors:   5,
+	StreamReadIdleTimeout:        15 * time.Second,
 
 	// -------------------------------------------------------------------------
 	// Variant detection

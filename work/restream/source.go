@@ -401,6 +401,15 @@ func (r *Restream) streamFromResponse(resp *http.Response, prefix []byte) (bool,
 	consecutiveErrors := 0
 	maxConsecutiveErrors := constants.Internal.StreamMaxConsecutiveErrors
 
+	// an upstream that keeps the socket open but stops sending blocks Read
+	// indefinitely — closing the body from the timer unblocks it, so the
+	// attempt fails over in seconds instead of waiting on the watcher
+	idleTimer := time.AfterFunc(constants.Internal.StreamReadIdleTimeout, func() {
+		logger.Warn("{restream/restream - streamFromResponse} Channel %s: No upstream data for %v, abandoning stream", r.Channel.Name, constants.Internal.StreamReadIdleTimeout)
+		resp.Body.Close()
+	})
+	defer idleTimer.Stop()
+
 	// Forward peeked detection bytes before entering the read loop
 	if len(prefix) > 0 {
 		if r.SafeBufferWrite(prefix) {
@@ -448,6 +457,7 @@ func (r *Restream) streamFromResponse(resp *http.Response, prefix []byte) (bool,
 			if now.Sub(lastActivityUpdate) > constants.Internal.StreamActivityUpdateInterval {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
+				idleTimer.Reset(constants.Internal.StreamReadIdleTimeout)
 				// Check if stream was marked dead mid-stream
 				r.Channel.Mu.RLock()
 				idx := int(atomic.LoadInt32(&r.CurrentIndex))
