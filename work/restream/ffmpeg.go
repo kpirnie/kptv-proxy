@@ -11,6 +11,7 @@ import (
 	"kptv-proxy/work/metrics"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -156,6 +157,17 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	consecutiveErrors := 0
 	maxConsecutiveErrors := constants.Internal.FFmpegMaxConsecutiveErrors
 
+	// a stalled input leaves ffmpeg running with nothing on stdout, blocking
+	// Read indefinitely — killing it on the idle window ends the read so the
+	// attempt fails over instead of waiting on the watcher
+	var idled atomic.Bool
+	idleTimer := time.AfterFunc(constants.Internal.StreamReadIdleTimeout, func() {
+		idled.Store(true)
+		logger.Warn("{restream/ffmpeg - streamWithFFmpeg} Channel %s: No output for %v, stopping FFmpeg", r.Channel.Name, constants.Internal.StreamReadIdleTimeout)
+		cancel()
+	})
+	defer idleTimer.Stop()
+
 	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Starting stream loop for channel %s", r.Channel.Name)
 
 	// Main stream processing loop
@@ -218,6 +230,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 			if now.Sub(lastActivityUpdate) > constants.Internal.FFmpegActivityUpdateInterval {
 				r.LastActivity.Store(now.Unix())
 				lastActivityUpdate = now
+				idleTimer.Reset(constants.Internal.StreamReadIdleTimeout)
 			}
 
 			// Update Prometheus metrics every 10 seconds
@@ -237,7 +250,7 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 		if err != nil {
 			if err == io.EOF {
 				// Stream ended normally
-				success := totalBytes > constants.Internal.StreamMinViableBytes
+				success := totalBytes > constants.Internal.StreamMinViableBytes && !idled.Load()
 				logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Stream ended for channel %s: %d bytes transferred (success: %v)",
 					r.Channel.Name, totalBytes, success)
 
