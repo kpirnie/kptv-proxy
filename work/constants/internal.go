@@ -13,7 +13,6 @@ type InternalConstants struct {
 	BufferWarmupDelay        time.Duration // Pre-warm delay before first client write after AddClient
 	BriefSuccessThreshold    int64         // Minimum bytes for a connection to be considered non-trivially successful
 	EOFSuccessThreshold      int64         // Minimum bytes transferred before EOF is treated as a clean end
-	RetryDelay               time.Duration // Pause between retry attempts on transient errors
 	EOFRestartDelay          time.Duration // Minimum pause after FFmpeg EOF before restarting, prevents rapid cycling on short .ts segments
 	BufferWriteRetryDelay    time.Duration // Pause between ring-buffer write retries on back-pressure
 	MaxClientSessionDuration time.Duration // Hard cap on a single client streaming session
@@ -351,7 +350,6 @@ var Internal = InternalConstants{
 	BufferWarmupDelay:        500 * time.Millisecond,
 	BriefSuccessThreshold:    64 * 1024,       // 64KB
 	EOFSuccessThreshold:      2 * 1024 * 1024, // 2MB
-	RetryDelay:               100 * time.Millisecond,
 	EOFRestartDelay:          500 * time.Millisecond,
 	BufferWriteRetryDelay:    10 * time.Millisecond,
 	MaxClientSessionDuration: 24 * time.Hour,
