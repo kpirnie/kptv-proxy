@@ -192,7 +192,18 @@ func upstreamEpisodeURL(source *config.SourceConfig, upstreamID, extension strin
 // rather than losing the race to the player's own timeout.
 func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, streamURL string, source *config.SourceConfig, extension string, session *proxy.FileSession) bool {
 	if limiter := sp.RateLimiterForSource(source); limiter != nil {
-		limiter.Take()
+		// wait off the handler's goroutine so a player that gave up releases
+		// the handler at once instead of sitting in the limiter queue
+		taken := make(chan struct{})
+		go func() {
+			limiter.Take()
+			close(taken)
+		}()
+		select {
+		case <-taken:
+		case <-r.Context().Done():
+			return false
+		}
 	}
 
 	// reserve the slot in one atomic step so concurrent requests can't both
