@@ -37,6 +37,13 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 
 	client.LastSeen.Store(time.Now().Unix())
 	client.LastProgress.Store(time.Now().Unix())
+
+	// a late joiner gets recent data queued first so playback starts at once
+	// instead of waiting at the live edge for the next PAT and keyframe
+	if r.Running.Load() {
+		r.primeClient(client)
+	}
+
 	r.Clients.Store(id, client)
 	r.LastActivity.Store(time.Now().Unix())
 
@@ -303,4 +310,78 @@ func (r *Restream) drainClient(client *types.RestreamClient) {
 			client.LastSeen.Store(time.Now().Unix())
 		}
 	}
+}
+
+// primeClient queues recent ring-buffer data for a client joining a running
+// stream, starting at the PAT that precedes the most recent random-access
+// point. Data that isn't MPEG-TS, or holds no such point, is left unprimed.
+func (r *Restream) primeClient(client *types.RestreamClient) {
+	b := r.LoadBuffer()
+	if b == nil || b.IsDestroyed() {
+		return
+	}
+
+	// use at most half the client's queue so live chunks are never shed for it
+	chunkSize := constants.Internal.StreamBufferSize
+	data := b.PeekRecentData(int64(cap(client.WriteChan)/2) * int64(chunkSize))
+
+	start := tsPrimeOffset(data)
+	if start < 0 {
+		return
+	}
+	data = data[start:]
+	primed := len(data)
+
+	for len(data) > 0 {
+		chunk := types.NewStreamChunk(data[:min(len(data), chunkSize)])
+		select {
+		case client.WriteChan <- chunk:
+		default:
+			chunk.Release()
+			return
+		}
+		data = data[len(chunk.Data):]
+	}
+
+	logger.Debug("{restream/restream - primeClient} Channel %s: Primed client %s with %d bytes", r.Channel.Name, client.Id, primed)
+}
+
+// tsPrimeOffset returns the offset in data of the PAT packet preceding the
+// last random-access point, or -1 when data isn't MPEG-TS or has no such point.
+// Starting there gives the decoder its PID tables before the keyframe arrives.
+func tsPrimeOffset(data []byte) int {
+	const pktSize = 188
+
+	// align to packet boundaries: three sync bytes exactly one packet apart
+	sync := -1
+	for i := 0; i < pktSize && i+2*pktSize < len(data); i++ {
+		if data[i] == 0x47 && data[i+pktSize] == 0x47 && data[i+2*pktSize] == 0x47 {
+			sync = i
+			break
+		}
+	}
+	if sync < 0 {
+		return -1
+	}
+
+	lastPAT, start := -1, -1
+	for i := sync; i+pktSize <= len(data); i += pktSize {
+		pkt := data[i : i+pktSize]
+		if pkt[0] != 0x47 {
+			break
+		}
+
+		// PID 0 with payload_unit_start set begins a PAT
+		if pkt[1]&0x1f == 0 && pkt[2] == 0 && pkt[1]&0x40 != 0 {
+			lastPAT = i
+			continue
+		}
+
+		// adaptation field present, non-empty, with random_access_indicator set
+		if lastPAT >= 0 && pkt[3]&0x20 != 0 && pkt[4] > 0 && pkt[5]&0x40 != 0 {
+			start = lastPAT
+		}
+	}
+
+	return start
 }
