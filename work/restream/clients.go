@@ -287,18 +287,38 @@ func (r *Restream) drainClient(client *types.RestreamClient) {
 			writeErr := func() (err error) {
 				defer func() {
 					if rec := recover(); rec != nil {
+						if chunk != nil {
+							chunk.Release()
+						}
 						err = fmt.Errorf("write/flush panic recovered: %v", rec)
 					}
 				}()
-				rc.SetWriteDeadline(time.Now().Add(constants.Internal.ClientWriteDeadline))
-				_, err = client.Writer.Write(chunk.Data)
-				if err != nil {
-					return err
+
+				// write every chunk already queued before flushing once — a client
+				// a few chunks behind catches up with a single flush instead of one
+				// per chunk; bounded by the queue depth so Done is still checked
+				for batched := 0; ; batched++ {
+					rc.SetWriteDeadline(time.Now().Add(constants.Internal.ClientWriteDeadline))
+					_, err = client.Writer.Write(chunk.Data)
+					chunk.Release()
+					chunk = nil
+					if err != nil {
+						return err
+					}
+					if batched+1 >= cap(client.WriteChan) {
+						break
+					}
+					select {
+					case chunk = <-client.WriteChan:
+						continue
+					default:
+					}
+					break
 				}
+
 				client.Flusher.Flush()
 				return nil
 			}()
-			chunk.Release()
 
 			if writeErr != nil {
 				logger.Debug("{restream/restream - drainClient} Channel %s: Write error for client %s, removing: %v",
