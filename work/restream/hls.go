@@ -217,8 +217,8 @@ func (r *Restream) streamHLSSegmentsFrom(playlistURL string, initialBody []byte,
 				r.Channel.Name, totalBytes)
 			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 		}
+		fetchStart := time.Now()
 
-		// Fetch current playlist and extract segment URLs
 		// Fetch current playlist and extract segment URLs
 		var segments []string
 		var effectiveURL string
@@ -352,12 +352,19 @@ func (r *Restream) streamHLSSegmentsFrom(playlistURL string, initialBody []byte,
 				r.Channel.Name, newSegmentCount, segmentTracker.Size(), totalBytes/(1024*1024))
 		}
 
-		// Wait before next playlist refresh (HLS standard is typically 1-3 seconds)
+		// pace refreshes from when this playlist was fetched, not from when its
+		// segments finished — paced delivery already consumed part of the
+		// interval, and waiting the full interval on top drains client runway
+		wait := hlsRefreshInterval(targetDuration) - time.Since(fetchStart)
+		if wait < 0 {
+			wait = 0
+		}
+
 		select {
 		case <-r.Context().Done():
 			logger.Debug("{restream/hls - streamHLSSegmentsFrom} Context cancelled during refresh wait for channel %s", r.Channel.Name)
 			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
-		case <-time.After(hlsRefreshInterval(targetDuration)):
+		case <-time.After(wait):
 			continue
 		}
 	}
