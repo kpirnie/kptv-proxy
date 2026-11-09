@@ -502,17 +502,9 @@ func (sw *StreamWatcher) evaluateStreamHealthFromState() bool {
 		}
 	}
 
-	// Reuse stats already collected by restream/stats instead of racing with a second FFprobe
-	sw.restreamer.Stats.Mu.RLock()
-	statsValid := sw.restreamer.Stats.Valid
-	statsUpdated := sw.restreamer.Stats.LastUpdated
-	sw.restreamer.Stats.Mu.RUnlock()
-
-	// If stats exist but haven't been updated in 5 minutes, treat as stale
-	if statsValid && time.Since(time.Unix(statsUpdated, 0)) > constants.Internal.WatcherStatsStaleTimeout {
-		logger.Warn("{watcher - evaluateStreamHealthFromState} Channel %s: Stream stats stale for >5 minutes", sw.channelName)
-		hasIssues = true
-	}
+	// The age of the background ffprobe stats is deliberately not checked: a
+	// skipped or failed probe says nothing about the stream, and treating it as
+	// a fault switched healthy streams. Throughput and activity above cover stalls.
 
 	return hasIssues
 }

@@ -44,6 +44,7 @@ const (
 	outcomeSuccess
 	outcomeFailure
 	outcomeSkipped
+	outcomeStall // media stopped arriving after it had started, while the connection stayed up
 )
 
 // getStreamBuffer retrieves a 32KB buffer from the pool for stream processing.

@@ -3,7 +3,6 @@ package restream
 import (
 	"context"
 	"kptv-proxy/work/constants"
-	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/metrics"
 	"kptv-proxy/work/stream"
@@ -54,6 +53,7 @@ func (r *Restream) Stream() {
 	totalAttempts := 0                                                               // attempts counter
 	consecutiveFailures := make(map[int]int)                                         // map of stream index → consecutive failures
 	consecutiveSkips := 0                                                            // ineligible streams passed over in a row
+	stallRestarts := 0                                                               // consecutive stall restarts of the current source
 
 	for {
 
@@ -77,6 +77,7 @@ func (r *Restream) Stream() {
 			totalAttempts = 0
 			consecutiveFailures = make(map[int]int)
 			consecutiveSkips = 0
+			stallRestarts = 0
 		}
 
 		// Attempt budget spent — play the fallback video, then start over
@@ -95,6 +96,7 @@ func (r *Restream) Stream() {
 		currentIdx := int(atomic.LoadInt32(&r.CurrentIndex))
 		totalAttempts++
 
+		attemptStart := time.Now()
 		outcome, bytesTransferred := r.runAttempt(currentIdx)
 		logger.Debug("{restream/restream - Stream} Channel %s: Stream %d outcome %d (%d bytes)", r.Channel.Name, currentIdx, outcome, bytesTransferred)
 
@@ -102,6 +104,32 @@ func (r *Restream) Stream() {
 		// cumulative failure count starts over
 		if bytesTransferred >= constants.Internal.EOFSuccessThreshold {
 			r.resetStreamFailures(currentIdx)
+		}
+
+		// A stalled source is restarted in place, even with no alternative
+		// stream, but only StreamMaxStallRestarts times in a row; the allowance
+		// returns after StreamStallResetWindow of healthy streaming. Beyond
+		// that a stall counts as a failure, so the attempt budget, fallback and
+		// auto-block pacing apply and an unavailable channel cannot loop.
+		if outcome == outcomeStall {
+			if time.Since(attemptStart) >= constants.Internal.StreamStallResetWindow {
+				stallRestarts = 0
+			}
+			stallRestarts++
+			if stallRestarts <= constants.Internal.StreamMaxStallRestarts {
+				logger.Warn("{restream/restream - Stream} Channel %s: Stream %d stalled, restarting it (%d/%d)",
+					r.Channel.Name, currentIdx, stallRestarts, constants.Internal.StreamMaxStallRestarts)
+				totalAttempts-- // a bounded stall restart does not use the failure budget
+				select {
+				case <-r.LifetimeContext().Done():
+					return
+				case <-time.After(constants.Internal.EOFRestartDelay):
+				}
+				continue
+			}
+			logger.Warn("{restream/restream - Stream} Channel %s: Stream %d stalled again after %d restarts, treating as failed",
+				r.Channel.Name, currentIdx, constants.Internal.StreamMaxStallRestarts)
+			outcome = outcomeFailure
 		}
 
 		switch outcome {
@@ -211,6 +239,7 @@ func (r *Restream) runAttempt(index int) (streamOutcome, int64) {
 	}()
 
 	r.resetBufferSafely()
+	r.AttemptStalled.Store(false)
 
 	logger.Debug("{restream/restream - runAttempt} Channel %s: Attempting stream %d", r.Channel.Name, index)
 	success, bytesTransferred := r.StreamFromSource(index)
@@ -221,6 +250,10 @@ func (r *Restream) runAttempt(index int) (streamOutcome, int64) {
 
 	if r.LifetimeContext().Err() != nil || r.ClientCount.Load() == 0 {
 		return outcomeStopped, bytesTransferred
+	}
+
+	if r.AttemptStalled.Load() {
+		return outcomeStall, bytesTransferred
 	}
 
 	// a very brief success is a failure in disguise
@@ -243,7 +276,7 @@ func (r *Restream) streamEligible(index int) bool {
 	s := r.Channel.Streams[index]
 	r.Channel.Mu.RUnlock()
 
-	if deadstreams.IsStreamDead(r.Channel.Name, s.URLHash) || atomic.LoadInt32(&s.Blocked) == 1 {
+	if blockedUntilRetry(r.Channel.Name, s) {
 		return false
 	}
 

@@ -69,6 +69,11 @@ func ParseM3U8(ctx context.Context, httpClient *client.HeaderSettingClient, cfg 
 		logger.Debug("{parser/m3u8 - ParseM3U8} Using cached M3U8 data for %s", source.Name)
 		var streams []*types.Stream
 		if err := json.Unmarshal([]byte(cached), &streams); err == nil {
+			// decoding allocates a SourceConfig per stream; point them back at
+			// the live source so they share its connection count and settings
+			for _, s := range streams {
+				s.Source = source
+			}
 			return streams
 		}
 	}

@@ -74,6 +74,7 @@ func (r *Restream) AddClient(id string, w http.ResponseWriter, flusher http.Flus
 		}
 		r.ClearAttemptContext()
 		r.SwitchTo.Store(-1)
+		r.TimelineOffset.Store(0) // a new session starts its own output timeline
 
 		go r.Stream()
 		go r.monitorClientHealth()

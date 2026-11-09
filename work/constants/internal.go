@@ -24,6 +24,9 @@ type InternalConstants struct {
 	// -------------------------------------------------------------------------
 	StreamMaxAttemptsMultiplier       int           // Multiplier applied to stream count to derive max total attempts
 	StreamConsecutiveFailureThreshold int           // Consecutive failures before a stream is marked for auto-blocking
+	AutoBlockRetryInterval            time.Duration // Time after its last failure before an auto-blocked stream is probed again
+	StreamMaxStallRestarts            int           // Consecutive stall restarts of a source before further stalls count as failures
+	StreamStallResetWindow            time.Duration // Healthy streaming time after which the stall-restart allowance is restored
 	StreamMinViableBytes              int64         // Minimum bytes transferred for a stream attempt to be deemed viable
 	ClientWriteTimeout                time.Duration // Max time to wait for a single client write before dropping slow client
 
@@ -125,6 +128,8 @@ type InternalConstants struct {
 	FFmpegMaxConsecutiveErrors   int           // Max consecutive read/write errors before the FFmpeg loop aborts
 	FFmpegLogProgressInterval    int64         // Byte interval at which FFmpeg streaming progress is logged
 	FFmpegClientBufferChunks     int           // WriteChan depth for FFmpeg mode clients (larger to absorb burst output)
+	FFmpegProgressPeriod         time.Duration // How often FFmpeg reports its output position (-stats_period)
+	FFmpegTimelineGap            time.Duration // Gap left between one FFmpeg's last reported output time and the next one's first timestamp; must exceed FFmpegProgressPeriod
 
 	// -------------------------------------------------------------------------
 	// work/restream/ffmpeg.go — stopFFmpeg()
@@ -216,7 +221,6 @@ type InternalConstants struct {
 	WatcherGracePeriod         time.Duration // Grace period before health checks begin on a new stream
 	WatcherContextStuckTimeout time.Duration // Time a cancelled context must persist before being flagged as stuck
 	WatcherActivityTimeout     int64         // Seconds of no activity before the stream is flagged as stalled
-	WatcherStatsStaleTimeout   time.Duration // Seconds since last stats update before stats are considered stale
 	WatcherLowThroughputBytes  int64         // Minimum bytes between health checks; below this is treated as a stall
 
 	// -------------------------------------------------------------------------
@@ -363,6 +367,9 @@ var Internal = InternalConstants{
 	// -------------------------------------------------------------------------
 	StreamMaxAttemptsMultiplier:       2,
 	StreamConsecutiveFailureThreshold: 2,
+	AutoBlockRetryInterval:            5 * time.Minute,
+	StreamMaxStallRestarts:            3,
+	StreamStallResetWindow:            2 * time.Minute,
 	StreamMinViableBytes:              64 * 1024, // 64KB — matches BriefSuccessThreshold; gate for "got real data" on cancel/no-client exits
 
 	// -------------------------------------------------------------------------
@@ -455,6 +462,8 @@ var Internal = InternalConstants{
 	FFmpegMaxConsecutiveErrors:   10,
 	FFmpegLogProgressInterval:    20 * 1024 * 1024, // 20MB
 	FFmpegClientBufferChunks:     128,
+	FFmpegProgressPeriod:         250 * time.Millisecond,
+	FFmpegTimelineGap:            500 * time.Millisecond,
 
 	// -------------------------------------------------------------------------
 	// Stats
@@ -518,7 +527,6 @@ var Internal = InternalConstants{
 	WatcherGracePeriod:         30 * time.Second,
 	WatcherContextStuckTimeout: 300 * time.Second,
 	WatcherActivityTimeout:     120,
-	WatcherStatsStaleTimeout:   5 * time.Minute,
 	WatcherLowThroughputBytes:  50 * 1024, // 50KB
 	WatcherFailureThreshold:    3,
 	WatcherFailureResetWindow:  15 * time.Minute,

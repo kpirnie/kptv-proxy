@@ -25,40 +25,38 @@ func (r *Restream) streamFallbackVideo() {
 		logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: Recreated destroyed buffer for fallback", r.Channel.Name)
 	}
 
-	for {
-		select {
-		case <-r.Context().Done():
-			logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: Context cancelled", r.Channel.Name)
+	select {
+	case <-r.Context().Done():
+		logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: Context cancelled", r.Channel.Name)
 
-			return
-		default:
-		}
+		return
+	default:
+	}
 
-		// Check if we still have clients
-		clientCount := 0
-		r.Clients.Range(func(key string, value *types.RestreamClient) bool {
-			clientCount++
-			return true
-		})
+	// Check if we still have clients
+	clientCount := 0
+	r.Clients.Range(func(key string, value *types.RestreamClient) bool {
+		clientCount++
+		return true
+	})
 
-		if clientCount == 0 {
-			logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: No clients remaining", r.Channel.Name)
+	if clientCount == 0 {
+		logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: No clients remaining", r.Channel.Name)
 
-			return
-		}
+		return
+	}
 
-		logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: Starting fallback video playback for %d clients", r.Channel.Name, clientCount)
+	logger.Debug("{restream/restream - streamFallbackVideo} Channel %s: Starting fallback video playback for %d clients", r.Channel.Name, clientCount)
 
-		// Stream the local fallback video
-		r.streamLocalFallback(fallbackPath)
+	// Stream the local fallback video for one fallback period
+	r.streamLocalFallback(fallbackPath)
 
-		// Brief pause before restarting loop
-		select {
-		case <-r.Context().Done():
-			return
-		case <-time.After(constants.Internal.FallbackVideoLoopDelay):
-			continue
-		}
+	// Brief pause, then return so the caller retries the real sources. This
+	// used to loop, which kept viewers on the loading clip after the source
+	// had recovered.
+	select {
+	case <-r.Context().Done():
+	case <-time.After(constants.Internal.FallbackVideoLoopDelay):
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/metrics"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -42,22 +43,35 @@ func sanitizeHeaderValue(v string) string {
  * @return (success bool, totalBytes int64) - success indicates if stream was healthy, totalBytes is data transferred
  */
 func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
-	// Find the source config for this stream URL to get custom headers/user-agent
-	var source *config.SourceConfig
-	r.Channel.Mu.RLock()
-	for _, stream := range r.Channel.Streams {
-		if stream.URL == streamURL || strings.Contains(streamURL, stream.Source.URL) {
-			source = stream.Source
-			break
+	return r.streamWithFFmpegAV(streamURL, "", nil)
+}
+
+// streamWithFFmpegAV runs FFmpeg on streamURL, adding audioURL as a second
+// input when the selected HLS variant carries its audio in a separate
+// EXT-X-MEDIA rendition. source supplies the request headers; when nil it is
+// looked up from the channel's streams. A variant URL resolved from a master
+// playlist often shares nothing with the source URL, so callers that have the
+// source should pass it.
+func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source *config.SourceConfig) (bool, int64) {
+	if source == nil {
+		r.Channel.Mu.RLock()
+		for _, stream := range r.Channel.Streams {
+			if stream.URL == streamURL || strings.Contains(streamURL, stream.Source.URL) {
+				source = stream.Source
+				break
+			}
 		}
+		r.Channel.Mu.RUnlock()
 	}
-	r.Channel.Mu.RUnlock()
 
 	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Starting FFmpeg for channel %s with URL: %s", r.Channel.Name, streamURL)
 
 	// Build FFmpeg command arguments
 	// Start with base args to suppress banner and set error-only logging
-	args := []string{"-hide_banner", "-loglevel", "error"}
+	// -progress reports the output position on stderr so a restart can
+	// continue this session's timeline (see TimelineOffset below)
+	args := []string{"-hide_banner", "-loglevel", "error",
+		"-progress", "pipe:2", "-stats_period", fmt.Sprintf("%.3f", constants.Internal.FFmpegProgressPeriod.Seconds())}
 	args = append(args, r.Config.FFmpegPreInput...)
 
 	// Add custom User-Agent if configured for this source
@@ -76,7 +90,26 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 
 	// Add input URL and output format args
 	args = append(args, "-i", streamURL)
+
+	// Separate audio rendition: same input options and headers as the video,
+	// then map video from the first input and audio from the second
+	if audioURL != "" {
+		args = append(args, r.Config.FFmpegPreInput...)
+		if source != nil && source.UserAgent != "" {
+			args = append(args, "-user_agent", sanitizeHeaderValue(source.UserAgent))
+		}
+		if source != nil && source.ReqReferrer != "" {
+			args = append(args, "-headers", fmt.Sprintf("Referer: %s\r\n", sanitizeHeaderValue(source.ReqReferrer)))
+		}
+		args = append(args, "-i", audioURL, "-map", "0:v:0?", "-map", "1:a:0?")
+	}
 	args = append(args, r.Config.FFmpegPreOutput...)
+
+	// Each FFmpeg starts its output clock near zero. Within one client
+	// session, start this one where the previous process left off; a clock
+	// that jumps backwards mid-stream stalls players such as Plex.
+	timelineOffset := time.Duration(r.TimelineOffset.Load()) * time.Microsecond
+	args = append(args, "-output_ts_offset", fmt.Sprintf("%.3f", timelineOffset.Seconds()))
 	args = append(args, "pipe:1")
 
 	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Command args for channel %s: %v", r.Channel.Name, args)
@@ -111,6 +144,17 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 
 	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Process started for channel %s with PID: %d", r.Channel.Name, cmd.Process.Pid)
 
+	// Advance the session timeline past this process's output once it has
+	// exited (deferred before the kill below, so it runs after it). The last
+	// progress report can trail the real output by up to one period, which
+	// FFmpegTimelineGap covers, so the next process never starts earlier.
+	var lastOutUs atomic.Int64
+	defer func() {
+		if out := lastOutUs.Load(); out > 0 {
+			r.TimelineOffset.Add(out + constants.Internal.FFmpegTimelineGap.Microseconds())
+		}
+	}()
+
 	// Ensure FFmpeg process is killed on exit (even if goroutine panics)
 	// Using negative PID kills the entire process group
 	defer func() {
@@ -139,8 +183,20 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
+			line := scanner.Text()
+
+			// -progress key=value lines: keep the output position, don't log them
+			if key, value, ok := strings.Cut(line, "="); ok && !strings.Contains(key, " ") {
+				if key == "out_time_us" {
+					if us, err := strconv.ParseInt(value, 10, 64); err == nil && us > 0 {
+						lastOutUs.Store(us)
+					}
+				}
+				continue
+			}
+
 			// Log FFmpeg errors/warnings as debug since we already log major errors separately
-			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Channel %s: %s", r.Channel.Name, scanner.Text())
+			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Channel %s: %s", r.Channel.Name, line)
 		}
 		if err := scanner.Err(); err != nil {
 			logger.Error("{restream/ffmpeg - streamWithFFmpeg} reading stderr for channel %s: %v", r.Channel.Name, err)
@@ -249,6 +305,12 @@ func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
 		// Handle read errors
 		if err != nil {
 			if err == io.EOF {
+				// an idle kill after output had started is a stall: the
+				// session stopped advancing, so the loop restarts the source
+				if idled.Load() && totalBytes > 0 {
+					r.AttemptStalled.Store(true)
+				}
+
 				// Stream ended normally
 				success := totalBytes > constants.Internal.StreamMinViableBytes && !idled.Load()
 				logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Stream ended for channel %s: %d bytes transferred (success: %v)",

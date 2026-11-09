@@ -148,11 +148,9 @@ func (sp *StreamProxy) ImportStreams() {
 		<-done
 	}
 
-	// Zero out ActiveConns for all sources — import connections are
-	// short-lived and must not bleed into the streaming phase
-	for i := range sp.Config.Sources {
-		sp.Config.Sources[i].ActiveConns.Store(0)
-	}
+	// ActiveConns is not reset here: each import goroutine releases its own
+	// slot above, and live streams still hold theirs. Zeroing it let streams
+	// that were playing during the import drive the count negative.
 
 	failedSources := make(map[string]*config.SourceConfig)
 	for i := range sp.Config.Sources {
@@ -209,12 +207,23 @@ func (sp *StreamProxy) ImportStreams() {
 		channel.Streams = parser.SortStreams(channel.Streams, sp.Config, channelName, allOrders)
 
 		// Preserve the existing preferred stream index across import cycles.
-		if existingChannel, exists := sp.Channels.Load(channelName); exists {
-			existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
-			atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
+		existingChannel, exists := sp.Channels.Load(channelName)
+		if !exists {
+			sp.Channels.Store(channelName, channel)
+			continue
 		}
+		existingPreferred := atomic.LoadInt32(&existingChannel.PreferredStreamIndex)
+		atomic.StoreInt32(&channel.PreferredStreamIndex, existingPreferred)
 
+		// Hand any live restreamer to the replacement channel, holding the old
+		// channel's lock across the swap so a viewer tuning in now either sees
+		// the old channel with its restreamer or the new one with it. Dropping
+		// it here left the session unreachable: the next viewer opened a second
+		// upstream connection, and cleanup and the watcher lost track of it.
+		existingChannel.Mu.Lock()
+		channel.Restreamer = existingChannel.Restreamer
 		sp.Channels.Store(channelName, channel)
+		existingChannel.Mu.Unlock()
 	}
 
 	// Drop channels that no longer exist in any successful or carried-forward source

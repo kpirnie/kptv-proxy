@@ -14,7 +14,7 @@ import (
 )
 
 // attributePattern matches KEY=VALUE pairs with optional quoted values.
-var attributePattern = regexp.MustCompile(`([A-Z-]+)=([^,]+|"[^"]*")`)
+var attributePattern = regexp.MustCompile(`([A-Z-]+)=("[^"]*"|[^,]+)`)
 
 // StreamVariant represents a single stream variant from an HLS master playlist with
 // comprehensive metadata for quality assessment and selection. Each variant corresponds
@@ -28,6 +28,52 @@ type StreamVariant struct {
 	Resolution       string // Video resolution in "WIDTHxHEIGHT" format (e.g., "1920x1080")
 	Codecs           string // Comma-separated codec specifications (e.g., "avc1.640028,mp4a.40.2")
 	FrameRate        string // Video frame rate as decimal string (e.g., "29.970", "60.000")
+	AudioGroup       string // HLS AUDIO group referenced by this variant
+	AudioURL         string // Resolved external audio rendition URL
+}
+
+// variantResolutionPixels converts WIDTHxHEIGHT to total pixel area.
+func variantResolutionPixels(v StreamVariant) int64 {
+	parts := strings.SplitN(strings.ToLower(strings.TrimSpace(v.Resolution)), "x", 2)
+	if len(parts) != 2 {
+		return 0
+	}
+	w, errW := strconv.Atoi(parts[0])
+	h, errH := strconv.Atoi(parts[1])
+	if errW != nil || errH != nil || w <= 0 || h <= 0 {
+		return 0
+	}
+	return int64(w) * int64(h)
+}
+
+func variantFPS(v StreamVariant) float64 {
+	fps, err := strconv.ParseFloat(v.FrameRate, 64)
+	if err != nil || fps < 0 {
+		return 0
+	}
+	return fps
+}
+
+func variantQualityBitrate(v StreamVariant) int {
+	if v.AverageBandwidth > 0 {
+		return v.AverageBandwidth
+	}
+	return v.Bandwidth
+}
+
+// higherQualityVariant orders variants by quality:
+// resolution first, then frame rate, then bitrate.
+func higherQualityVariant(a, b StreamVariant) bool {
+	if ap, bp := variantResolutionPixels(a), variantResolutionPixels(b); ap != bp {
+		return ap > bp
+	}
+	if af, bf := variantFPS(a), variantFPS(b); af != bf {
+		return af > bf
+	}
+	if ab, bb := variantQualityBitrate(a), variantQualityBitrate(b); ab != bb {
+		return ab > bb
+	}
+	return false
 }
 
 // MasterPlaylistHandler provides comprehensive master playlist parsing capabilities,
@@ -106,12 +152,39 @@ func (mph *MasterPlaylistHandler) IsMediaPlaylist(content string) bool {
 func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL string) ([]StreamVariant, error) {
 	var variants []StreamVariant
 
+	// External HLS audio renditions keyed by GROUP-ID.
+	audioGroups := make(map[string]string)
+	audioDefaults := make(map[string]bool)
+
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	var currentVariant *StreamVariant
 
 	// Process playlist content line by line
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+
+		// Parse external HLS AUDIO renditions.
+		if strings.HasPrefix(line, "#EXT-X-MEDIA:") {
+			attrs := mph.parseAttributes(strings.TrimPrefix(line, "#EXT-X-MEDIA:"))
+
+			if attrs["TYPE"] == "AUDIO" {
+				groupID := attrs["GROUP-ID"]
+				uri := attrs["URI"]
+
+				if groupID != "" && uri != "" {
+					resolved := mph.resolveURL(uri, baseURL)
+					isDefault := strings.EqualFold(attrs["DEFAULT"], "YES")
+					_, exists := audioGroups[groupID]
+
+					if !exists || (isDefault && !audioDefaults[groupID]) {
+						audioGroups[groupID] = resolved
+						audioDefaults[groupID] = isDefault
+					}
+				}
+			}
+
+			continue
+		}
 
 		// Parse stream information lines containing variant metadata
 		if strings.HasPrefix(line, "#EXT-X-STREAM-INF:") {
@@ -144,16 +217,22 @@ func (mph *MasterPlaylistHandler) ParseMasterPlaylist(content string, baseURL st
 		return nil, err
 	}
 
+	// Attach external AUDIO rendition URLs to their variants.
+	for i := range variants {
+		if variants[i].AudioGroup != "" {
+			variants[i].AudioURL = audioGroups[variants[i].AudioGroup]
+		}
+	}
+
 	// Validate that at least one variant was successfully parsed
 	if len(variants) == 0 {
 		logger.Error("{parser/master - ParseMasterPlaylist} no variants found in master playlist")
 		return nil, nil
 	}
 
-	// Sort variants by bandwidth in descending order (highest quality first)
-	// This ordering facilitates quality selection algorithms that prefer higher quality
+	// Prefer resolution, then frame rate, then bitrate.
 	sort.SliceStable(variants, func(i, j int) bool {
-		return variants[i].Bandwidth > variants[j].Bandwidth
+		return higherQualityVariant(variants[i], variants[j])
 	})
 
 	return variants, nil
@@ -263,6 +342,7 @@ func (mph *MasterPlaylistHandler) parseStreamInf(line string) (StreamVariant, er
 	variant.Resolution = attributes["RESOLUTION"]
 	variant.Codecs = strings.Trim(attributes["CODECS"], "\"")
 	variant.FrameRate = attributes["FRAME-RATE"]
+	variant.AudioGroup = attributes["AUDIO"]
 
 	// Validate that required bandwidth attribute was successfully parsed
 	if variant.Bandwidth == 0 {
@@ -486,9 +566,9 @@ func (mph *MasterPlaylistHandler) GetVariantsOrderedByQuality(variants []StreamV
 	orderedVariants := make([]StreamVariant, len(variants))
 	copy(orderedVariants, variants)
 
-	// Sort copy by bandwidth in descending order (highest quality first)
+	// Apply the same resolution/FPS/bitrate policy.
 	sort.SliceStable(orderedVariants, func(i, j int) bool {
-		return orderedVariants[i].Bandwidth > orderedVariants[j].Bandwidth
+		return higherQualityVariant(orderedVariants[i], orderedVariants[j])
 	})
 
 	return orderedVariants

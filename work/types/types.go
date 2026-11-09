@@ -101,6 +101,8 @@ type Restreamer struct {
 	Stats            *StreamStats                               // setup the stats
 	Lifecycle        sync.Mutex                                 // serializes stream start (AddClient) vs stop (stopStream) decisions
 	LastStreamFailed atomic.Bool                                // true if Stream() last exited due to stream failure (not clean client disconnect)
+	AttemptStalled   atomic.Bool                                // true if the last attempt was stopped because media stopped arriving after it had started
+	TimelineOffset   atomic.Int64                               // microseconds; output timestamp offset for the next FFmpeg in this session, so restarts continue the timeline
 	BufferPtr        atomic.Pointer[buffer.RingBuffer]          // Shared ring buffer, swapped atomically to avoid torn reads vs watcher/stats
 	SwitchNotify     atomic.Pointer[chan struct{}]              // switch-notify channel, pointer-swapped atomically
 }

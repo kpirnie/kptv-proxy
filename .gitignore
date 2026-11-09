@@ -74,3 +74,6 @@ package-lock.json
 static/admin-concat.js
 
 temp/
+
+# kptv-profiler / kptv-playback-profiler output
+profiler-output/
