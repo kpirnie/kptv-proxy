@@ -18,7 +18,7 @@ A high-performance Go-based IPTV proxy server that intelligently aggregates stre
 
 - **Secure Admin Interface**: Full authentication system protecting the admin panel
 - **Argon2id Password Hashing**: Industry-leading memory-hard password hashing
-- **Session Management**: HTTP-only secure cookies with configurable TTL (24h default, 30-day remember me)
+- **Session Management**: HTTP-only secure cookies with configurable TTL (24h default, 30-day remember me)  
 - **API Token System**: Multiple named API tokens with granular permission control
 - **First-Run Registration**: On fresh install, guided admin account creation before access is granted
 - **Local Network Restriction**: HDHomeRun emulation endpoints restricted to RFC1918 addresses only
@@ -187,6 +187,17 @@ A special thank you to the contributors who help improve this project!
     </td>
     <td>
       💡 Added a mechanism to preserve the original provider sort order.
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/jwcoop3r-87">
+        <img src="https://avatars.githubusercontent.com/u/224681231" width="100px;" alt="jwcoop3r-87 Profile Picture"/><br />
+        <sub><b>jwcoop3r-87</b></sub>
+      </a>
+    </td>
+    <td>
+      💡 Faster HLS startup (up to 5x) and self-healing live streams.
     </td>
   </tr>
 </table>
