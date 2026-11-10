@@ -1,4 +1,4 @@
-package restream
+package restream_test
 
 import (
 	"os"
@@ -10,6 +10,7 @@ import (
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
+	"kptv-proxy/work/restream"
 	"kptv-proxy/work/types"
 
 	"github.com/puzpuzpuz/xsync/v3"
@@ -34,18 +35,18 @@ func TestMain(m *testing.M) {
 // newSingleStreamRestreamer returns a restreamer for a channel with one stream
 // at url+"/live.ts" and one connected viewer whose queue is large enough that
 // nothing is dropped during a test.
-func newSingleStreamRestreamer(t *testing.T, url string) (*Restream, *types.Stream) {
+func newSingleStreamRestreamer(t *testing.T, url string) (*restream.Restream, *types.Stream) {
 	t.Helper()
 	return newRestreamerForURL(t, url, url+"/live.ts")
 }
 
-func newRestreamerForURL(t *testing.T, sourceURL, streamURL string) (*Restream, *types.Stream) {
+func newRestreamerForURL(t *testing.T, sourceURL, streamURL string) (*restream.Restream, *types.Stream) {
 	t.Helper()
 	src := &config.SourceConfig{Name: "test", URL: sourceURL, MaxConnections: 5, MaxFailuresBeforeBlock: 5, UserAgent: "kptv-test-agent"}
 	s := &types.Stream{URL: streamURL, URLHash: "hash-" + t.Name(), Source: src}
 	ch := &types.Channel{Name: "ch-" + t.Name(), Streams: []*types.Stream{s}}
 	cfg := &config.Config{SlowClientBufferChunks: 1024, BufferSizePerStream: 1}
-	r := NewRestreamer(ch, 1<<20, client.NewHeaderSettingClient(5*time.Second), cfg, nil)
+	r := restream.NewRestreamer(ch, 1<<20, client.NewHeaderSettingClient(5*time.Second), cfg, nil)
 	ch.Restreamer = r.Restreamer
 	r.Clients = xsync.NewMapOf[string, *types.RestreamClient]()
 	r.Clients.Store("viewer", &types.RestreamClient{
