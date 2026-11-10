@@ -1,4 +1,4 @@
-package restream
+package restream_test
 
 import (
 	"fmt"

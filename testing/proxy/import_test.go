@@ -1,4 +1,4 @@
-package proxy
+package proxy_test
 
 import (
 	"fmt"
@@ -15,6 +15,7 @@ import (
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
+	"kptv-proxy/work/proxy"
 	"kptv-proxy/work/types"
 	"kptv-proxy/work/utils"
 )
@@ -47,12 +48,12 @@ http://upstream.invalid/bravo.m3u8
 // newImportProxy builds a StreamProxy with one M3U source served by a local
 // test server. cacheDuration controls whether a repeat import is served from
 // the on-disk catalog cache (long) or refetched (short).
-func newImportProxy(t *testing.T, cacheDuration time.Duration) (*StreamProxy, *config.SourceConfig) {
+func newImportProxy(t *testing.T, cacheDuration time.Duration) (*proxy.StreamProxy, *config.SourceConfig) {
 	sp, src, _ := newImportProxyCounting(t, cacheDuration)
 	return sp, src
 }
 
-func newImportProxyCounting(t *testing.T, cacheDuration time.Duration) (*StreamProxy, *config.SourceConfig, *atomic.Int32) {
+func newImportProxyCounting(t *testing.T, cacheDuration time.Duration) (*proxy.StreamProxy, *config.SourceConfig, *atomic.Int32) {
 	t.Helper()
 	os.RemoveAll(constants.Internal.CatalogCachePath)
 
@@ -81,11 +82,11 @@ func newImportProxyCounting(t *testing.T, cacheDuration time.Duration) (*StreamP
 	if err != nil {
 		t.Fatalf("cache: %v", err)
 	}
-	sp := New(cfg, nil, client.NewHeaderSettingClient(5*time.Second), nil, c)
+	sp := proxy.New(cfg, nil, client.NewHeaderSettingClient(5*time.Second), nil, c)
 	return sp, src, fetches
 }
 
-func loadChannel(t *testing.T, sp *StreamProxy, name string) *types.Channel {
+func loadChannel(t *testing.T, sp *proxy.StreamProxy, name string) *types.Channel {
 	t.Helper()
 	ch, ok := sp.Channels.Load(name)
 	if !ok {

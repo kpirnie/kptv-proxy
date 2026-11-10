@@ -1,4 +1,4 @@
-package watcher
+package watcher_test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/types"
+	"kptv-proxy/work/watcher"
 
 	"github.com/puzpuzpuz/xsync/v3"
 )
@@ -29,7 +30,7 @@ func TestMain(m *testing.M) {
 
 // newHealthyWatcher returns a watcher over a running two-stream channel with
 // one connected viewer, past its grace period.
-func newHealthyWatcher(t *testing.T) (*StreamWatcher, *types.Restreamer) {
+func newHealthyWatcher(t *testing.T) (*watcher.StreamWatcher, *types.Restreamer) {
 	t.Helper()
 	src := &config.SourceConfig{Name: "test", URL: "http://upstream.invalid/", MaxConnections: 5}
 	ch := &types.Channel{
@@ -58,13 +59,13 @@ func newHealthyWatcher(t *testing.T) (*StreamWatcher, *types.Restreamer) {
 
 	wctx, wcancel := context.WithCancel(context.Background())
 	t.Cleanup(wcancel)
-	sw := &StreamWatcher{
-		channelName:      ch.Name,
-		restreamer:       r,
-		ctx:              wctx,
-		cancel:           wcancel,
-		lastStreamStart:  time.Now().Add(-10 * time.Minute),
-		lastFailureReset: time.Now(),
+	sw := &watcher.StreamWatcher{
+		ChannelName:      ch.Name,
+		Restreamer:       r,
+		Ctx:              wctx,
+		Cancel:           wcancel,
+		LastStreamStart:  time.Now().Add(-10 * time.Minute),
+		LastFailureReset: time.Now(),
 	}
 	return sw, r
 }
@@ -84,7 +85,7 @@ func TestStaleProbeStatsDoNotTriggerSwitch(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		r.LoadBuffer().Write(chunk) // healthy throughput between checks
 		r.LastActivity.Store(time.Now().Unix())
-		sw.checkStreamHealth()
+		sw.CheckStreamHealth()
 	}
 
 	if got := r.SwitchTo.Load(); got != -1 {
@@ -99,7 +100,7 @@ func TestStalledStreamStillTriggersSwitch(t *testing.T) {
 	r.LoadBuffer().Write(make([]byte, 256*1024))
 	for i := 0; i < 5; i++ {
 		r.LastActivity.Store(time.Now().Unix())
-		sw.checkStreamHealth() // no new bytes since the previous check
+		sw.CheckStreamHealth() // no new bytes since the previous check
 	}
 
 	if got := r.SwitchTo.Load(); got != 1 {

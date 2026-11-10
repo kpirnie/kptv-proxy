@@ -1,4 +1,4 @@
-package restream
+package restream_test
 
 import (
 	"net/http"
@@ -10,6 +10,7 @@ import (
 
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/deadstreams"
+	"kptv-proxy/work/restream"
 	"kptv-proxy/work/stream"
 	"kptv-proxy/work/types"
 )
@@ -38,7 +39,7 @@ func newUpstream(t *testing.T, tsBytes int) *upstream {
 
 // autoBlock drives the stream into the auto-blocked state through the same
 // path the streaming loop uses.
-func autoBlock(t *testing.T, r *Restream, s *types.Stream) {
+func autoBlock(t *testing.T, r *restream.Restream, s *types.Stream) {
 	t.Helper()
 	for i := 0; i < 5; i++ {
 		stream.HandleStreamFailure(s, r.Config, r.Channel.Name, 0)
@@ -61,7 +62,7 @@ func TestAutoBlockedStreamIsRetriedAfterInterval(t *testing.T) {
 	r, s := newSingleStreamRestreamer(t, u.URL)
 	autoBlock(t, r, s)
 
-	if r.streamEligible(0) {
+	if r.StreamEligible(0) {
 		t.Error("recently blocked stream is eligible")
 	}
 	r.StreamFromSource(0)
@@ -70,7 +71,7 @@ func TestAutoBlockedStreamIsRetriedAfterInterval(t *testing.T) {
 	}
 
 	setLastFail(s, time.Now().Add(-time.Hour))
-	if !r.streamEligible(0) {
+	if !r.StreamEligible(0) {
 		t.Error("auto-blocked stream past its retry interval is still ineligible")
 	}
 	r.StreamFromSource(0)
@@ -89,8 +90,8 @@ func TestManuallyKilledStreamIsNotRetried(t *testing.T) {
 	setLastFail(s, time.Now().Add(-24*time.Hour))
 
 	r.StreamFromSource(0)
-	if r.streamEligible(0) || u.hits.Load() != 0 {
-		t.Fatalf("manually killed stream: eligible=%v requests=%d, want false and 0", r.streamEligible(0), u.hits.Load())
+	if r.StreamEligible(0) || u.hits.Load() != 0 {
+		t.Fatalf("manually killed stream: eligible=%v requests=%d, want false and 0", r.StreamEligible(0), u.hits.Load())
 	}
 }
 
@@ -102,7 +103,7 @@ func TestSuccessfulProbeClearsAutoBlock(t *testing.T) {
 	autoBlock(t, r, s)
 	setLastFail(s, time.Now().Add(-time.Hour))
 
-	if outcome, n := r.runAttempt(0); outcome != outcomeSuccess {
+	if outcome, n := r.RunAttempt(0); outcome != restream.OutcomeSuccess {
 		t.Fatalf("attempt outcome = %d (%d bytes), want success", outcome, n)
 	}
 	if atomic.LoadInt32(&s.Blocked) != 0 || deadstreams.IsStreamDead(r.Channel.Name, s.URLHash) {
@@ -119,12 +120,12 @@ func TestFallbackReturnsToRealSource(t *testing.T) {
 
 	r, _ := newSingleStreamRestreamer(t, "http://upstream.invalid")
 	done := make(chan bool, 1)
-	go func() { done <- r.runFallback() }()
+	go func() { done <- r.RunFallback() }()
 
 	select {
 	case retry := <-done:
 		if !retry {
-			t.Fatal("runFallback returned false with a viewer still connected")
+			t.Fatal("RunFallback returned false with a viewer still connected")
 		}
 	case <-time.After(5 * time.Second):
 		r.CancelStream()
@@ -148,7 +149,7 @@ func TestAutoBlockRetryConcurrent(t *testing.T) {
 					stream.HandleStreamFailure(s, r.Config, r.Channel.Name, 0)
 				} else {
 					setLastFail(s, time.Now().Add(-time.Hour))
-					r.streamEligible(0)
+					r.StreamEligible(0)
 					r.StreamFromSource(0)
 				}
 			}

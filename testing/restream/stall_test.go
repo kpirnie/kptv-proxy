@@ -1,4 +1,4 @@
-package restream
+package restream_test
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"kptv-proxy/work/constants"
+	"kptv-proxy/work/restream"
 )
 
 // withIdleTimeout shortens the FFmpeg idle window (and how often streaming
@@ -41,7 +42,7 @@ func masterServer(t *testing.T) *httptest.Server {
 
 // runFFmpegAttempt runs one FFmpeg attempt, failing the test if it does not
 // return within limit.
-func runFFmpegAttempt(t *testing.T, r *Restream, limit time.Duration) (bool, int64) {
+func runFFmpegAttempt(t *testing.T, r *restream.Restream, limit time.Duration) (bool, int64) {
 	t.Helper()
 	type result struct {
 		ok    bool
@@ -49,7 +50,7 @@ func runFFmpegAttempt(t *testing.T, r *Restream, limit time.Duration) (bool, int
 	}
 	done := make(chan result, 1)
 	go func() {
-		ok, n := r.streamWithFFmpeg("http://upstream.invalid/v.m3u8")
+		ok, n := r.StreamWithFFmpeg("http://upstream.invalid/v.m3u8")
 		done <- result{ok, n}
 	}()
 	select {
