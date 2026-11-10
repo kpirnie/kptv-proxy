@@ -89,7 +89,7 @@ func (r *Restream) StreamFromSource(index int) (bool, int64) {
 	// of leaving the choice to ffmpeg.
 	if r.Config.FFmpegMode && !isHLSPlaylistURL(stream.URL) {
 		logger.Debug("{restream/restream - StreamFromSource} Channel %s: Streaming stream %d via FFmpeg", r.Channel.Name, index)
-		return r.streamWithFFmpeg(stream.URL)
+		return r.StreamWithFFmpeg(stream.URL)
 	}
 
 	// Retrieve variants (master playlist) or a live response (direct URL)
