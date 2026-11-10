@@ -30,7 +30,7 @@ func sanitizeHeaderValue(v string) string {
 }
 
 /**
- * streamWithFFmpeg uses ffmpeg to proxy the stream instead of Go-based restreaming
+ * StreamWithFFmpeg uses ffmpeg to proxy the stream instead of Go-based restreaming
  *
  * This method handles the entire lifecycle of an FFmpeg-based stream proxy:
  * - Configures FFmpeg with appropriate headers and options from source config
@@ -42,7 +42,7 @@ func sanitizeHeaderValue(v string) string {
  * @param streamURL The source stream URL to proxy
  * @return (success bool, totalBytes int64) - success indicates if stream was healthy, totalBytes is data transferred
  */
-func (r *Restream) streamWithFFmpeg(streamURL string) (bool, int64) {
+func (r *Restream) StreamWithFFmpeg(streamURL string) (bool, int64) {
 	return r.streamWithFFmpegAV(streamURL, "", nil)
 }
 
@@ -64,7 +64,7 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 		r.Channel.Mu.RUnlock()
 	}
 
-	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Starting FFmpeg for channel %s with URL: %s", r.Channel.Name, streamURL)
+	logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Starting FFmpeg for channel %s with URL: %s", r.Channel.Name, streamURL)
 
 	// Build FFmpeg command arguments
 	// Start with base args to suppress banner and set error-only logging
@@ -77,14 +77,14 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 	// Add custom User-Agent if configured for this source
 	if source != nil && source.UserAgent != "" {
 		ua := sanitizeHeaderValue(source.UserAgent)
-		logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Using custom User-Agent for channel %s: %s", r.Channel.Name, ua)
+		logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Using custom User-Agent for channel %s: %s", r.Channel.Name, ua)
 		args = append(args, "-user_agent", ua)
 	}
 
 	// Add Referer header if configured for this source
 	if source != nil && source.ReqReferrer != "" {
 		ref := sanitizeHeaderValue(source.ReqReferrer)
-		logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Using custom Referer for channel %s: %s", r.Channel.Name, ref)
+		logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Using custom Referer for channel %s: %s", r.Channel.Name, ref)
 		args = append(args, "-headers", fmt.Sprintf("Referer: %s\r\n", ref))
 	}
 
@@ -112,7 +112,7 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 	args = append(args, "-output_ts_offset", fmt.Sprintf("%.3f", timelineOffset.Seconds()))
 	args = append(args, "pipe:1")
 
-	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Command args for channel %s: %v", r.Channel.Name, args)
+	logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Command args for channel %s: %v", r.Channel.Name, args)
 
 	// Create cancellable context for FFmpeg process
 	ctx, cancel := context.WithCancel(r.Context())
@@ -125,24 +125,24 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 	// Create stdout pipe to read stream data
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		logger.Error("{restream/ffmpeg - streamWithFFmpeg} Failed to create stdout pipe for channel %s: %v", r.Channel.Name, err)
+		logger.Error("{restream/ffmpeg - StreamWithFFmpeg} Failed to create stdout pipe for channel %s: %v", r.Channel.Name, err)
 		return false, 0
 	}
 
 	// Create stderr pipe to capture FFmpeg errors/warnings
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		logger.Error("{restream/ffmpeg - streamWithFFmpeg} Failed to create stderr pipe for channel %s: %v", r.Channel.Name, err)
+		logger.Error("{restream/ffmpeg - StreamWithFFmpeg} Failed to create stderr pipe for channel %s: %v", r.Channel.Name, err)
 		return false, 0
 	}
 
 	// Start the FFmpeg process
 	if err := cmd.Start(); err != nil {
-		logger.Error("{restream/ffmpeg - streamWithFFmpeg} Failed to start FFmpeg for channel %s: %v", r.Channel.Name, err)
+		logger.Error("{restream/ffmpeg - StreamWithFFmpeg} Failed to start FFmpeg for channel %s: %v", r.Channel.Name, err)
 		return false, 0
 	}
 
-	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Process started for channel %s with PID: %d", r.Channel.Name, cmd.Process.Pid)
+	logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Process started for channel %s with PID: %d", r.Channel.Name, cmd.Process.Pid)
 
 	// Advance the session timeline past this process's output once it has
 	// exited (deferred before the kill below, so it runs after it). The last
@@ -159,7 +159,7 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 	// Using negative PID kills the entire process group
 	defer func() {
 		if cmd.Process != nil {
-			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Killing process group for channel %s (PID: %d)", r.Channel.Name, cmd.Process.Pid)
+			logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Killing process group for channel %s (PID: %d)", r.Channel.Name, cmd.Process.Pid)
 			// Try graceful termination first
 			syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 			// Wait up to 3 seconds for graceful exit
@@ -196,10 +196,10 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 			}
 
 			// Log FFmpeg errors/warnings as debug since we already log major errors separately
-			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Channel %s: %s", r.Channel.Name, line)
+			logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Channel %s: %s", r.Channel.Name, line)
 		}
 		if err := scanner.Err(); err != nil {
-			logger.Error("{restream/ffmpeg - streamWithFFmpeg} reading stderr for channel %s: %v", r.Channel.Name, err)
+			logger.Error("{restream/ffmpeg - StreamWithFFmpeg} reading stderr for channel %s: %v", r.Channel.Name, err)
 		}
 	}()
 
@@ -219,19 +219,19 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 	var idled atomic.Bool
 	idleTimer := time.AfterFunc(constants.Internal.StreamReadIdleTimeout, func() {
 		idled.Store(true)
-		logger.Warn("{restream/ffmpeg - streamWithFFmpeg} Channel %s: No output for %v, stopping FFmpeg", r.Channel.Name, constants.Internal.StreamReadIdleTimeout)
+		logger.Warn("{restream/ffmpeg - StreamWithFFmpeg} Channel %s: No output for %v, stopping FFmpeg", r.Channel.Name, constants.Internal.StreamReadIdleTimeout)
 		cancel()
 	})
 	defer idleTimer.Stop()
 
-	logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Starting stream loop for channel %s", r.Channel.Name)
+	logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Starting stream loop for channel %s", r.Channel.Name)
 
 	// Main stream processing loop
 	for {
 		// Check if context was cancelled (shutdown or manual switch)
 		select {
 		case <-r.Context().Done():
-			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Context cancelled for channel %s (manual switch: %v, total bytes: %d)",
+			logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Context cancelled for channel %s (manual switch: %v, total bytes: %d)",
 				r.Channel.Name, r.SwitchPending(), totalBytes)
 			if r.SwitchPending() {
 				return true, totalBytes
@@ -244,7 +244,7 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 		clientCount := int(r.ClientCount.Load())
 
 		if clientCount == 0 {
-			logger.Debug("{restream/ffmpeg - streamWithFFmpeg} No clients remaining for channel %s, stopping (total bytes: %d)",
+			logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} No clients remaining for channel %s, stopping (total bytes: %d)",
 				r.Channel.Name, totalBytes)
 			return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 		}
@@ -257,10 +257,10 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 			// Attempt to write data to ring buffer
 			if !r.SafeBufferWrite(data) {
 				consecutiveErrors++
-				logger.Warn("{restream/ffmpeg - streamWithFFmpeg} Buffer write failed for channel %s (consecutive errors: %d)",
+				logger.Warn("{restream/ffmpeg - StreamWithFFmpeg} Buffer write failed for channel %s (consecutive errors: %d)",
 					r.Channel.Name, consecutiveErrors)
 				if consecutiveErrors >= maxConsecutiveErrors {
-					logger.Error("{restream/ffmpeg - streamWithFFmpeg} Max consecutive buffer errors reached for channel %s, stopping",
+					logger.Error("{restream/ffmpeg - StreamWithFFmpeg} Max consecutive buffer errors reached for channel %s, stopping",
 						r.Channel.Name)
 					return false, totalBytes
 				}
@@ -274,7 +274,7 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 			// Distribute data to all connected clients
 			activeClients := r.DistributeToClients(data)
 			if activeClients == 0 {
-				logger.Debug("{restream/ffmpeg - streamWithFFmpeg} No active clients after distribution for channel %s", r.Channel.Name)
+				logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} No active clients after distribution for channel %s", r.Channel.Name)
 				return totalBytes > constants.Internal.StreamMinViableBytes, totalBytes
 			}
 
@@ -297,7 +297,7 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 
 			// Log progress every 20MB transferred
 			if totalBytes%(constants.Internal.FFmpegLogProgressInterval) < int64(n) {
-				logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Channel %s: Streamed %d MB (clients: %d)",
+				logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Channel %s: Streamed %d MB (clients: %d)",
 					r.Channel.Name, totalBytes/(1024*1024), activeClients)
 			}
 		}
@@ -313,7 +313,7 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 
 				// Stream ended normally
 				success := totalBytes > constants.Internal.StreamMinViableBytes && !idled.Load()
-				logger.Debug("{restream/ffmpeg - streamWithFFmpeg} Stream ended for channel %s: %d bytes transferred (success: %v)",
+				logger.Debug("{restream/ffmpeg - StreamWithFFmpeg} Stream ended for channel %s: %d bytes transferred (success: %v)",
 					r.Channel.Name, totalBytes, success)
 
 				// EOF drain pause is handled once by the caller (Stream)
@@ -324,7 +324,7 @@ func (r *Restream) streamWithFFmpegAV(streamURL string, audioURL string, source 
 
 			// a failed read on ffmpeg's stdout pipe means the pipe is gone —
 			// re-reading it only returns the same error, so fail straight away
-			logger.Error("{restream/ffmpeg - streamWithFFmpeg} Read error for channel %s: %v", r.Channel.Name, err)
+			logger.Error("{restream/ffmpeg - StreamWithFFmpeg} Read error for channel %s: %v", r.Channel.Name, err)
 			return false, totalBytes
 		}
 
