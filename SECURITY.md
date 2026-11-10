@@ -18,10 +18,10 @@ Please include:
 - A description of the vulnerability and its impact
 - Steps to reproduce, or a proof of concept
 - The affected version or commit
-- Your environment (host OS, Podman version, site type) if relevant
+- Your environment (host OS, Docker or Podman version, Go restreaming or FFmpeg mode) if relevant
 - Any suggested fix
 
-Remove real credentials, tokens, and private hostnames from anything you send.
+Remove real credentials, API tokens, XC account passwords, and provider URLs from anything you send.
 
 ## What to expect
 
@@ -32,6 +32,6 @@ Remove real credentials, tokens, and private hostnames from anything you send.
 
 ## Scope
 
-In scope: the PodNest panel and API, authentication and session handling, the built-in reverse proxy, backup and restore, site and container management, and the project's container images and build configuration.
+In scope: the admin interface and API, authentication, session handling, and API token permissions, Xtream Codes account authentication on the playlist, EPG and stream endpoints, the HDHomeRun local network restriction, handling of source and provider URLs and credentials, and the project's container image and build configuration.
 
-Out of scope: vulnerabilities in third-party software that PodNest manages or runs (WordPress core, plugins, themes, or site code that users deploy), findings that require an already-compromised host or administrator account, and denial of service through excessive resource use by an authenticated administrator.
+Out of scope: vulnerabilities in third-party software that KPTV Proxy runs or depends on (FFmpeg and FFprobe, upstream IPTV providers and their streams, reverse proxies placed in front of it), findings that require an already-compromised host or administrator account, custom CSS or settings supplied by an authenticated administrator, and denial of service through excessive resource use by an authenticated administrator.
