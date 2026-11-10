@@ -180,7 +180,7 @@ func (r *Restream) streamHLSSegmentsFrom(playlistURL string, initialBody []byte,
 	// If FFmpeg mode is enabled, delegate to FFmpeg instead of native Go streaming
 	if r.Config.FFmpegMode {
 		logger.Debug("{restream/hls - streamHLSSegmentsFrom} FFmpeg mode enabled, delegating to FFmpeg for channel %s", r.Channel.Name)
-		return r.streamWithFFmpeg(playlistURL)
+		return r.StreamWithFFmpeg(playlistURL)
 	}
 
 	// Initialize streaming state
