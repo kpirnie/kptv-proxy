@@ -121,7 +121,7 @@ type InternalConstants struct {
 	HLSSegmentActivityUpdateInterval time.Duration // How often LastActivity is refreshed while streaming a segment
 
 	// -------------------------------------------------------------------------
-	// work/restream/ffmpeg.go — streamWithFFmpeg()
+	// work/restream/ffmpeg.go — StreamWithFFmpeg()
 	// -------------------------------------------------------------------------
 	FFmpegActivityUpdateInterval time.Duration // How often LastActivity is refreshed in the FFmpeg streaming loop
 	FFmpegMetricUpdateInterval   time.Duration // How often Prometheus metrics are updated in the FFmpeg loop
