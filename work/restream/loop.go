@@ -83,7 +83,7 @@ func (r *Restream) Stream() {
 		// Attempt budget spent — play the fallback video, then start over
 		if totalAttempts >= maxTotalAttempts {
 			logger.Debug("{restream/restream - Stream} Channel %s: All streams failed after %d attempts", r.Channel.Name, totalAttempts)
-			if !r.runFallback() {
+			if !r.RunFallback() {
 				return
 			}
 			totalAttempts = 0
@@ -97,7 +97,7 @@ func (r *Restream) Stream() {
 		totalAttempts++
 
 		attemptStart := time.Now()
-		outcome, bytesTransferred := r.runAttempt(currentIdx)
+		outcome, bytesTransferred := r.RunAttempt(currentIdx)
 		logger.Debug("{restream/restream - Stream} Channel %s: Stream %d outcome %d (%d bytes)", r.Channel.Name, currentIdx, outcome, bytesTransferred)
 
 		// a stream that delivered real data has proven itself, so its
@@ -111,7 +111,7 @@ func (r *Restream) Stream() {
 		// returns after StreamStallResetWindow of healthy streaming. Beyond
 		// that a stall counts as a failure, so the attempt budget, fallback and
 		// auto-block pacing apply and an unavailable channel cannot loop.
-		if outcome == outcomeStall {
+		if outcome == OutcomeStall {
 			if time.Since(attemptStart) >= constants.Internal.StreamStallResetWindow {
 				stallRestarts = 0
 			}
@@ -129,19 +129,19 @@ func (r *Restream) Stream() {
 			}
 			logger.Warn("{restream/restream - Stream} Channel %s: Stream %d stalled again after %d restarts, treating as failed",
 				r.Channel.Name, currentIdx, constants.Internal.StreamMaxStallRestarts)
-			outcome = outcomeFailure
+			outcome = OutcomeFailure
 		}
 
 		switch outcome {
 
-		case outcomeStopped:
+		case OutcomeStopped:
 			r.LastStreamFailed.Store(false)
 			return
 
-		case outcomeSwitch:
+		case OutcomeSwitch:
 			continue
 
-		case outcomeSkipped:
+		case OutcomeSkipped:
 			// an ineligible stream was never attempted, so it neither spends the
 			// attempt budget nor counts toward auto-blocking — a full rotation
 			// with nothing eligible spends the budget so the fallback video plays
@@ -157,7 +157,7 @@ func (r *Restream) Stream() {
 				atomic.StoreInt32(&r.CurrentIndex, int32((currentIdx+1)%streamCount))
 			}
 
-		case outcomeSuccess:
+		case OutcomeSuccess:
 			consecutiveSkips = 0
 			consecutiveFailures[currentIdx] = 0
 			totalAttempts = 0
@@ -172,7 +172,7 @@ func (r *Restream) Stream() {
 			}
 			continue
 
-		case outcomeFailure:
+		case OutcomeFailure:
 			consecutiveSkips = 0
 			consecutiveFailures[currentIdx]++
 			logger.Debug("{restream/restream - Stream} Channel %s: Stream %d failed (consecutive failures: %d)",
@@ -218,17 +218,17 @@ func (r *Restream) startingIndex(streamCount int) int {
 	return 0
 }
 
-// runAttempt runs one upstream attempt under its own cancellable context and
+// RunAttempt runs one upstream attempt under its own cancellable context and
 // classifies the result. Cancelling that context interrupts only the attempt,
 // leaving the session context intact.
 //
 // Returns:
-//   - streamOutcome: classification of the attempt
+//   - StreamOutcome: classification of the attempt
 //   - int64: bytes transferred during the attempt
-func (r *Restream) runAttempt(index int) (streamOutcome, int64) {
+func (r *Restream) RunAttempt(index int) (StreamOutcome, int64) {
 
-	if !r.streamEligible(index) {
-		return outcomeSkipped, 0
+	if !r.StreamEligible(index) {
+		return OutcomeSkipped, 0
 	}
 
 	ctx, cancel := context.WithCancel(r.LifetimeContext())
@@ -241,33 +241,33 @@ func (r *Restream) runAttempt(index int) (streamOutcome, int64) {
 	r.resetBufferSafely()
 	r.AttemptStalled.Store(false)
 
-	logger.Debug("{restream/restream - runAttempt} Channel %s: Attempting stream %d", r.Channel.Name, index)
+	logger.Debug("{restream/restream - RunAttempt} Channel %s: Attempting stream %d", r.Channel.Name, index)
 	success, bytesTransferred := r.StreamFromSource(index)
 
 	if r.SwitchPending() {
-		return outcomeSwitch, bytesTransferred
+		return OutcomeSwitch, bytesTransferred
 	}
 
 	if r.LifetimeContext().Err() != nil || r.ClientCount.Load() == 0 {
-		return outcomeStopped, bytesTransferred
+		return OutcomeStopped, bytesTransferred
 	}
 
 	if r.AttemptStalled.Load() {
-		return outcomeStall, bytesTransferred
+		return OutcomeStall, bytesTransferred
 	}
 
 	// a very brief success is a failure in disguise
 	if success && bytesTransferred >= constants.Internal.BriefSuccessThreshold {
-		return outcomeSuccess, bytesTransferred
+		return OutcomeSuccess, bytesTransferred
 	}
 
-	return outcomeFailure, bytesTransferred
+	return OutcomeFailure, bytesTransferred
 }
 
-// streamEligible reports whether the stream at index can be attempted right
+// StreamEligible reports whether the stream at index can be attempted right
 // now. Dead, blocked, and capacity-limited streams are passed over without an
 // upstream request, and without being treated as a failure of the stream.
-func (r *Restream) streamEligible(index int) bool {
+func (r *Restream) StreamEligible(index int) bool {
 	r.Channel.Mu.RLock()
 	if index >= len(r.Channel.Streams) {
 		r.Channel.Mu.RUnlock()
@@ -315,10 +315,10 @@ func (r *Restream) recordStreamFailure(index int, failures int) {
 		r.Channel.Name, index, failures)
 }
 
-// runFallback plays the offline video for its configured period so a transient
+// RunFallback plays the offline video for its configured period so a transient
 // provider outage does not strand clients, then reports whether the loop should
 // carry on retrying real sources.
-func (r *Restream) runFallback() bool {
+func (r *Restream) RunFallback() bool {
 
 	if r.ClientCount.Load() == 0 {
 		return false
@@ -334,7 +334,7 @@ func (r *Restream) runFallback() bool {
 		return false
 	}
 
-	logger.Debug("{restream/restream - runFallback} Channel %s: Retrying real sources after fallback period", r.Channel.Name)
+	logger.Debug("{restream/restream - RunFallback} Channel %s: Retrying real sources after fallback period", r.Channel.Name)
 	return true
 }
 
