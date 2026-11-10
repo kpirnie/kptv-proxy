@@ -35,16 +35,16 @@ var streamBufferPool = sync.Pool{
 	},
 }
 
-// streamOutcome classifies the result of a single upstream attempt.
-type streamOutcome int
+// StreamOutcome classifies the result of a single upstream attempt.
+type StreamOutcome int
 
 const (
-	outcomeStopped streamOutcome = iota
-	outcomeSwitch
-	outcomeSuccess
-	outcomeFailure
-	outcomeSkipped
-	outcomeStall // media stopped arriving after it had started, while the connection stayed up
+	OutcomeStopped StreamOutcome = iota
+	OutcomeSwitch
+	OutcomeSuccess
+	OutcomeFailure
+	OutcomeSkipped
+	OutcomeStall // media stopped arriving after it had started, while the connection stayed up
 )
 
 // getStreamBuffer retrieves a 32KB buffer from the pool for stream processing.
