@@ -53,6 +53,7 @@ type InternalConstants struct {
 	RemoteFileRetries       int           // Extra attempts against the same provider before moving to the next
 	RemoteFileCapacityPoll  time.Duration // Interval between connection-slot rechecks while queueing for a free slot
 	RemoteFileTakeoverWait  time.Duration // Grace period for a displaced transfer to release its slot before the takeover is given up
+	RemoteFileTransferStall time.Duration // How long a transfer's client must have stopped accepting bytes before it counts as stalled and may be displaced
 
 	// -------------------------------------------------------------------------
 	// work/handlers/xcseries.go — buildRemoteSeriesInfo()
@@ -397,6 +398,7 @@ var Internal = InternalConstants{
 	RemoteFileRetries:       1,
 	RemoteFileCapacityPoll:  100 * time.Millisecond,
 	RemoteFileTakeoverWait:  2 * time.Second,
+	RemoteFileTransferStall: 2 * time.Second,
 
 	// -------------------------------------------------------------------------
 	// Remote series info

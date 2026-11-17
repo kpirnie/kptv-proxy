@@ -25,23 +25,29 @@ func sourceWith(max int, taken int32) *config.SourceConfig {
 	return source
 }
 
-// queueTimings shortens the poll interval so a test does not sit through the
-// production 100ms between slot rechecks. Returns the function that restores
-// the previous values.
-func queueTimings(t *testing.T, poll time.Duration) func() {
+// streamTimings shortens the poll interval, the takeover grace, and the stall
+// threshold so a test does not sit through the production values between slot
+// rechecks. Returns the function that restores the previous values.
+func streamTimings(t *testing.T, poll, takeover, stall time.Duration) func() {
 	t.Helper()
 
 	prevPoll := constants.Internal.RemoteFileCapacityPoll
+	prevTakeover := constants.Internal.RemoteFileTakeoverWait
+	prevStall := constants.Internal.RemoteFileTransferStall
 	constants.Internal.RemoteFileCapacityPoll = poll
+	constants.Internal.RemoteFileTakeoverWait = takeover
+	constants.Internal.RemoteFileTransferStall = stall
 
 	return func() {
 		constants.Internal.RemoteFileCapacityPoll = prevPoll
+		constants.Internal.RemoteFileTakeoverWait = prevTakeover
+		constants.Internal.RemoteFileTransferStall = prevStall
 	}
 }
 
 // A source with a free slot hands it over at once, and releasing gives it back.
 func TestFreeSlotIsTakenAtOnce(t *testing.T) {
-	restore := queueTimings(t, 10*time.Millisecond)
+	restore := streamTimings(t, 10*time.Millisecond, 10*time.Millisecond, 10*time.Millisecond)
 	defer restore()
 
 	source := sourceWith(1, 0)
@@ -64,7 +70,7 @@ func TestFreeSlotIsTakenAtOnce(t *testing.T) {
 // soon as the current transfer ends — the probe-then-play order a Jellyfin
 // playback produces on a one-connection provider.
 func TestSlotIsQueuedUntilTheHolderReleases(t *testing.T) {
-	restore := queueTimings(t, 10*time.Millisecond)
+	restore := streamTimings(t, 10*time.Millisecond, 10*time.Millisecond, 10*time.Millisecond)
 	defer restore()
 
 	source := sourceWith(1, 1)
@@ -91,7 +97,7 @@ func TestSlotIsQueuedUntilTheHolderReleases(t *testing.T) {
 // A player that leaves while queued stops the queue, and the queue must leave
 // the slot count as it found it.
 func TestQueueStopsWhenThePlayerLeaves(t *testing.T) {
-	restore := queueTimings(t, 10*time.Millisecond)
+	restore := streamTimings(t, 10*time.Millisecond, 10*time.Millisecond, 10*time.Millisecond)
 	defer restore()
 
 	source := sourceWith(1, 1)
@@ -113,7 +119,7 @@ func TestQueueStopsWhenThePlayerLeaves(t *testing.T) {
 // The queue is bounded: a slot that never frees ends with no slot, and the
 // caller is left to answer 503, not to take a connection the provider limits.
 func TestQueueGivesUpWhenTheWaitExpires(t *testing.T) {
-	restore := queueTimings(t, 10*time.Millisecond)
+	restore := streamTimings(t, 10*time.Millisecond, 10*time.Millisecond, 10*time.Millisecond)
 	defer restore()
 
 	source := sourceWith(1, 1)
@@ -134,7 +140,7 @@ func TestQueueGivesUpWhenTheWaitExpires(t *testing.T) {
 // the caller can answer 503 immediately, which is the user-facing off switch
 // for the streamQueueWait setting.
 func TestZeroWaitRefusesImmediately(t *testing.T) {
-	restore := queueTimings(t, 10*time.Millisecond)
+	restore := streamTimings(t, 10*time.Millisecond, 10*time.Millisecond, 10*time.Millisecond)
 	defer restore()
 
 	source := sourceWith(1, 1)
@@ -210,11 +216,37 @@ func waitForSlot(t *testing.T, source *config.SourceConfig, want int32) {
 	t.Fatalf("source never reached %d connections (now %d)", want, source.ActiveConns.Load())
 }
 
-// A newer request for the same channel on a full source displaces the older
-// transfer instead of queueing behind it. This is the VLC shape: the player
-// opens the URL twice at once, leaves the first connection idle, and expects
-// the second one to start playing without waiting for the first to end.
+// blockingWriter is a client that opened the stream and then stopped reading:
+// the first Write blocks until the test releases it, which is exactly how the
+// abandoned connection of a player's double-open looks to the proxy.
+type blockingWriter struct {
+	unblock chan struct{}
+	header  http.Header
+}
+
+func newBlockingWriter() *blockingWriter {
+	return &blockingWriter{unblock: make(chan struct{}), header: make(http.Header)}
+}
+
+func (w *blockingWriter) Header() http.Header { return w.header }
+
+func (w *blockingWriter) WriteHeader(int) {}
+
+func (w *blockingWriter) Write(p []byte) (int, error) {
+	<-w.unblock
+	return len(p), nil
+}
+
+// A newer request for the same channel on a full source displaces the STALLED
+// older transfer instead of queueing behind it. This is the VLC shape: the
+// player opens the URL twice at once, leaves the first connection idle, and
+// expects the second one to start playing without waiting for the first to
+// end. The holder here blocks on its first write — a client that stopped
+// reading — so the displacement may take its slot.
 func TestNewerRequestDisplacesTheOlderTransfer(t *testing.T) {
+	restore := streamTimings(t, 10*time.Millisecond, 300*time.Millisecond, 40*time.Millisecond)
+	defer restore()
+
 	upstream, connections := slowUpstream(150, 20*time.Millisecond) // ~3s of streaming
 	defer upstream.Close()
 
@@ -230,15 +262,17 @@ func TestNewerRequestDisplacesTheOlderTransfer(t *testing.T) {
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	defer cancel1()
 
+	// the holder's client reads nothing, so its copy wedges on the first chunk
+	holder := newBlockingWriter()
 	req1 := httptest.NewRequest("GET", upstream.URL+"/f.mp4", nil).WithContext(ctx1)
-	rec1 := httptest.NewRecorder()
 	done1 := make(chan handlers.RemoteOutcome, 1)
 	go func() {
-		done1 <- handlers.AttemptRemoteFile(sp, rec1, req1, upstream.URL+"/f.mp4", source, "mp4", sess1, 0)
+		done1 <- handlers.AttemptRemoteFile(sp, holder, req1, upstream.URL+"/f.mp4", source, "mp4", sess1, 0)
 	}()
 
 	waitForSlot(t, source, 1)
-	// give the transfer time to pass the header phase and register itself
+	// let the transfer register and go past the stall threshold: the client
+	// accepted nothing, so the transfer is stalled well before this returns
 	time.Sleep(200 * time.Millisecond)
 
 	// the second request runs like a real handler would: streaming until its
@@ -255,7 +289,7 @@ func TestNewerRequestDisplacesTheOlderTransfer(t *testing.T) {
 
 	// displacement speed: the second connection must reach the upstream within
 	// about the takeover grace period, not after the 10s queue wait it would
-	// suffer if the older transfer were not found
+	// suffer if the stalled holder were not displaced
 	deadline := start.Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		if connections.Load() >= 2 {
@@ -267,17 +301,19 @@ func TestNewerRequestDisplacesTheOlderTransfer(t *testing.T) {
 		t.Fatalf("upstream saw %d connections %v after request 2 started, want 2 by now (displacement never fired)", n, time.Since(start))
 	}
 
-	// the displaced transfer ends with its copy cut short, and the second one
-	// keeps streaming until its context is cancelled below
+	// the wedged holder was freed by the displacement itself, even though its
+	// copy is still blocked on the silent client: release it now, as the
+	// player closing the abandoned connection would
+	holder.unblock <- struct{}{}
 	select {
 	case <-done1:
 	case <-time.After(5 * time.Second):
 		t.Fatal("displaced transfer did not return")
 	}
-	cancel1()
 
-	// let the second transfer carry a few chunks like a real playback would
-	// (the upstream drips one every 20ms) before the test ends it
+	// the second transfer streams like a real playback would; give it a
+	// moment to carry a few chunks (the upstream drips one every 20ms) before
+	// the test ends it
 	time.Sleep(300 * time.Millisecond)
 
 	// end the second request like the player would, and wait for its handler
@@ -291,6 +327,81 @@ func TestNewerRequestDisplacesTheOlderTransfer(t *testing.T) {
 
 	if rec2.Body.Len() == 0 {
 		t.Fatal("request 2 received no data")
+	}
+}
+
+// A transfer still streaming to its client is never displaced, even by another
+// request for the same content: it may be the player's own metadata probe —
+// which ends by itself and hands over the slot — or another viewer's playback.
+// A newcomer queues and is refused with RemoteCapacity when the wait expires.
+func TestActiveTransferIsNeverDisplaced(t *testing.T) {
+	restore := streamTimings(t, 10*time.Millisecond, 300*time.Millisecond, 40*time.Millisecond)
+	defer restore()
+
+	upstream, connections := slowUpstream(150, 20*time.Millisecond)
+	defer upstream.Close()
+
+	source := &config.SourceConfig{Name: "testsrc", URL: upstream.URL, MaxConnections: 1}
+	sp := newPassthroughProxy(30*time.Second, upstream.URL)
+
+	sess1 := proxy.StartFileSession("t5", "The Farm (2019)", source.Name, "")
+	defer proxy.EndFileSession("t5")
+	sess2 := proxy.StartFileSession("t6", "The Farm (2019)", source.Name, "")
+	defer proxy.EndFileSession("t6")
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+
+	// the holder's client reads eagerly (a recorder accepts every write), so
+	// the transfer keeps making progress and never looks stalled
+	req1 := httptest.NewRequest("GET", upstream.URL+"/f.mp4", nil).WithContext(ctx1)
+	rec1 := httptest.NewRecorder()
+	done1 := make(chan handlers.RemoteOutcome, 1)
+	go func() {
+		done1 <- handlers.AttemptRemoteFile(sp, rec1, req1, upstream.URL+"/f.mp4", source, "mp4", sess1, 0)
+	}()
+
+	waitForSlot(t, source, 1)
+	time.Sleep(200 * time.Millisecond)
+
+	// the newcomer waits out its queue with no displacement to break it loose
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	req2 := httptest.NewRequest("GET", upstream.URL+"/f.mp4", nil).WithContext(ctx2)
+	rec2 := httptest.NewRecorder()
+	done2 := make(chan handlers.RemoteOutcome, 1)
+	go func() {
+		done2 <- handlers.AttemptRemoteFile(sp, rec2, req2, upstream.URL+"/f.mp4", source, "mp4", sess2, 300*time.Millisecond)
+	}()
+
+	// halfway through the queue wait the holder must still be untouched
+	time.Sleep(150 * time.Millisecond)
+	if n := connections.Load(); n != 1 {
+		t.Fatalf("upstream saw %d connections mid-queue, want the holder's 1 (an active transfer was displaced)", n)
+	}
+
+	select {
+	case outcome := <-done2:
+		if outcome != handlers.RemoteCapacity {
+			t.Fatalf("outcome = %d, want capacity after the queue expired", outcome)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("second request did not return")
+	}
+
+	if n := connections.Load(); n != 1 {
+		t.Fatalf("upstream saw %d connections after the refusal, want 1", n)
+	}
+	if source.ActiveConns.Load() != 1 {
+		t.Fatalf("ActiveConns = %d, want the untouched holder's 1", source.ActiveConns.Load())
+	}
+
+	// end the holder like the player would
+	cancel1()
+	select {
+	case <-done1:
+	case <-time.After(5 * time.Second):
+		t.Fatal("holder transfer did not return")
 	}
 }
 

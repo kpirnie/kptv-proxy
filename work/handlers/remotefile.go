@@ -40,10 +40,13 @@ var remoteFileResponseHeaders = []string{
 }
 
 // sessionWriter counts bytes delivered to the client so a passthrough session
-// reports throughput the same way a restreamed channel does.
+// reports throughput the same way a restreamed channel does, and marks the
+// transfer's progress so displacement can tell a client that stopped reading
+// from one still streaming.
 type sessionWriter struct {
 	http.ResponseWriter
-	bytes *atomic.Int64
+	bytes    *atomic.Int64
+	transfer *activeTransfer
 }
 
 func (sw *sessionWriter) Write(b []byte) (int, error) {
@@ -51,6 +54,9 @@ func (sw *sessionWriter) Write(b []byte) (int, error) {
 	if n > 0 {
 		sw.bytes.Add(int64(n))
 		metrics.TotalBytesTransferred.Add(int64(n))
+		if sw.transfer != nil {
+			sw.transfer.touch()
+		}
 	}
 	return n, err
 }
@@ -223,18 +229,20 @@ const (
 
 // ReserveSourceSlot takes one of a source's connection slots, queueing up to
 // wait for the current holder to finish. The slot is held for the whole
-// transfer, so a caller that reserves must call the returned release. A wait
-// of zero or less disables queueing: the request is refused at once, leaving
-// the caller free to answer 503 instead of taking a connection the provider
-// limits. Exported for the test in testing/handlers, which runs in an external
-// package.
+// transfer, so a caller that reserves must call the returned release — which
+// is idempotent, so a displacement that releases the slot early and the
+// transfer's own deferred release do not double-count. A wait of zero or less
+// disables queueing: the request is refused at once, leaving the caller free
+// to answer 503 instead of taking a connection the provider limits. Exported
+// for the test in testing/handlers, which runs in an external package.
 func ReserveSourceSlot(source *config.SourceConfig, ctx context.Context, wait time.Duration) (func(), bool) {
 	take := func() (func(), bool) {
 		if source.ActiveConns.Add(1) > int32(source.MaxConnections) {
 			source.ActiveConns.Add(-1)
 			return nil, false
 		}
-		return func() { source.ActiveConns.Add(-1) }, true
+		var once sync.Once
+		return func() { once.Do(func() { source.ActiveConns.Add(-1) }) }, true
 	}
 
 	if release, ok := take(); ok {
@@ -263,12 +271,22 @@ func ReserveSourceSlot(source *config.SourceConfig, ctx context.Context, wait ti
 }
 
 // activeTransfer describes one running passthrough delivery that a newer
-// request for the same content may displace.
+// request for the same content may displace. lastProgress records when the
+// client last accepted bytes, so a transfer whose client has gone silent can
+// be told apart from one still streaming.
 type activeTransfer struct {
-	channel   string
-	source    string
-	startedAt time.Time
-	cancel    context.CancelFunc // aborts the upstream copy, which releases the slot
+	channel      string
+	source       string
+	startedAt    time.Time
+	lastProgress atomic.Int64 // unix nanos of the last byte the client accepted
+	release      func()       // idempotent; frees the slot even if the copy is wedged on a silent client
+	writer       http.ResponseWriter
+	cancel       context.CancelFunc // aborts the upstream copy, which releases the slot
+}
+
+// touch records that the client just accepted bytes.
+func (t *activeTransfer) touch() {
+	t.lastProgress.Store(time.Now().UnixNano())
 }
 
 var (
@@ -292,23 +310,30 @@ func unregisterTransfer(id string) {
 	transferMutex.Unlock()
 }
 
-// DisplaceTransfer cancels the oldest running transfer of the same channel on
-// the same source, freeing its provider slot for a newer request for the same
-// content. Players probe, seek, and re-open the same file while leaving the
-// older connection idle, so on a source whose slots are all taken the oldest
-// transfer is almost always the requester's own abandoned predecessor. A
-// genuinely concurrent viewer of the same movie is displaced too — on a
-// saturated source that mirrors what providers themselves do, where the
-// newest session wins. Reports whether a transfer was found and cancelled.
-// Exported for the test in testing/handlers, which runs in an external package.
+// DisplaceTransfer cancels the oldest STALLED transfer of the same channel on
+// the same source — one whose client stopped accepting bytes — freeing its
+// provider slot for a newer request for the same content. Players probe, seek,
+// and re-open the same file while leaving the older connection idle, so on a
+// saturated source the stalled holder is almost always the requester's own
+// abandoned predecessor. A transfer still streaming is never displaced: it is
+// either the player's own metadata probe, which ends by itself in a moment and
+// hands over the slot, or another viewer's playback, which has as much right
+// to the connection as the newcomer does. Reports whether a transfer was found
+// and cancelled. Exported for the test in testing/handlers, which runs in an
+// external package.
 func DisplaceTransfer(channelName string, source *config.SourceConfig) bool {
 	transferMutex.Lock()
 	defer transferMutex.Unlock()
 
+	now := time.Now()
 	var oldestID string
 	var oldest *activeTransfer
 	for id, t := range activeTransfers {
 		if t.channel != channelName || t.source != source.Name {
+			continue
+		}
+		stalled := now.Sub(time.Unix(0, t.lastProgress.Load())) >= constants.Internal.RemoteFileTransferStall
+		if !stalled {
 			continue
 		}
 		if oldest == nil || t.startedAt.Before(oldest.startedAt) {
@@ -320,20 +345,68 @@ func DisplaceTransfer(channelName string, source *config.SourceConfig) bool {
 	}
 
 	delete(activeTransfers, oldestID)
-	logger.Info("{handlers/remotefile - DisplaceTransfer} Displacing the running transfer of %s on %s to free the provider slot", channelName, source.Name)
+	logger.Info("{handlers/remotefile - DisplaceTransfer} Displacing the stalled transfer of %s on %s to free the provider slot", channelName, source.Name)
+	// cancelling ends the upstream read, but a copy wedged writing to the
+	// silent client would keep the slot held until that client closes; break
+	// the write as well and free the slot from here, so the requester is not
+	// hostage to a connection the player already abandoned
 	oldest.cancel()
+	if oldest.writer != nil {
+		if rc := http.NewResponseController(oldest.writer); rc != nil {
+			_ = rc.SetWriteDeadline(time.Now().Add(-time.Second))
+		}
+	}
+	oldest.release()
 	return true
+}
+
+// acquireRemoteSlot gets one of the source's connection slots for a transfer
+// of channelName, waiting up to queueWait. The slot is held for the whole
+// transfer, so the caller must call the returned release. A free slot is taken
+// at once. When the source is full, a stalled transfer of the same content —
+// the requester's own abandoned predecessor — is displaced and its slot taken
+// after the takeover grace period; displacement is re-tried on every poll, so
+// a holder that goes silent while the request is already queued is still
+// caught without waiting out the whole queue wait. A holder still streaming to
+// its client is left alone, and if the wait expires the caller answers 503 —
+// that is a genuinely busy source, not a broken stream.
+func acquireRemoteSlot(source *config.SourceConfig, channelName string, ctx context.Context, queueWait time.Duration) (func(), bool) {
+	if release, ok := ReserveSourceSlot(source, ctx, 0); ok {
+		return release, true
+	}
+	if ctx.Err() != nil {
+		return nil, false
+	}
+
+	deadline := time.Now().Add(queueWait)
+	for {
+		if DisplaceTransfer(channelName, source) {
+			if release, ok := ReserveSourceSlot(source, ctx, constants.Internal.RemoteFileTakeoverWait); ok {
+				return release, true
+			}
+		}
+		if ctx.Err() != nil || !time.Now().Before(deadline) {
+			return nil, false
+		}
+		select {
+		case <-ctx.Done():
+			return nil, false
+		case <-time.After(constants.Internal.RemoteFileCapacityPoll):
+		}
+	}
 }
 
 // AttemptRemoteFile proxies one upstream file to the client, forwarding range
 // and conditional headers in both directions so seeking works. It reports why
 // the attempt ended: only RemoteUpstreamFailure entitles the caller to treat
 // the candidate as broken, and RemoteCapacity means the provider slot is busy
-// with somebody else's transfer. A slot held by an older transfer of the same
+// with somebody else's transfer. A slot held by a STALLED transfer of the same
 // channel on the same source is displaced, because that holder is the
-// requester's own abandoned predecessor. The header phase carries its own
-// deadline so a stalled provider is abandoned while the player is still
-// waiting, rather than losing the race to the player's own timeout.
+// requester's own abandoned predecessor; a holder still streaming is left
+// alone, since it may be the player's own metadata probe or another viewer's
+// playback. The header phase carries its own deadline so a stalled provider is
+// abandoned while the player is still waiting, rather than losing the race to
+// the player's own timeout.
 func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, streamURL string, source *config.SourceConfig, extension string, session *proxy.FileSession, queueWait time.Duration) RemoteOutcome {
 	if limiter := sp.RateLimiterForSource(source); limiter != nil {
 		// wait off the handler's goroutine so a player that gave up releases
@@ -350,27 +423,12 @@ func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	// Get a slot: try at once, then — if the source is full — displace the
-	// running transfer of this same channel on this same source, whose client
-	// has almost certainly moved on to this request. Only when no such
-	// transfer exists does the request queue for a foreign holder (a live
-	// channel, another movie) up to queueWait, and get one more displacement
-	// chance when the wait expires.
-	release, ok := ReserveSourceSlot(source, r.Context(), 0)
-	if !ok {
-		if r.Context().Err() != nil {
-			return RemoteDelivered
-		}
-		if DisplaceTransfer(session.ChannelName, source) {
-			release, ok = ReserveSourceSlot(source, r.Context(), constants.Internal.RemoteFileTakeoverWait)
-		}
-	}
-	if !ok && r.Context().Err() == nil {
-		release, ok = ReserveSourceSlot(source, r.Context(), queueWait)
-		if !ok && r.Context().Err() == nil && DisplaceTransfer(session.ChannelName, source) {
-			release, ok = ReserveSourceSlot(source, r.Context(), constants.Internal.RemoteFileTakeoverWait)
-		}
-	}
+	// Get a slot: a free one at once, otherwise — while the source is full —
+	// displace the stalled transfer of this same channel on this same source
+	// (whose client has moved on to this request) and take its slot; a holder
+	// still streaming is left alone and the request queues up to queueWait
+	// for it to end, answering 503 when the wait expires.
+	release, ok := acquireRemoteSlot(source, session.ChannelName, r.Context(), queueWait)
 	if !ok {
 		if r.Context().Err() != nil {
 			// the player gave up while waiting, so nothing is left to serve
@@ -413,14 +471,18 @@ func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 	}
 
 	// from here on the transfer holds the provider slot, so a newer request
-	// for the same content must be able to find and cancel it; cancelling the
-	// request context ends the copy and releases the slot
+	// for the same content must be able to find and displace it when it goes
+	// silent; the transfer carries the slot's own release so displacement can
+	// free the slot even if the copy is wedged writing to the silent client
 	transfer := &activeTransfer{
 		channel:   session.ChannelName,
 		source:    source.Name,
 		startedAt: time.Now(),
+		release:   release,
+		writer:    w,
 		cancel:    cancel,
 	}
+	transfer.touch()
 	registerTransfer(session.ID, transfer)
 	defer unregisterTransfer(session.ID)
 
@@ -446,7 +508,7 @@ func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 		return RemoteDelivered
 	}
 
-	if _, err := io.Copy(&sessionWriter{ResponseWriter: w, bytes: &session.Bytes}, resp.Body); err != nil {
+	if _, err := io.Copy(&sessionWriter{ResponseWriter: w, bytes: &session.Bytes, transfer: transfer}, resp.Body); err != nil {
 		logger.Debug("{handlers/remotefile - attemptRemoteFile} client copy ended for %s: %v", utils.LogURL(sp.Config, streamURL), err)
 	}
 	return RemoteDelivered
