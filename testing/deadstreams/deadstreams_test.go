@@ -167,3 +167,109 @@ func TestReloadOverridesIsSafe(t *testing.T) {
 		t.Fatal("dead mark must survive concurrent reloads")
 	}
 }
+
+// A blanket revive clears auto-dead marks everywhere but leaves manually
+// killed streams alone — those were deliberate admin decisions.
+func TestReviveAllLeavesManualKillsAlone(t *testing.T) {
+	// clear whatever earlier tests left behind, so the counts below are exact
+	if _, err := deadstreams.ReviveAllStreams(true); err != nil {
+		t.Fatalf("setup: revive-all failed: %v", err)
+	}
+
+	type candidate struct{ ch, h string }
+	autoA := candidate{"ch-all-a", "hash-all-a"}
+	autoB := candidate{"ch-all-b", "hash-all-b"}
+	manual := candidate{"ch-all-m", "hash-all-m"}
+	for _, c := range []candidate{autoA, autoB} {
+		if err := deadstreams.MarkStreamDeadByHash(c.ch, c.h, "vod unplayable"); err != nil {
+			t.Fatalf("setup: mark auto-dead failed: %v", err)
+		}
+	}
+	if err := deadstreams.MarkStreamDeadByHash(manual.ch, manual.h, "manual"); err != nil {
+		t.Fatalf("setup: mark manual-dead failed: %v", err)
+	}
+
+	n, err := deadstreams.ReviveAllStreams(false)
+	if err != nil {
+		t.Fatalf("revive-all failed: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("revive-all revived %d streams, want 2", n)
+	}
+
+	if deadstreams.IsStreamDead(autoA.ch, autoA.h) || deadstreams.IsStreamDead(autoB.ch, autoB.h) {
+		t.Fatal("auto-dead streams must be revived")
+	}
+	if !deadstreams.IsStreamDead(manual.ch, manual.h) {
+		t.Fatal("manually killed stream must stay dead")
+	}
+	if reason := deadstreams.GetDeadStreamReason(manual.ch, manual.h); reason != "manual" {
+		t.Fatalf("manual kill reason = %q, want manual", reason)
+	}
+}
+
+// With includeManual set, the blanket revive clears everything.
+func TestReviveAllWithManualIncluded(t *testing.T) {
+	// clear whatever earlier tests left behind, so the counts below are exact
+	if _, err := deadstreams.ReviveAllStreams(true); err != nil {
+		t.Fatalf("setup: revive-all failed: %v", err)
+	}
+
+	type candidate struct{ ch, h string }
+	auto := candidate{"ch-inc-a", "hash-inc-a"}
+	manual := candidate{"ch-inc-m", "hash-inc-m"}
+	if err := deadstreams.MarkStreamDeadByHash(auto.ch, auto.h, "vod unplayable"); err != nil {
+		t.Fatalf("setup: mark auto-dead failed: %v", err)
+	}
+	if err := deadstreams.MarkStreamDeadByHash(manual.ch, manual.h, "manual"); err != nil {
+		t.Fatalf("setup: mark manual-dead failed: %v", err)
+	}
+
+	n, err := deadstreams.ReviveAllStreams(true)
+	if err != nil {
+		t.Fatalf("revive-all failed: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("revive-all revived %d streams, want 2", n)
+	}
+
+	if deadstreams.IsStreamDead(auto.ch, auto.h) || deadstreams.IsStreamDead(manual.ch, manual.h) {
+		t.Fatal("every dead stream must be revived when includeManual is set")
+	}
+}
+
+// A revived stream that also carries a custom sort order keeps its order row —
+// only the dead status is cleared, exactly as the per-stream revive does.
+func TestReviveAllKeepsCustomOrderRows(t *testing.T) {
+	// clear whatever earlier tests left behind, so the count below is exact
+	if _, err := deadstreams.ReviveAllStreams(true); err != nil {
+		t.Fatalf("setup: revive-all failed: %v", err)
+	}
+
+	channel, hash := "ch-order", "hash-order"
+	if _, err := db.Get().Exec(`
+		INSERT INTO kp_stream_overrides (channel, s_hash, s_status, s_order, dead_reason)
+		VALUES (?, ?, 3, 5, 'vod unplayable')`, channel, hash); err != nil {
+		t.Fatalf("setup: insert override failed: %v", err)
+	}
+	deadstreams.ReloadOverrides()
+
+	n, err := deadstreams.ReviveAllStreams(false)
+	if err != nil {
+		t.Fatalf("revive-all failed: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("revive-all revived %d streams, want 1", n)
+	}
+
+	o, exists := db.GetStreamOverride(channel, hash)
+	if !exists {
+		t.Fatal("row with a custom order must survive the revive")
+	}
+	if o.SOrder != 5 {
+		t.Fatalf("SOrder = %d, want the custom 5", o.SOrder)
+	}
+	if o.SStatus != 0 || o.DeadReason != "" {
+		t.Fatalf("dead status not cleared: s_status=%d reason=%q", o.SStatus, o.DeadReason)
+	}
+}

@@ -41,6 +41,12 @@ function renderStreamSelector(data) {
                 onclick="resetStreamOrder()">
                 Reset
             </button>
+            <button id="revive-all-btn" type="button"
+                class="px-3 py-1 text-xs font-semibold bg-kptv-gray-light border border-kptv-border hover:bg-kptv-border text-white rounded"
+                onclick="reviveAllDeadStreams()"
+                title="Revive every auto-dead stream across all channels (manually killed streams are preserved)">
+                Revive All Dead
+            </button>
             <span id="order-save-status" class="text-xs text-gray-500"></span>
         </div>
         <div id="streams-container">
@@ -414,5 +420,26 @@ async function reviveStream(channelName, streamIndex) {
         setTimeout(() => showStreamSelector(channelName), 1000);
     } catch (error) {
         showNotification('Failed to revive stream', 'danger');
+    }
+}
+
+/**
+ * Revives every auto-dead stream across all channels in one call.
+ * Manually killed streams are preserved. Reloads the stream selector
+ * afterwards so dead badges clear where the channel is affected.
+ * @returns {Promise<void>}
+ */
+async function reviveAllDeadStreams() {
+    try {
+        const res = await apiCall('/api/channels/revive-all', {
+            method: 'POST',
+            body: JSON.stringify({ includeManual: false })
+        });
+        showNotification(`Revived ${res.revived} dead stream${res.revived === 1 ? '' : 's'} across all channels`, 'success');
+        if (typeof currentChannelName !== 'undefined' && currentChannelName) {
+            setTimeout(() => showStreamSelector(currentChannelName), 1000);
+        }
+    } catch (error) {
+        showNotification('Failed to revive dead streams', 'danger');
     }
 }

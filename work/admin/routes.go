@@ -39,6 +39,9 @@ func SetupAdminRoutes(router *mux.Router, sp *proxy.StreamProxy) {
 	router.HandleFunc("/api/channels", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetAllChannels(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/active", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetActiveChannels(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/ws", authCORS(users.PermRead, handleAdminSocket(sp))).Methods("GET")
+	// register the literal revive-all before the {channel} routes, so the path
+	// segment is never swallowed as a channel name
+	router.HandleFunc("/api/channels/revive-all", authCORS(users.PermStreams, handleReviveAllStreams())).Methods("POST", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/streams", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetChannelStreams(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/stats", authCORS(users.PermRead, middleware.GzipMiddleware(handleGetChannelStats(sp)))).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/channels/{channel}/stream", authCORS(users.PermStreams, handleSetChannelStream(sp))).Methods("POST", "OPTIONS")

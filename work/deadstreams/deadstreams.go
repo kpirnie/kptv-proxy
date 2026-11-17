@@ -146,6 +146,24 @@ func ReviveStream(channelName, hash string) error {
 	return nil
 }
 
+// ReviveAllStreams clears the dead status of every auto-dead stream — or every
+// dead stream at all when includeManual is set — in one database pass, then
+// reloads the in-memory snapshot so the change is visible at once. Returns how
+// many streams were revived. Manually killed streams are an admin decision and
+// are therefore preserved unless the caller asks for them explicitly.
+func ReviveAllStreams(includeManual bool) (int, error) {
+	n, err := db.ClearAllDeadStreams(includeManual)
+	if err != nil {
+		logger.Error("{deadstreams - ReviveAllStreams} includeManual=%v: %v", includeManual, err)
+		return 0, err
+	}
+
+	ReloadOverrides()
+
+	logger.Debug("{deadstreams - ReviveAllStreams} revived %d streams (includeManual=%v)", n, includeManual)
+	return int(n), nil
+}
+
 // BlockedUntilRetry reports whether a dead or blocked stream must still be
 // skipped. Manually killed streams always are. Auto-blocked streams become
 // eligible again once AutoBlockRetryInterval has passed since their last

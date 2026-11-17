@@ -1347,6 +1347,56 @@
         }
       }
     },
+    "/api/channels/revive-all": {
+      "post": {
+        "summary": "Revive every auto-dead stream across all channels",
+        "operationId": "reviveAllStreams",
+        "tags": [
+          "Channels"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "includeManual": {
+                    "type": "boolean",
+                    "description": "Also clear manually killed streams. Default false.",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dead streams revived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "revived": {
+                      "type": "integer",
+                      "description": "Number of streams revived"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
     "/api/epgs": {
       "get": {
         "summary": "Get all EPG sources",

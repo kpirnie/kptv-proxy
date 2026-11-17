@@ -539,6 +539,8 @@ KPTV Proxy supports two streaming modes. In order to utilize FFmpeg, you must ha
    - **🔄 Revive**: Restore a dead stream
 3. During automatic failover, dead streams are skipped
 
+**Revive All Dead**: the stream selector also offers a one-click revive of every auto-dead stream across all channels. Manually killed streams are preserved, since those were deliberate choices.
+
 ## Stream Watcher - Automatic Monitoring
 
 The Stream Watcher runs as a background service monitoring active streams every 30 seconds (15 seconds in debug mode).
@@ -610,6 +612,7 @@ All `/api/*` endpoints require either a valid session cookie or a `Authorization
 | `/api/channels/{channel}/stream` | POST | Streams | Set active stream |
 | `/api/channels/{channel}/kill-stream` | POST | Streams | Mark stream as dead |
 | `/api/channels/{channel}/revive-stream` | POST | Streams | Revive dead stream |
+| `/api/channels/revive-all` | POST | Streams | Revive every auto-dead stream across all channels; pass `{"includeManual": true}` to also clear manually killed streams |
 | `/api/channels/{channel}/order` | POST | Streams | Set stream order |
 | `/api/channels/{channel}/order` | DELETE | Streams | Reset channel to default stream order |
 

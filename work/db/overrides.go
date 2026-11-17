@@ -101,3 +101,37 @@ func SetStreamAlive(channelName, hash string) error {
 	}
 	return err
 }
+
+// ClearAllDeadStreams clears the dead status of every stream in the table in
+// one pass — auto-dead only by default, every dead stream when includeManual
+// is set. Rows holding a custom sort order keep the row and lose only the
+// dead status; rows without one are deleted so the table stays sparse, the
+// same rule SetStreamAlive applies per stream. Returns the number of streams
+// revived.
+func ClearAllDeadStreams(includeManual bool) (int64, error) {
+	// s_status: 0 alive, 2 dead-manual, 3 dead-auto
+	statuses := "(3)"
+	if includeManual {
+		statuses = "(2,3)"
+	}
+
+	res, err := Get().Exec(`
+		DELETE FROM kp_stream_overrides
+		WHERE s_status IN ` + statuses + ` AND s_order = -1`)
+	if err != nil {
+		logger.Error("{db/overrides - ClearAllDeadStreams} delete: %v", err)
+		return 0, err
+	}
+	deleted, _ := res.RowsAffected()
+
+	res, err = Get().Exec(`
+		UPDATE kp_stream_overrides SET s_status=0, dead_reason=''
+		WHERE s_status IN ` + statuses)
+	if err != nil {
+		logger.Error("{db/overrides - ClearAllDeadStreams} update: %v", err)
+		return deleted, err
+	}
+	updated, _ := res.RowsAffected()
+
+	return deleted + updated, nil
+}
