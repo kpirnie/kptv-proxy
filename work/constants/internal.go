@@ -52,6 +52,7 @@ type InternalConstants struct {
 	RemoteFileHeaderTimeout time.Duration // Max wait for upstream response headers before a candidate is abandoned
 	RemoteFileRetries       int           // Extra attempts against the same provider before moving to the next
 	RemoteFileCapacityPoll  time.Duration // Interval between connection-slot rechecks while queueing for a free slot
+	RemoteFileTakeoverWait  time.Duration // Grace period for a displaced transfer to release its slot before the takeover is given up
 
 	// -------------------------------------------------------------------------
 	// work/handlers/xcseries.go — buildRemoteSeriesInfo()
@@ -395,6 +396,7 @@ var Internal = InternalConstants{
 	RemoteFileHeaderTimeout: 8 * time.Second,
 	RemoteFileRetries:       1,
 	RemoteFileCapacityPoll:  100 * time.Millisecond,
+	RemoteFileTakeoverWait:  2 * time.Second,
 
 	// -------------------------------------------------------------------------
 	// Remote series info

@@ -2,11 +2,19 @@ package handlers_test
 
 import (
 	"context"
+	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
 	"kptv-proxy/work/handlers"
+	"kptv-proxy/work/proxy"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.uber.org/ratelimit"
 )
 
 // sourceWith returns a source with the given connection limit and that many
@@ -144,5 +152,195 @@ func TestZeroWaitRefusesImmediately(t *testing.T) {
 	}
 	if source.ActiveConns.Load() != 1 {
 		t.Fatalf("ActiveConns = %d after the refusal, want the holder's 1", source.ActiveConns.Load())
+	}
+}
+
+// slowUpstream serves a stream that drips chunks slowly enough that a
+// passthrough of it is still running when the test needs it to be. The
+// counter reports how many connections arrived.
+func slowUpstream(chunks int, delay time.Duration) (*httptest.Server, *atomic.Int64) {
+	connections := &atomic.Int64{}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connections.Add(1)
+		w.Header().Set("Content-Length", strconv.Itoa(chunks*chunkSize))
+		w.WriteHeader(http.StatusOK)
+		flusher := w.(http.Flusher)
+		flusher.Flush()
+		chunk := make([]byte, chunkSize)
+		for i := 0; i < chunks; i++ {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(delay):
+			}
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	})), connections
+}
+
+const chunkSize = 1024
+
+// newPassthroughProxy builds the minimal StreamProxy AttemptRemoteFile needs.
+// The rate limiter is seeded under the source's own URL — the key the proxy
+// looks up — with a rate far above the test's needs, since the proxy would
+// otherwise pace one request per second: the rate equals the source's
+// MaxConnections.
+func newPassthroughProxy(headerTimeout time.Duration, sourceURL string) *proxy.StreamProxy {
+	return &proxy.StreamProxy{
+		Config:             &config.Config{},
+		HttpClient:         client.NewHeaderSettingClient(headerTimeout),
+		SourceRateLimiters: map[string]ratelimit.Limiter{sourceURL: ratelimit.New(10000)},
+	}
+}
+
+// waitForSlot polls until the source reports the given connection count, or
+// fails the test after a deadline.
+func waitForSlot(t *testing.T, source *config.SourceConfig, want int32) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if source.ActiveConns.Load() == want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("source never reached %d connections (now %d)", want, source.ActiveConns.Load())
+}
+
+// A newer request for the same channel on a full source displaces the older
+// transfer instead of queueing behind it. This is the VLC shape: the player
+// opens the URL twice at once, leaves the first connection idle, and expects
+// the second one to start playing without waiting for the first to end.
+func TestNewerRequestDisplacesTheOlderTransfer(t *testing.T) {
+	upstream, connections := slowUpstream(150, 20*time.Millisecond) // ~3s of streaming
+	defer upstream.Close()
+
+	source := &config.SourceConfig{Name: "testsrc", URL: upstream.URL, MaxConnections: 1}
+	sp := newPassthroughProxy(30*time.Second, upstream.URL)
+
+	movie := "The Farm (2019)"
+	sess1 := proxy.StartFileSession("t1", movie, source.Name, "")
+	defer proxy.EndFileSession("t1")
+	sess2 := proxy.StartFileSession("t2", movie, source.Name, "")
+	defer proxy.EndFileSession("t2")
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+
+	req1 := httptest.NewRequest("GET", upstream.URL+"/f.mp4", nil).WithContext(ctx1)
+	rec1 := httptest.NewRecorder()
+	done1 := make(chan handlers.RemoteOutcome, 1)
+	go func() {
+		done1 <- handlers.AttemptRemoteFile(sp, rec1, req1, upstream.URL+"/f.mp4", source, "mp4", sess1, 0)
+	}()
+
+	waitForSlot(t, source, 1)
+	// give the transfer time to pass the header phase and register itself
+	time.Sleep(200 * time.Millisecond)
+
+	// the second request runs like a real handler would: streaming until its
+	// client walks away, so the test watches the upstream instead of the clock
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	req2 := httptest.NewRequest("GET", upstream.URL+"/f.mp4", nil).WithContext(ctx2)
+	rec2 := httptest.NewRecorder()
+	done2 := make(chan handlers.RemoteOutcome, 1)
+	go func() {
+		done2 <- handlers.AttemptRemoteFile(sp, rec2, req2, upstream.URL+"/f.mp4", source, "mp4", sess2, 10*time.Second)
+	}()
+	start := time.Now()
+
+	// displacement speed: the second connection must reach the upstream within
+	// about the takeover grace period, not after the 10s queue wait it would
+	// suffer if the older transfer were not found
+	deadline := start.Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if connections.Load() >= 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := connections.Load(); n < 2 {
+		t.Fatalf("upstream saw %d connections %v after request 2 started, want 2 by now (displacement never fired)", n, time.Since(start))
+	}
+
+	// the displaced transfer ends with its copy cut short, and the second one
+	// keeps streaming until its context is cancelled below
+	select {
+	case <-done1:
+	case <-time.After(5 * time.Second):
+		t.Fatal("displaced transfer did not return")
+	}
+	cancel1()
+
+	// let the second transfer carry a few chunks like a real playback would
+	// (the upstream drips one every 20ms) before the test ends it
+	time.Sleep(300 * time.Millisecond)
+
+	// end the second request like the player would, and wait for its handler
+	// before touching its recorder
+	cancel2()
+	select {
+	case <-done2:
+	case <-time.After(5 * time.Second):
+		t.Fatal("second transfer did not return after its client left")
+	}
+
+	if rec2.Body.Len() == 0 {
+		t.Fatal("request 2 received no data")
+	}
+}
+
+// A request for a different channel finds nothing to displace: the full
+// source is refused at once (the caller answers 503) and the running
+// transfer of the other channel is left alone.
+func TestFullSourceWithoutAMatchingTransferIsRefused(t *testing.T) {
+	upstream, _ := slowUpstream(150, 20*time.Millisecond)
+	defer upstream.Close()
+
+	source := &config.SourceConfig{Name: "testsrc", URL: upstream.URL, MaxConnections: 1}
+	sp := newPassthroughProxy(30*time.Second, upstream.URL)
+
+	sess1 := proxy.StartFileSession("t3", "Channel One", source.Name, "")
+	defer proxy.EndFileSession("t3")
+	sess2 := proxy.StartFileSession("t4", "Channel Two", source.Name, "")
+	defer proxy.EndFileSession("t4")
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+
+	req1 := httptest.NewRequest("GET", upstream.URL+"/f.mp4", nil).WithContext(ctx1)
+	rec1 := httptest.NewRecorder()
+	done1 := make(chan handlers.RemoteOutcome, 1)
+	go func() {
+		done1 <- handlers.AttemptRemoteFile(sp, rec1, req1, upstream.URL+"/f.mp4", source, "mp4", sess1, 0)
+	}()
+
+	waitForSlot(t, source, 1)
+	time.Sleep(200 * time.Millisecond)
+
+	start := time.Now()
+	req2 := httptest.NewRequest("GET", upstream.URL+"/f.mp4", nil)
+	rec2 := httptest.NewRecorder()
+	outcome := handlers.AttemptRemoteFile(sp, rec2, req2, upstream.URL+"/f.mp4", source, "mp4", sess2, 0)
+
+	if outcome != handlers.RemoteCapacity {
+		t.Fatalf("outcome = %d, want capacity", outcome)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("refusal took %v, want an immediate answer", elapsed)
+	}
+	if source.ActiveConns.Load() != 1 {
+		t.Fatalf("ActiveConns = %d, want the untouched holder's 1", source.ActiveConns.Load())
+	}
+
+	cancel1()
+	select {
+	case <-done1:
+	case <-time.After(5 * time.Second):
+		t.Fatal("holder transfer did not return")
 	}
 }
