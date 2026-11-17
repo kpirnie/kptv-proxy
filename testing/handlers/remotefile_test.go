@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"context"
+	"fmt"
 	"kptv-proxy/work/client"
 	"kptv-proxy/work/config"
 	"kptv-proxy/work/constants"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -187,6 +189,49 @@ func slowUpstream(chunks int, delay time.Duration) (*httptest.Server, *atomic.In
 	})), connections
 }
 
+// tailUpstream serves a file in the shape of an MKV: the range from the start
+// drips slowly (playback data), a request inside the last `tail` bytes
+// answers at once with the small remainder (the cues). Content-Range always
+// reports the full size, which is how a running transfer learns it.
+func tailUpstream(total, tail int64) (*httptest.Server, *atomic.Int64) {
+	connections := &atomic.Int64{}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connections.Add(1)
+		start := int64(0)
+		if spec := r.Header.Get("Range"); strings.HasPrefix(spec, "bytes=") {
+			// "bytes=198000-" or "bytes=198000-199999"; the suffix form
+			// ("bytes=-500") has no start offset
+			spec = strings.TrimSuffix(strings.TrimPrefix(spec, "bytes="), "-")
+			if n, err := strconv.ParseInt(spec, 10, 64); err == nil && n >= 0 {
+				start = n
+			}
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, total-1, total))
+		w.Header().Set("Content-Length", strconv.FormatInt(total-start, 10))
+		w.WriteHeader(http.StatusPartialContent)
+
+		if start >= total-tail {
+			w.Write(make([]byte, total-start))
+			return
+		}
+
+		flusher := w.(http.Flusher)
+		flusher.Flush()
+		chunk := make([]byte, chunkSize)
+		for i := start; i < total; i += chunkSize {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	})), connections
+}
+
 const chunkSize = 1024
 
 // newPassthroughProxy builds the minimal StreamProxy AttemptRemoteFile needs.
@@ -327,6 +372,79 @@ func TestNewerRequestDisplacesTheOlderTransfer(t *testing.T) {
 
 	if rec2.Body.Len() == 0 {
 		t.Fatal("request 2 received no data")
+	}
+}
+
+// The player's tail metadata fetch — a ranged request near the end of the
+// file, issued while the main transfer holds the slot — is served on a direct
+// connection: the holder keeps its slot and its connection, so the player's
+// parse of the container is never interrupted.
+func TestTailFetchIsServedWithoutDisplacingTheHolder(t *testing.T) {
+	restore := streamTimings(t, 10*time.Millisecond, 300*time.Millisecond, 40*time.Millisecond)
+	defer restore()
+
+	total := int64(200000)
+	tail := int64(2000)
+	upstream, connections := tailUpstream(total, tail)
+	defer upstream.Close()
+
+	source := &config.SourceConfig{Name: "testsrc", URL: upstream.URL, MaxConnections: 1}
+	sp := newPassthroughProxy(30*time.Second, upstream.URL)
+
+	movie := "The Farm (2019)"
+	sess1 := proxy.StartFileSession("t7", movie, source.Name, "")
+	defer proxy.EndFileSession("t7")
+	sess2 := proxy.StartFileSession("t8", movie, source.Name, "")
+	defer proxy.EndFileSession("t8")
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+
+	// the main transfer, reading eagerly like a player's open connection
+	req1 := httptest.NewRequest("GET", upstream.URL+"/f.mkv", nil).WithContext(ctx1)
+	rec1 := httptest.NewRecorder()
+	done1 := make(chan handlers.RemoteOutcome, 1)
+	go func() {
+		done1 <- handlers.AttemptRemoteFile(sp, rec1, req1, upstream.URL+"/f.mkv", source, "mkv", sess1, 0)
+	}()
+
+	waitForSlot(t, source, 1)
+	time.Sleep(200 * time.Millisecond) // registered, with the file size known
+
+	// the cues fetch, arriving while the main transfer holds the slot
+	req2 := httptest.NewRequest("GET", upstream.URL+"/f.mkv", nil)
+	req2.Header.Set("Range", fmt.Sprintf("bytes=%d-", total-tail))
+	rec2 := httptest.NewRecorder()
+	start := time.Now()
+	outcome := handlers.AttemptRemoteFile(sp, rec2, req2, upstream.URL+"/f.mkv", source, "mkv", sess2, 5*time.Second)
+
+	if outcome != handlers.RemoteDelivered {
+		t.Fatalf("tail fetch outcome = %d, want delivered", outcome)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("tail fetch took %v, want a direct serve", elapsed)
+	}
+	if rec2.Body.Len() != int(tail) {
+		t.Fatalf("tail fetch delivered %d bytes, want %d", rec2.Body.Len(), tail)
+	}
+	if source.ActiveConns.Load() != 1 {
+		t.Fatalf("ActiveConns = %d, want the holder's 1 (the tail fetch must not take a slot)", source.ActiveConns.Load())
+	}
+	select {
+	case <-done1:
+		t.Fatal("the holder was disturbed by the tail fetch")
+	default:
+	}
+	if n := connections.Load(); n != 2 {
+		t.Fatalf("upstream saw %d connections, want 2 (main transfer + tail fetch)", n)
+	}
+
+	// end the holder like the player would
+	cancel1()
+	select {
+	case <-done1:
+	case <-time.After(5 * time.Second):
+		t.Fatal("holder did not return")
 	}
 }
 

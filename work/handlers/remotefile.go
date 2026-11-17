@@ -17,6 +17,8 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -276,15 +278,17 @@ func ReserveSourceSlot(source *config.SourceConfig, ctx context.Context, wait ti
 // activeTransfer describes one running passthrough delivery that a newer
 // request for the same content may displace. lastProgress records when the
 // client last accepted bytes, so a transfer whose client has gone silent can
-// be told apart from one still streaming.
+// be told apart from one still streaming; contentLength records the full size
+// of the upstream file, so a tail fetch can recognize itself against it.
 type activeTransfer struct {
-	channel      string
-	source       string
-	startedAt    time.Time
-	lastProgress atomic.Int64 // unix nanos of the last byte the client accepted
-	release      func()       // idempotent; frees the slot even if the copy is wedged on a silent client
-	writer       http.ResponseWriter
-	cancel       context.CancelFunc // aborts the upstream copy, which releases the slot
+	channel       string
+	source        string
+	startedAt     time.Time
+	lastProgress  atomic.Int64 // unix nanos of the last byte the client accepted
+	contentLength int64        // full upstream file size, 0 when unknown
+	release       func()       // idempotent; frees the slot even if the copy is wedged on a silent client
+	writer        http.ResponseWriter
+	cancel        context.CancelFunc // aborts the upstream copy, which releases the slot
 }
 
 // touch records that the client just accepted bytes.
@@ -400,6 +404,143 @@ func acquireRemoteSlot(source *config.SourceConfig, channelName string, ctx cont
 	}
 }
 
+// upstreamTotalSize reports the full size of the upstream file from a
+// response: the total after the slash of Content-Range for partial
+// responses, the content length otherwise, 0 when neither is given.
+func upstreamTotalSize(resp *http.Response) int64 {
+	if cr := resp.Header.Get("Content-Range"); cr != "" {
+		if idx := strings.LastIndexByte(cr, '/'); idx >= 0 {
+			if n, err := strconv.ParseInt(cr[idx+1:], 10, 64); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	if resp.ContentLength > 0 {
+		return resp.ContentLength
+	}
+	return 0
+}
+
+// rangeStartOffset parses the first-byte position of a Range header. A
+// request without a usable start offset reports false.
+func rangeStartOffset(rangeHeader string) (int64, bool) {
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
+		return 0, false
+	}
+	spec := strings.TrimPrefix(rangeHeader, "bytes=")
+	dash := strings.IndexByte(spec, '-')
+	if dash <= 0 {
+		return 0, false // suffix form ("bytes=-500") has no start offset
+	}
+	n, err := strconv.ParseInt(spec[:dash], 10, 64)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// registeredContentLength returns the full upstream file size recorded by any
+// running transfer of the same channel on the same source.
+func registeredContentLength(channelName string, source *config.SourceConfig) int64 {
+	transferMutex.Lock()
+	defer transferMutex.Unlock()
+	for _, t := range activeTransfers {
+		if t.channel == channelName && t.source == source.Name && t.contentLength > 0 {
+			return t.contentLength
+		}
+	}
+	return 0
+}
+
+// tailFetchCandidate reports whether a request is the player's tail metadata
+// fetch — a ranged request starting within the last few megabytes of a file
+// that a running transfer of the same content already sizes. Matroska cues
+// and other container metadata live at the end, and players fetch them while
+// keeping the main connection open. The initial open of a stream has no start
+// offset or one near the file's beginning and never qualifies.
+func tailFetchCandidate(channelName string, source *config.SourceConfig, r *http.Request) bool {
+	start, ok := rangeStartOffset(r.Header.Get("Range"))
+	if !ok {
+		return false
+	}
+	total := registeredContentLength(channelName, source)
+	return total > 0 && start >= total-constants.Internal.RemoteFileTailFetchWindow
+}
+
+// attemptTailFetch serves one ranged request on a direct upstream connection,
+// without consuming a slot and without touching the running transfer that
+// holds one. The header phase carries a short deadline so a provider that
+// refuses a second connection fails fast and the caller falls back to the
+// slot path.
+func attemptTailFetch(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, streamURL string, source *config.SourceConfig, extension string, session *proxy.FileSession) RemoteOutcome {
+	headerCtx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	headerTimer := time.AfterFunc(constants.Internal.RemoteFileTailFetchTimeout, cancel)
+
+	req, err := http.NewRequestWithContext(headerCtx, r.Method, streamURL, nil)
+	if err != nil {
+		headerTimer.Stop()
+		logger.Debug("{handlers/remotefile - attemptTailFetch} request build failed for %s: %v", utils.LogURL(sp.Config, streamURL), err)
+		return RemoteCapacity
+	}
+	for _, header := range remoteFileRequestHeaders {
+		if value := r.Header.Get(header); value != "" {
+			req.Header.Set(header, value)
+		}
+	}
+
+	start := time.Now()
+	resp, err := sp.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
+	if err != nil {
+		headerTimer.Stop()
+		logger.Debug("{handlers/remotefile - attemptTailFetch} direct request failed for %s after %v: %v", utils.LogURL(sp.Config, streamURL), time.Since(start), err)
+		return RemoteCapacity
+	}
+	headerTimer.Stop()
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		logger.Debug("{handlers/remotefile - attemptTailFetch} direct request got HTTP %d for %s", resp.StatusCode, utils.LogURL(sp.Config, streamURL))
+		return RemoteCapacity
+	}
+
+	logger.Debug("{handlers/remotefile - attemptTailFetch} Tail fetch for %s served on a direct connection: %d, length=%q (after %v)",
+		utils.LogURL(sp.Config, streamURL), resp.StatusCode, resp.Header.Get("Content-Length"), time.Since(start))
+
+	if err := deliverUpstream(sp, w, r, streamURL, extension, session, resp, nil); err != nil {
+		logger.Debug("{handlers/remotefile - attemptTailFetch} tail copy ended for %s: %v", utils.LogURL(sp.Config, streamURL), err)
+	}
+	return RemoteDelivered
+}
+
+// deliverUpstream forwards an upstream response to the client, copying back
+// the headers players need and streaming the body while counting bytes. The
+// transfer, when not nil, records progress so displacement can tell a client
+// that stopped reading from one still streaming.
+func deliverUpstream(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, streamURL string, extension string, session *proxy.FileSession, resp *http.Response, transfer *activeTransfer) error {
+	for _, header := range remoteFileResponseHeaders {
+		if value := resp.Header.Get(header); value != "" {
+			w.Header().Set(header, value)
+		}
+	}
+	if w.Header().Get("Accept-Ranges") == "" {
+		w.Header().Set("Accept-Ranges", "bytes")
+	}
+	if w.Header().Get("Content-Type") == "" {
+		if contentType := mime.TypeByExtension("." + utils.NormalizeContainerExtension(extension)); contentType != "" {
+			w.Header().Set("Content-Type", contentType)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	if r.Method == http.MethodHead {
+		return nil
+	}
+
+	_, err := io.Copy(&sessionWriter{ResponseWriter: w, bytes: &session.Bytes, transfer: transfer}, resp.Body)
+	return err
+}
+
 // AttemptRemoteFile proxies one upstream file to the client, forwarding range
 // and conditional headers in both directions so seeking works. It reports why
 // the attempt ended: only RemoteUpstreamFailure entitles the caller to treat
@@ -407,11 +548,25 @@ func acquireRemoteSlot(source *config.SourceConfig, channelName string, ctx cont
 // with somebody else's transfer. A slot held by a STALLED transfer of the same
 // channel on the same source is displaced, because that holder is the
 // requester's own abandoned predecessor; a holder still streaming is left
-// alone, since it may be the player's own metadata probe or another viewer's
-// playback. The header phase carries its own deadline so a stalled provider is
-// abandoned while the player is still waiting, rather than losing the race to
-// the player's own timeout.
+// alone, and a small ranged fetch near the end of the file — the player's own
+// container-metadata read — is served on a direct connection so the holder's
+// connection survives the pause. The header phase carries its own deadline so
+// a stalled provider is abandoned while the player is still waiting, rather
+// than losing the race to the player's own timeout.
 func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, streamURL string, source *config.SourceConfig, extension string, session *proxy.FileSession, queueWait time.Duration) RemoteOutcome {
+	// A ranged request near the end of the file while the source is full is
+	// the player's own metadata fetch (Matroska cues live in the tail): serve
+	// it on a direct connection without touching the transfer that holds the
+	// slot. The provider itself serves a player's concurrent double-open, and
+	// killing the holder would cut off the player's metadata parse mid-read
+	// and force it to start the file over.
+	if source.ActiveConns.Load() >= int32(source.MaxConnections) && tailFetchCandidate(session.ChannelName, source, r) {
+		if outcome := attemptTailFetch(sp, w, r, streamURL, source, extension, session); outcome == RemoteDelivered {
+			return RemoteDelivered
+		}
+		logger.Debug("{handlers/remotefile - attemptRemoteFile} Tail fetch for %s could not be served on a direct connection; falling back to the slot path", utils.LogURL(sp.Config, streamURL))
+	}
+
 	if limiter := sp.RateLimiterForSource(source); limiter != nil {
 		// wait off the handler's goroutine so a player that gave up releases
 		// the handler at once instead of sitting in the limiter queue
@@ -488,7 +643,8 @@ func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 	// from here on the transfer holds the provider slot, so a newer request
 	// for the same content must be able to find and displace it when it goes
 	// silent; the transfer carries the slot's own release so displacement can
-	// free the slot even if the copy is wedged writing to the silent client
+	// free the slot even if the copy is wedged writing to the silent client,
+	// and the file size so tail fetches can recognize themselves against it
 	transfer := &activeTransfer{
 		channel:   session.ChannelName,
 		source:    source.Name,
@@ -498,32 +654,11 @@ func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 		cancel:    cancel,
 	}
 	transfer.touch()
+	transfer.contentLength = upstreamTotalSize(resp)
 	registerTransfer(session.ID, transfer)
 	defer unregisterTransfer(session.ID)
 
-	for _, header := range remoteFileResponseHeaders {
-		if value := resp.Header.Get(header); value != "" {
-			w.Header().Set(header, value)
-		}
-	}
-
-	if w.Header().Get("Accept-Ranges") == "" {
-		w.Header().Set("Accept-Ranges", "bytes")
-	}
-
-	if w.Header().Get("Content-Type") == "" {
-		if contentType := mime.TypeByExtension("." + utils.NormalizeContainerExtension(extension)); contentType != "" {
-			w.Header().Set("Content-Type", contentType)
-		}
-	}
-
-	w.WriteHeader(resp.StatusCode)
-
-	if r.Method == http.MethodHead {
-		return RemoteDelivered
-	}
-
-	if _, err := io.Copy(&sessionWriter{ResponseWriter: w, bytes: &session.Bytes, transfer: transfer}, resp.Body); err != nil {
+	if err := deliverUpstream(sp, w, r, streamURL, extension, session, resp, transfer); err != nil {
 		logger.Debug("{handlers/remotefile - attemptRemoteFile} client copy ended for %s after %d bytes, %v total: %v",
 			utils.LogURL(sp.Config, streamURL), session.Bytes.Load(), time.Since(start), err)
 	}

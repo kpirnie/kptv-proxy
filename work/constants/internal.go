@@ -54,6 +54,8 @@ type InternalConstants struct {
 	RemoteFileCapacityPoll  time.Duration // Interval between connection-slot rechecks while queueing for a free slot
 	RemoteFileTakeoverWait  time.Duration // Grace period for a displaced transfer to release its slot before the takeover is given up
 	RemoteFileTransferStall time.Duration // How long a transfer's client must have stopped accepting bytes before it counts as stalled and may be displaced
+	RemoteFileTailFetchWindow int64       // How close to the end of the file a ranged request must start to count as the player's tail metadata fetch
+	RemoteFileTailFetchTimeout time.Duration // Header deadline for a tail fetch served on a direct connection while the source is full
 
 	// -------------------------------------------------------------------------
 	// work/handlers/xcseries.go — buildRemoteSeriesInfo()
@@ -399,6 +401,8 @@ var Internal = InternalConstants{
 	RemoteFileCapacityPoll:  100 * time.Millisecond,
 	RemoteFileTakeoverWait:  2 * time.Second,
 	RemoteFileTransferStall: 2 * time.Second,
+	RemoteFileTailFetchWindow:  8 << 20,             // 8 MB
+	RemoteFileTailFetchTimeout: 3 * time.Second,
 
 	// -------------------------------------------------------------------------
 	// Remote series info
