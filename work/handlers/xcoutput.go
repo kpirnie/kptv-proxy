@@ -477,8 +477,8 @@ func handleXCStream(sp *proxy.StreamProxy, redirectM3U8 bool) http.HandlerFunc {
 		channel.Mu.RUnlock()
 
 		if isVOD {
-			logger.Debug("{handlers/xcoutput - handleXCStream} XC VOD: account=%s, id=%d, channel=%s",
-				account.Name, streamID, channelName)
+			logger.Debug("{handlers/xcoutput - handleXCStream} XC VOD: account=%s, id=%d, channel=%s, client=%s, method=%s, range=%q, ua=%q",
+				account.Name, streamID, channelName, r.RemoteAddr, r.Method, r.Header.Get("Range"), r.UserAgent())
 			serveVODChannel(sp, w, r, channel)
 			return
 		}

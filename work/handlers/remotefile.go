@@ -89,6 +89,9 @@ func serveSeriesEpisode(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Re
 	season := mappings[0].Season
 	episode := mappings[0].Episode
 
+	logger.Debug("{handlers/remotefile - serveSeriesEpisode} Episode s%de%d of %s: client=%s, method=%s, range=%q, ua=%q",
+		season, episode, channelName, r.RemoteAddr, r.Method, r.Header.Get("Range"), r.UserAgent())
+
 	origins, ok := remoteSeriesOrigins(sp, streamIDFromName(channelName))
 	if !ok {
 		logger.Warn("{handlers/remotefile - serveSeriesEpisode} Episode %d has no live provider on %s", episodeID, channelName)
@@ -345,7 +348,8 @@ func DisplaceTransfer(channelName string, source *config.SourceConfig) bool {
 	}
 
 	delete(activeTransfers, oldestID)
-	logger.Info("{handlers/remotefile - DisplaceTransfer} Displacing the stalled transfer of %s on %s to free the provider slot", channelName, source.Name)
+	logger.Info("{handlers/remotefile - DisplaceTransfer} Displacing the stalled transfer of %s on %s (silent for %v, held for %v) to free the provider slot",
+		channelName, source.Name, now.Sub(time.Unix(0, oldest.lastProgress.Load())).Truncate(time.Millisecond), now.Sub(oldest.startedAt).Truncate(time.Millisecond))
 	// cancelling ends the upstream read, but a copy wedged writing to the
 	// silent client would keep the slot held until that client closes; break
 	// the write as well and free the slot from here, so the requester is not
@@ -428,16 +432,23 @@ func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 	// (whose client has moved on to this request) and take its slot; a holder
 	// still streaming is left alone and the request queues up to queueWait
 	// for it to end, answering 503 when the wait expires.
+	start := time.Now()
+	logger.Debug("{handlers/remotefile - attemptRemoteFile} Attempting %s on %s for %s: method=%s, range=%q, ua=%q, slots=%d/%d",
+		utils.LogURL(sp.Config, streamURL), source.Name, r.RemoteAddr, r.Method, r.Header.Get("Range"), r.UserAgent(),
+		source.ActiveConns.Load(), source.MaxConnections)
+
 	release, ok := acquireRemoteSlot(source, session.ChannelName, r.Context(), queueWait)
 	if !ok {
 		if r.Context().Err() != nil {
 			// the player gave up while waiting, so nothing is left to serve
+			logger.Debug("{handlers/remotefile - attemptRemoteFile} Player left while queueing for %s after %v", utils.LogURL(sp.Config, streamURL), time.Since(start))
 			return RemoteDelivered
 		}
-		logger.Debug("{handlers/remotefile - attemptRemoteFile} source at max connections (%d): %s", source.MaxConnections, utils.LogURL(sp.Config, source.URL))
+		logger.Debug("{handlers/remotefile - attemptRemoteFile} source at max connections (%d): %s (after %v)", source.MaxConnections, utils.LogURL(sp.Config, source.URL), time.Since(start))
 		return RemoteCapacity
 	}
 	defer release()
+	logger.Debug("{handlers/remotefile - attemptRemoteFile} Slot taken for %s after %v", utils.LogURL(sp.Config, streamURL), time.Since(start))
 
 	headerCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -459,16 +470,20 @@ func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 	resp, err := sp.HttpClient.DoWithHeaders(req, source.UserAgent, source.ReqOrigin, source.ReqReferrer)
 	if err != nil {
 		headerTimer.Stop()
-		logger.Error("{handlers/remotefile - attemptRemoteFile} upstream request failed for %s: %v", utils.LogURL(sp.Config, streamURL), err)
+		logger.Error("{handlers/remotefile - attemptRemoteFile} upstream request failed for %s: %v (after %v)", utils.LogURL(sp.Config, streamURL), err, time.Since(start))
 		return RemoteUpstreamFailure
 	}
 	headerTimer.Stop()
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= http.StatusBadRequest {
-		logger.Error("{handlers/remotefile - attemptRemoteFile} upstream HTTP %d for %s", resp.StatusCode, utils.LogURL(sp.Config, streamURL))
+		logger.Error("{handlers/remotefile - attemptRemoteFile} upstream HTTP %d for %s (after %v)", resp.StatusCode, utils.LogURL(sp.Config, streamURL), time.Since(start))
 		return RemoteUpstreamFailure
 	}
+
+	logger.Debug("{handlers/remotefile - attemptRemoteFile} Upstream %d for %s: length=%q, range=%q, acceptRanges=%q (after %v)",
+		resp.StatusCode, utils.LogURL(sp.Config, streamURL),
+		resp.Header.Get("Content-Length"), resp.Header.Get("Content-Range"), resp.Header.Get("Accept-Ranges"), time.Since(start))
 
 	// from here on the transfer holds the provider slot, so a newer request
 	// for the same content must be able to find and displace it when it goes
@@ -509,8 +524,11 @@ func AttemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 	}
 
 	if _, err := io.Copy(&sessionWriter{ResponseWriter: w, bytes: &session.Bytes, transfer: transfer}, resp.Body); err != nil {
-		logger.Debug("{handlers/remotefile - attemptRemoteFile} client copy ended for %s: %v", utils.LogURL(sp.Config, streamURL), err)
+		logger.Debug("{handlers/remotefile - attemptRemoteFile} client copy ended for %s after %d bytes, %v total: %v",
+			utils.LogURL(sp.Config, streamURL), session.Bytes.Load(), time.Since(start), err)
 	}
+	logger.Debug("{handlers/remotefile - attemptRemoteFile} Delivered %s after %v (%d bytes total)",
+		utils.LogURL(sp.Config, streamURL), time.Since(start), session.Bytes.Load())
 	return RemoteDelivered
 }
 
