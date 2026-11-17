@@ -732,6 +732,7 @@ Each stream is classified as `live`, `vod`, or `series` so filters, XC catalog p
 | `ffmpegPreInput` | `[]` | FFmpeg arguments before `-i` |
 | `ffmpegPreOutput` | `[]` | FFmpeg arguments before output |
 | `responseHeaderTimeout` | `"10s"` | Timeout for response headers from source |
+| `streamQueueWait` | `"15s"` | Max time a VOD/series request queues for a free provider connection slot before answering 503; `0s` disables queueing |
 
 ### Per-Source Settings
 

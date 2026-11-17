@@ -131,6 +131,11 @@
             "type": "string",
             "example": "10s"
           },
+          "streamQueueWait": {
+            "type": "string",
+            "example": "15s",
+            "description": "Max time a VOD/series request queues for a free provider connection slot before answering 503. 0s disables queueing."
+          },
           "slowClientBufferChunks": {
             "type": "integer",
             "example": 16

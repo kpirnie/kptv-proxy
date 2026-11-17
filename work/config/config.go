@@ -54,6 +54,7 @@ type Config struct {
 	FFmpegPreInput         []string          `json:"ffmpegPreInput"`
 	FFmpegPreOutput        []string          `json:"ffmpegPreOutput"`
 	ResponseHeaderTimeout  time.Duration     `json:"responseHeaderTimeout"`
+	StreamQueueWait        time.Duration     `json:"streamQueueWait"` // Max time a VOD/series request queues for a free provider connection slot before answering 503 (0 disables queueing)
 	SlowClientBufferChunks int               `json:"slowClientBufferChunks"` // Number of chunks to queue per client before considering them too slow
 	TMDBEnabled            bool              `json:"tmdbEnabled"`
 	TMDBAPIKey             string            `json:"tmdbApiKey"`
@@ -149,6 +150,7 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 		FFmpegPreInput         []string      `json:"ffmpegPreInput"`
 		FFmpegPreOutput        []string      `json:"ffmpegPreOutput"`
 		ResponseHeaderTimeout  string        `json:"responseHeaderTimeout"`
+		StreamQueueWait        string        `json:"streamQueueWait"`
 		Sources                []SourceAlias `json:"sources"`
 		SlowClientBufferChunks int           `json:"slowClientBufferChunks"`
 		TMDBEnabled            bool          `json:"tmdbEnabled"`
@@ -196,6 +198,11 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	if aux.ResponseHeaderTimeout != "" {
 		if c.ResponseHeaderTimeout, err = time.ParseDuration(aux.ResponseHeaderTimeout); err != nil {
 			return fmt.Errorf("invalid responseHeaderTimeout: %w", err)
+		}
+	}
+	if aux.StreamQueueWait != "" {
+		if c.StreamQueueWait, err = time.ParseDuration(aux.StreamQueueWait); err != nil {
+			return fmt.Errorf("invalid streamQueueWait: %w", err)
 		}
 	}
 
@@ -351,6 +358,11 @@ func loadFromDB() (*Config, error) {
 	if v, ok := settings["responseHeaderTimeout"]; ok {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.ResponseHeaderTimeout = d
+		}
+	}
+	if v, ok := settings["streamQueueWait"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.StreamQueueWait = d
 		}
 	}
 	if v, ok := settings["slowClientBufferChunks"]; ok {
@@ -522,6 +534,7 @@ func PersistSettings(cfg *Config) error {
 		"ffmpegPreInput":         strings.Join(cfg.FFmpegPreInput, " "),
 		"ffmpegPreOutput":        strings.Join(cfg.FFmpegPreOutput, " "),
 		"responseHeaderTimeout":  cfg.ResponseHeaderTimeout.String(),
+		"streamQueueWait":        cfg.StreamQueueWait.String(),
 		"slowClientBufferChunks": strconv.Itoa(cfg.SlowClientBufferChunks),
 		"tmdbEnabled":            strconv.FormatBool(cfg.TMDBEnabled),
 		"tmdbApiKey":             cfg.TMDBAPIKey,
@@ -657,6 +670,7 @@ func getDefaultConfig() *Config {
 		FFmpegPreInput:        []string{},
 		FFmpegPreOutput:       []string{},
 		ResponseHeaderTimeout: 10 * time.Second,
+		StreamQueueWait:       15 * time.Second,
 	}
 }
 
@@ -676,6 +690,11 @@ func validateAndSetDefaults(config *Config) {
 	}
 	if config.ResponseHeaderTimeout <= 0 {
 		config.ResponseHeaderTimeout = 10 * time.Second
+	}
+	// StreamQueueWait of exactly 0 is legal — it disables slot queueing — so a
+	// zero is kept and only a negative value is clamped, never re-defaulted.
+	if config.StreamQueueWait < 0 {
+		config.StreamQueueWait = 0
 	}
 	if config.WorkerThreads <= 0 {
 		config.WorkerThreads = 8

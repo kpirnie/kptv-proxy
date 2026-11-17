@@ -56,11 +56,13 @@ func (sw *sessionWriter) Write(b []byte) (int, error) {
 
 // serveSeriesEpisode plays a proxy episode ID, walking every provider carrying
 // it in the series channel's own stream order. Each candidate is retried once
-// against the same provider — episode URLs hand out a single-use CDN token, so a
-// stale token fails on first contact and succeeds on the next — before the
-// provider is marked dead and the next one is tried. When every candidate is
-// exhausted the offline video is served so the player shows something rather
-// than erroring.
+// against the same provider — episode URLs hand out a single-use CDN token, so
+// a stale token fails on first contact and succeeds on the next — before the
+// provider is marked dead and the next one is tried. A provider with no free
+// connection is skipped, not marked dead. When every candidate is exhausted
+// the offline video is served so the player shows something rather than
+// erroring; when every candidate was merely busy the player is sent a 503 with
+// Retry-After instead, so it comes back when a slot frees.
 func serveSeriesEpisode(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, episodeID int) bool {
 
 	// make sure we aren't overloading the server with too many concurrent clients
@@ -87,6 +89,10 @@ func serveSeriesEpisode(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Re
 		return true
 	}
 
+	// capacity is tracked apart from failure: a playback arriving while the slot
+	// is held is normal, and must not cost the provider its stream
+	capacity := false
+
 	for _, origin := range origins {
 		upstreamID, extension, found := episodeOnSource(sp, origin, mappings, season, episode)
 		if !found {
@@ -98,26 +104,40 @@ func serveSeriesEpisode(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Re
 		sessionID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
 		session := proxy.StartFileSession(sessionID, channelName, origin.Source.Name, origin.Attributes["tvg-logo"])
 
-		delivered := false
+		outcome := remoteDelivered
 		for attempt := 0; attempt <= constants.Internal.RemoteFileRetries; attempt++ {
-			if attemptRemoteFile(sp, w, r, streamURL, origin.Source, extension, session) {
-				delivered = true
+			outcome = attemptRemoteFile(sp, w, r, streamURL, origin.Source, extension, session, sp.Config.StreamQueueWait)
+			if outcome == remoteDelivered {
 				break
 			}
 			if r.Context().Err() != nil {
-				delivered = true
+				outcome = remoteDelivered
 				break
 			}
 		}
 		proxy.EndFileSession(sessionID)
-		if delivered {
+		if outcome == remoteDelivered {
 			return true
+		}
+
+		if outcome == remoteCapacity {
+			capacity = true
+			logger.Debug("{handlers/remotefile - serveSeriesEpisode} Episode %d has no free connection on %s", episodeID, origin.Source.Name)
+			continue
 		}
 
 		if err := deadstreams.MarkStreamDeadByHash(channelName, origin.StreamHash, "series episode unplayable"); err != nil {
 			logger.Error("{handlers/remotefile - serveSeriesEpisode} Failed to mark %s dead on %s: %v", origin.Source.Name, channelName, err)
 		}
 		logger.Warn("{handlers/remotefile - serveSeriesEpisode} Episode %d failed on %s, trying next provider", episodeID, origin.Source.Name)
+	}
+
+	if capacity {
+		// the episode is playable the moment a slot frees, so send the player
+		// away with a retry instead of the offline clip
+		w.Header().Set("Retry-After", "2")
+		http.Error(w, "Provider connection busy", http.StatusServiceUnavailable)
+		return true
 	}
 
 	logger.Error("{handlers/remotefile - serveSeriesEpisode} Episode %d failed on every provider for %s", episodeID, channelName)
@@ -184,13 +204,69 @@ func upstreamEpisodeURL(source *config.SourceConfig, upstreamID, extension strin
 	return source.URL + "/series/" + source.Username + "/" + source.Password + "/" + upstreamID + "." + extension
 }
 
+// remoteOutcome says why one passthrough attempt ended. Capacity has to be
+// separable from failure: a source limited to one connection sees a player
+// session as two requests for the same file — a probe, then the playback — and
+// the second finds the slot taken by the first. The stream is healthy in that
+// case, and a dead mark would make it unplayable for the life of the process,
+// since the VOD path has no retry interval of its own.
+type remoteOutcome int
+
+const (
+	remoteDelivered       remoteOutcome = iota // response completed, or the player left mid-transfer
+	remoteCapacity                             // source has no free connection slot
+	remoteUpstreamFailure                      // provider refused, answered badly, or stalled
+)
+
+// ReserveSourceSlot takes one of a source's connection slots, queueing up to
+// wait for the current holder to finish. The slot is held for the whole
+// transfer, so a caller that reserves must call the returned release. A wait
+// of zero or less disables queueing: the request is refused at once, leaving
+// the caller free to answer 503 instead of taking a connection the provider
+// limits. Exported for the test in testing/handlers, which runs in an external
+// package.
+func ReserveSourceSlot(source *config.SourceConfig, ctx context.Context, wait time.Duration) (func(), bool) {
+	take := func() (func(), bool) {
+		if source.ActiveConns.Add(1) > int32(source.MaxConnections) {
+			source.ActiveConns.Add(-1)
+			return nil, false
+		}
+		return func() { source.ActiveConns.Add(-1) }, true
+	}
+
+	if release, ok := take(); ok {
+		return release, true
+	}
+	if wait <= 0 {
+		return nil, false
+	}
+
+	deadline := time.After(wait)
+	ticker := time.NewTicker(constants.Internal.RemoteFileCapacityPoll)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, false
+		case <-deadline:
+			return nil, false
+		case <-ticker.C:
+			if release, ok := take(); ok {
+				return release, true
+			}
+		}
+	}
+}
+
 // attemptRemoteFile proxies one upstream file to the client, forwarding range
-// and conditional headers in both directions so seeking works. It reports
-// whether the response was committed; a false return means nothing was written
-// and the caller may try another candidate. The header phase carries its own
-// deadline so a stalled provider is abandoned while the player is still waiting,
-// rather than losing the race to the player's own timeout.
-func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, streamURL string, source *config.SourceConfig, extension string, session *proxy.FileSession) bool {
+// and conditional headers in both directions so seeking works. It reports why
+// the attempt ended: only remoteUpstreamFailure entitles the caller to treat
+// the candidate as broken, and remoteCapacity means the provider slot is busy
+// with somebody else's transfer. The header phase carries its own deadline so a
+// stalled provider is abandoned while the player is still waiting, rather than
+// losing the race to the player's own timeout.
+func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, streamURL string, source *config.SourceConfig, extension string, session *proxy.FileSession, queueWait time.Duration) remoteOutcome {
 	if limiter := sp.RateLimiterForSource(source); limiter != nil {
 		// wait off the handler's goroutine so a player that gave up releases
 		// the handler at once instead of sitting in the limiter queue
@@ -202,18 +278,23 @@ func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 		select {
 		case <-taken:
 		case <-r.Context().Done():
-			return false
+			return remoteDelivered
 		}
 	}
 
-	// reserve the slot in one atomic step so concurrent requests can't both
-	// pass a separate check and exceed the source's connection limit
-	if source.ActiveConns.Add(1) > int32(source.MaxConnections) {
-		source.ActiveConns.Add(-1)
+	// queue for the slot rather than refusing outright: a playback that starts
+	// while a probe still holds the connection is a normal thing to happen, not
+	// a broken stream
+	release, ok := ReserveSourceSlot(source, r.Context(), queueWait)
+	if !ok {
+		if r.Context().Err() != nil {
+			// the player gave up while queueing, so nothing is left to serve
+			return remoteDelivered
+		}
 		logger.Debug("{handlers/remotefile - attemptRemoteFile} source at max connections (%d): %s", source.MaxConnections, utils.LogURL(sp.Config, source.URL))
-		return false
+		return remoteCapacity
 	}
-	defer source.ActiveConns.Add(-1)
+	defer release()
 
 	headerCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -223,7 +304,7 @@ func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 	if err != nil {
 		headerTimer.Stop()
 		logger.Error("{handlers/remotefile - attemptRemoteFile} request build failed for %s: %v", utils.LogURL(sp.Config, streamURL), err)
-		return false
+		return remoteUpstreamFailure
 	}
 
 	for _, header := range remoteFileRequestHeaders {
@@ -236,14 +317,14 @@ func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 	if err != nil {
 		headerTimer.Stop()
 		logger.Error("{handlers/remotefile - attemptRemoteFile} upstream request failed for %s: %v", utils.LogURL(sp.Config, streamURL), err)
-		return false
+		return remoteUpstreamFailure
 	}
 	headerTimer.Stop()
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		logger.Error("{handlers/remotefile - attemptRemoteFile} upstream HTTP %d for %s", resp.StatusCode, utils.LogURL(sp.Config, streamURL))
-		return false
+		return remoteUpstreamFailure
 	}
 
 	for _, header := range remoteFileResponseHeaders {
@@ -265,13 +346,13 @@ func attemptRemoteFile(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Req
 	w.WriteHeader(resp.StatusCode)
 
 	if r.Method == http.MethodHead {
-		return true
+		return remoteDelivered
 	}
 
 	if _, err := io.Copy(&sessionWriter{ResponseWriter: w, bytes: &session.Bytes}, resp.Body); err != nil {
 		logger.Debug("{handlers/remotefile - attemptRemoteFile} client copy ended for %s: %v", utils.LogURL(sp.Config, streamURL), err)
 	}
-	return true
+	return remoteDelivered
 }
 
 // serveFallbackVideo loops the offline clip to the client when no provider can
@@ -313,10 +394,13 @@ func serveFallbackVideo(w http.ResponseWriter, r *http.Request) {
 
 // serveVODChannel plays a movie channel by walking its streams from the
 // preferred index, skipping dead and blocked entries, so the admin's ordering
-// and kill controls govern which provider answers. Each candidate is retried
-// once before being marked dead and the next one tried; when all are exhausted
-// the offline video is served. VOD is a finite file and cannot go through the
-// live restreamer, which serves no length and cannot seek.
+// and kill controls govern which provider answers. Auto-blocked entries are
+// probed again once AutoBlockRetryInterval has passed — the same recovery the
+// live restreamer gets — because with a one-connection provider a playback can
+// be marked dead while its provider was merely busy, and without this the film
+// would never be playable again. Each candidate is retried once before being
+// marked dead and the next one tried. VOD is a finite file and cannot go
+// through the live restreamer, which serves no length and cannot seek.
 func serveVODChannel(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Request, channel *types.Channel) {
 
 	// make sure we aren't overloading the server with too many concurrent clients
@@ -340,37 +424,69 @@ func serveVODChannel(sp *proxy.StreamProxy, w http.ResponseWriter, r *http.Reque
 		if stream.Source == nil {
 			continue
 		}
-		if deadstreams.IsStreamDead(channel.Name, stream.URLHash) || atomic.LoadInt32(&stream.Blocked) == 1 {
+		if deadstreams.BlockedUntilRetry(channel.Name, stream) {
 			continue
+		}
+		if dead := deadstreams.IsStreamDead(channel.Name, stream.URLHash); dead || atomic.LoadInt32(&stream.Blocked) == 1 {
+			// the retry interval has passed, so the entry is probed again and
+			// the dead mark cleared — this is the only way a VOD stream marked
+			// dead while its provider was busy can come back
+			logger.Debug("{handlers/remotefile - serveVODChannel} Retrying auto-blocked %s on %s", channel.Name, stream.Source.Name)
+			atomic.StoreInt32(&stream.Blocked, 0)
+			if dead {
+				if err := deadstreams.ReviveStream(channel.Name, stream.URLHash); err != nil {
+					logger.Error("{handlers/remotefile - serveVODChannel} Failed to clear auto-block for %s on %s: %v", stream.Source.Name, channel.Name, err)
+				}
+			}
 		}
 		candidates = append(candidates, stream)
 	}
 	channel.Mu.RUnlock()
 
+	// capacity is tracked apart from failure: a playback that arrives while the
+	// slot is held (by this player's own probe, or by another viewer) is a
+	// normal thing to happen, and the stream must not be marked dead for it.
+	capacity := false
+
 	for _, stream := range candidates {
 		sessionID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
 		session := proxy.StartFileSession(sessionID, channel.Name, stream.Source.Name, stream.Attributes["tvg-logo"])
 
-		delivered := false
+		outcome := remoteDelivered
 		for attempt := 0; attempt <= constants.Internal.RemoteFileRetries; attempt++ {
-			if attemptRemoteFile(sp, w, r, stream.URL, stream.Source, stream.ContainerExtension, session) {
-				delivered = true
+			outcome = attemptRemoteFile(sp, w, r, stream.URL, stream.Source, stream.ContainerExtension, session, sp.Config.StreamQueueWait)
+			if outcome == remoteDelivered {
 				break
 			}
 			if r.Context().Err() != nil {
-				delivered = true
+				outcome = remoteDelivered
 				break
 			}
 		}
 		proxy.EndFileSession(sessionID)
-		if delivered {
+		if outcome == remoteDelivered {
 			return
+		}
+
+		if outcome == remoteCapacity {
+			// keep walking the list: another provider may have a free slot
+			capacity = true
+			logger.Debug("{handlers/remotefile - serveVODChannel} %s has no free connection on %s", channel.Name, stream.Source.Name)
+			continue
 		}
 
 		if err := deadstreams.MarkStreamDeadByHash(channel.Name, stream.URLHash, "vod unplayable"); err != nil {
 			logger.Error("{handlers/remotefile - serveVODChannel} Failed to mark %s dead on %s: %v", stream.Source.Name, channel.Name, err)
 		}
 		logger.Warn("{handlers/remotefile - serveVODChannel} %s failed on %s, trying next provider", channel.Name, stream.Source.Name)
+	}
+
+	if capacity {
+		// the file is playable the moment a slot frees, so send the player away
+		// with a retry instead of the offline clip
+		w.Header().Set("Retry-After", "2")
+		http.Error(w, "Provider connection busy", http.StatusServiceUnavailable)
+		return
 	}
 
 	logger.Error("{handlers/remotefile - serveVODChannel} %s failed on every provider", channel.Name)

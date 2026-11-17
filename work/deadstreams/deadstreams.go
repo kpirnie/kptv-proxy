@@ -3,10 +3,13 @@ package deadstreams
 
 import (
 	"fmt"
+	"kptv-proxy/work/constants"
 	"kptv-proxy/work/db"
 	"kptv-proxy/work/logger"
+	"kptv-proxy/work/types"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -42,6 +45,22 @@ func overrides() map[string]db.StreamOverride {
 	}
 	overrideCache.Store(&loaded)
 	return loaded
+}
+
+// ReloadOverrides re-reads the whole overrides table from the database and
+// publishes it as one snapshot, so readers never observe a partially updated
+// state. Bulk operations that bypass the per-key write helpers — revive-all —
+// and tests that want a read from the database call this.
+func ReloadOverrides() {
+	overrideMu.Lock()
+	defer overrideMu.Unlock()
+
+	loaded, err := db.GetAllStreamOverrides()
+	if err != nil {
+		logger.Error("{deadstreams - ReloadOverrides} Failed to load overrides: %v", err)
+		return
+	}
+	overrideCache.Store(&loaded)
 }
 
 // replaceOverride publishes a new snapshot with one entry set or removed,
@@ -125,6 +144,30 @@ func ReviveStream(channelName, hash string) error {
 
 	logger.Debug("{deadstreams - ReviveStream} channel=%s hash=%s revived", channelName, hash)
 	return nil
+}
+
+// BlockedUntilRetry reports whether a dead or blocked stream must still be
+// skipped. Manually killed streams always are. Auto-blocked streams become
+// eligible again once AutoBlockRetryInterval has passed since their last
+// failure, or straight away when none is on record this run (the block
+// persists in the database across restarts); a failed probe re-blocks through
+// the usual failure path. The live restreamer, the VOD passthrough, and the
+// series list share this so a stream that died while its provider was busy
+// recovers the same way everywhere, instead of staying dead for the life of
+// the process.
+func BlockedUntilRetry(channelName string, s *types.Stream) bool {
+	dead := IsStreamDead(channelName, s.URLHash)
+	if dead && GetDeadStreamReason(channelName, s.URLHash) == "manual" {
+		return true
+	}
+	if !dead && atomic.LoadInt32(&s.Blocked) == 0 {
+		return false
+	}
+
+	s.Mu.Lock()
+	sinceFail := time.Since(s.LastFail)
+	s.Mu.Unlock()
+	return sinceFail < constants.Internal.AutoBlockRetryInterval
 }
 
 // hashURL produces the same FNV64a hash used during import.
