@@ -12,6 +12,7 @@ import (
 // local media are served straight to the client without a restreamer, so they
 // have no channel entry to report from and are tracked here instead.
 type FileSession struct {
+	ID          string
 	ChannelName string
 	SourceName  string
 	LogoURL     string
@@ -25,6 +26,7 @@ var fileSessions = xsync.NewMapOf[string, *FileSession]()
 // caller must pass the same id to EndFileSession when the response completes.
 func StartFileSession(id, channelName, sourceName, logoURL string) *FileSession {
 	session := &FileSession{
+		ID:          id,
 		ChannelName: channelName,
 		SourceName:  sourceName,
 		LogoURL:     logoURL,

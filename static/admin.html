@@ -362,6 +362,14 @@
                                         class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
                                         type="text" name="responseHeaderTimeout" placeholder="10s">
                                 </div>
+                                <!--stream queue wait-->
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">VOD Queue Wait</label>
+                                    <input
+                                        class="w-full bg-kptv-gray-light border border-kptv-border rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-kptv-blue"
+                                        type="text" name="streamQueueWait" placeholder="15s">
+                                    <div class="text-xs text-gray-400 mt-1">How long a movie/series request waits for a free provider connection before answering 503 (default: 15s; 0s disables queueing)</div>
+                                </div>
                                 <!--slow client buffer-->
                                 <div>
                                     <label class="block text-sm font-medium mb-1">Slow Client Buffer (chunks)</label>

@@ -243,3 +243,38 @@ func handleReviveStream(sp *proxy.StreamProxy) http.HandlerFunc {
 		})
 	}
 }
+
+// handleReviveAllStreams clears the dead status of every auto-dead stream in
+// the dead streams database, restoring them to active rotation everywhere at
+// once. Manually killed streams are an admin decision, so they are preserved
+// unless the request body explicitly sets includeManual.
+func handleReviveAllStreams() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		var request struct {
+			IncludeManual bool `json:"includeManual"`
+		}
+		if r.Body != nil && r.ContentLength != 0 {
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "Invalid JSON", http.StatusBadRequest)
+				return
+			}
+		}
+
+		count, err := deadstreams.ReviveAllStreams(request.IncludeManual)
+		if err != nil {
+			addLogEntry("error", fmt.Sprintf("Failed to revive dead streams: %v", err))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		addLogEntry("info", fmt.Sprintf("Revived %d dead streams (includeManual=%v)", count, request.IncludeManual))
+
+		w.WriteHeader(http.StatusOK)
+		utils.WriteJSON(w, map[string]any{
+			"status":  "success",
+			"revived": count,
+		})
+	}
+}

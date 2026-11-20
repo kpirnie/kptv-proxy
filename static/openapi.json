@@ -131,6 +131,11 @@
             "type": "string",
             "example": "10s"
           },
+          "streamQueueWait": {
+            "type": "string",
+            "example": "15s",
+            "description": "Max time a VOD/series request queues for a free provider connection slot before answering 503. 0s disables queueing."
+          },
           "slowClientBufferChunks": {
             "type": "integer",
             "example": 16
@@ -1338,6 +1343,56 @@
           },
           "404": {
             "description": "Channel not found"
+          }
+        }
+      }
+    },
+    "/api/channels/revive-all": {
+      "post": {
+        "summary": "Revive every auto-dead stream across all channels",
+        "operationId": "reviveAllStreams",
+        "tags": [
+          "Channels"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "includeManual": {
+                    "type": "boolean",
+                    "description": "Also clear manually killed streams. Default false.",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dead streams revived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "revived": {
+                      "type": "integer",
+                      "description": "Number of streams revived"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         }
       }

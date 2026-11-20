@@ -331,8 +331,20 @@ func remoteSeriesOrigins(sp *proxy.StreamProxy, seriesID int) ([]seriesOrigin, b
 		if stream.Source == nil || stream.Source.Username == "" || stream.Source.Password == "" {
 			continue
 		}
-		if deadstreams.IsStreamDead(channelName, stream.URLHash) || atomic.LoadInt32(&stream.Blocked) == 1 {
+		if deadstreams.BlockedUntilRetry(channelName, stream) {
 			continue
+		}
+		if dead := deadstreams.IsStreamDead(channelName, stream.URLHash); dead || atomic.LoadInt32(&stream.Blocked) == 1 {
+			// the retry interval has passed, so the entry is probed again and
+			// the dead mark cleared; a series list that skips it permanently
+			// leaves the episode unplayable with no way back
+			logger.Debug("{handlers/xcseries - remoteSeriesOrigins} Retrying auto-blocked stream for %s on %s", channelName, stream.Source.Name)
+			atomic.StoreInt32(&stream.Blocked, 0)
+			if dead {
+				if err := deadstreams.ReviveStream(channelName, stream.URLHash); err != nil {
+					logger.Error("{handlers/xcseries - remoteSeriesOrigins} Failed to clear auto-block for %s on %s: %v", stream.Source.Name, channelName, err)
+				}
+			}
 		}
 
 		upstreamID := stream.Attributes["tvg-id"]

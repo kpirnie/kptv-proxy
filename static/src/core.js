@@ -148,6 +148,8 @@ async function loadGlobalSettings() {
             sortField: 'tvg-type',
             sortDirection: 'asc',
             streamTimeout: '30s',
+            responseHeaderTimeout: '10s',
+            streamQueueWait: '15s',
             maxConnectionsToApp: 100
         });
     }

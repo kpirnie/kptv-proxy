@@ -3,6 +3,7 @@ package restream
 import (
 	"context"
 	"kptv-proxy/work/constants"
+	"kptv-proxy/work/deadstreams"
 	"kptv-proxy/work/logger"
 	"kptv-proxy/work/metrics"
 	"kptv-proxy/work/stream"
@@ -276,7 +277,7 @@ func (r *Restream) StreamEligible(index int) bool {
 	s := r.Channel.Streams[index]
 	r.Channel.Mu.RUnlock()
 
-	if blockedUntilRetry(r.Channel.Name, s) {
+	if deadstreams.BlockedUntilRetry(r.Channel.Name, s) {
 		return false
 	}
 
